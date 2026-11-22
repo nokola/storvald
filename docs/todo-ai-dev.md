@@ -439,11 +439,11 @@ All rows PROPOSED.
 | id | scope | status |
 |---|---|---|
 | AD14 | The engine comes out of FanRust's `shell` into the gogo repo | <span style='color:red'>TODO</span> the first piece landed 2026-11-22 (`crates/turbodot`); remaining in the entry |
-| AD31 | FanRust's host code moves into TurboDot, piece by piece, and FanRust builds on TurboDot | <span style='color:red'>TODO</span> landed 2026-11-22: the page stack and the allocation counter; remaining in the entry |
-| AD32 | gogo allocates in three places while a page moves | <span style='color:red'>TODO</span> measured 2026-11-22; not fixed |
-| AD33 | USER CALL: `Ui` and `pages::HostedPage` both run a page | <span style='color:red'>TODO</span> |
-| AD34 | USER CALL: an app draws under its pages | <span style='color:red'>TODO</span> PROPOSED |
-| AD35 | A TurboDot app's pages are compiled when the program is built | <span style='color:red'>TODO</span> PROPOSED |
+| AD31 | FanRust's host code moves into TurboDot, piece by piece, and FanRust builds on TurboDot | <span style='color:red'>TODO</span> moved 2026-11-22 to FanRust's `docs/todo-storvald.md`, SV12 |
+| AD32 | gogo allocates in three places while a page moves | <span style='color:red'>TODO</span> moved 2026-11-22 to FanRust's `docs/todo-storvald.md`, SV14 |
+| AD33 | USER CALL: `Ui` and `pages::HostedPage` both run a page | <span style='color:red'>TODO</span> moved 2026-11-22 to FanRust's `docs/todo-storvald.md`, SV1, SV2 |
+| AD34 | USER CALL: an app draws under its pages | <span style='color:red'>TODO</span> moved 2026-11-22 to FanRust's `docs/todo-storvald.md`, SV5 |
+| AD35 | A TurboDot app's pages are compiled when the program is built | <span style='color:red'>TODO</span> moved 2026-11-22 to FanRust's `docs/todo-storvald.md`, SV8 |
 
 - <span style='color:red'>TODO</span> AD14: the engine comes out of FanRust's
   `shell` crate into the gogo repo (AD1). This continues GM28, which said
@@ -471,107 +471,28 @@ All rows PROPOSED.
 
 - <span style='color:red'>TODO</span> AD31: FanRust's host code moves into TurboDot, piece by piece,
   and FanRust builds on TurboDot (user, 2026-11-22: "fix the concerns, then
-  move all"). About 10 thousand of FanRust's 167 thousand lines are host
-  code with nothing of the paint app in them. Each piece that moves deletes
-  code from FanRust and leaves FanRust's suite green.
-  - The pieces, in order:
-
-    | # | Piece | Where FanRust has it | Status |
-    |---|---|---|---|
-    | 1 | `Ui` and `App` build with no window and no GPU crate | (new: cargo features `gpu` and `window`) | landed 2026-11-22 |
-    | 2 | The allocation counter | `crates/shell/src/alloc_count.rs` | landed 2026-11-22; FanRust uses TurboDot's |
-    | 3 | Several pages in one window: the page stack and the picture table | `crates/app_wgpu/src/page_host.rs` | landed 2026-11-22; FanRust uses TurboDot's |
-    | 4 | An app draws under its pages | (the canvas, drawn by `shell` before the pages) | waits for AD34 |
-    | 5 | The GPU start: one backend per OS, on a thread, Vulkan then OpenGL on Android, the list of bad drivers | `crates/shell/src/lib.rs`, `gpu_backend.rs`, `imaging_wgpu`'s `driver_probe.rs` and `headless.rs` | not started; needs the phones |
-    | 6 | The surface and the loop: a lost surface, suspend and resume, the draw retry, sleep while nothing moves | `crates/shell/src/lib.rs` | not started; needs the phones |
-    | 7 | GPU reads: the one wait, rows copied whole, offset 0 | `imaging_wgpu`'s `gpu_wait.rs`, three tests in `crates/lint` | not started |
-    | 8 | Input: Android's keys, the on-screen keyboard, the clipboard, several fingers | `crates/shell/src/lib.rs`, `platform/` | not started; needs the phones |
-    | 9 | Screen facts: the scale, the cutout, the orientation | `crates/shell/src/epx_service.rs`, `imaging`'s `epx` | not started |
-    | 10 | Proof tools: a picture of a start (`--shot`), the start and frame timing lines, the picture compare, the crash file | `crates/shell`, `crates/parity`, `crates/check` | not started |
-    | 11 | The general half of the OS seam: folders, share, pick a picture, permissions | `crates/shell/src/platform/mod.rs` | not started |
-
-  - Stays in FanRust: `imaging`, the canvas engine in `imaging_wgpu`, every
-    page and its code, ads, billing, the translation client.
-  - Corrected 2026-11-22: "pages compiled when the program is built" needs
-    no move. gogo has it (`gogo_ui::build_pages`); FanRust's build script is
-    217 lines of its own options. What is missing is its use in TurboDot
-    and Storvald (AD35).
-  - Landed 2026-11-22, not committed. In TurboDot: `turbodot::pages`
-    (`PageStack`, `HostedPage`, `PageId`, `PagePose`, `TexturePlacement`,
-    `ImageTable`, `UiAssets`, `PagePlatform`, `mark_page_pictures`) and
-    `turbodot::alloc_count`. The code is FanRust's; the comments are
-    written again, with nothing of that app in them. `PagePlatform` takes
-    the orientation and the screen class as values, `PageStack::frame`
-    takes the scale as a number, `HostedPage::modal` is `is_modal`, and
-    `draw_to_texture` takes the renderer and the device by name. The two
-    calls that write a picture to the GPU and `draw_to_texture` need the
-    cargo feature `gpu`.
-  - In FanRust (its docs/DECISIONS.md D127): a fourth pinned line,
-    `turbodot`, with no feature on; `shell` and `app_wgpu` ask for `gpu`.
-    `page_host.rs` names TurboDot's types again and keeps what only that
-    app knows. `shell`'s own `alloc_count.rs` is deleted.
-  - The concerns of 2026-11-22, each with what was done:
-    - Allocation. Measured (`crates/turbodot/tests/allocations.rs`): a page
-      that stands still allocates nothing, and `Ui` adds no allocation of
-      its own to a touch, a mouse move or a frame. Claude had said "TurboDot
-      allocates on every event"; that was wrong: a touch that causes no
-      event returns an empty list, which allocates nothing. What does
-      allocate is inside gogo (AD32).
-    - Ergonomics. `Ui` has the calls an app writes its page with
-      (`set_text`, `text_of`, `set_visible`, `set_value`, `set_items`,
-      `rows`, `row_key`, `set_selected`, `selected_keys`, `set_scroll`,
-      `scroll_of`), so app code no longer names gogo's runtime and page in
-      every line. Storvald's screen uses them, and asks the page for its
-      nodes once, when the page comes in.
-    - Two copies of the Direct3D 12 rule and of the key mapping: still two.
-      They go when pieces 5 and 8 move.
-  - Seen failing, each by breaking the code and putting it back: the
-    allocation check (a frame that allocates once), the manifest check (one
-    more dependency that is always built), and four of the page stack's
-    checks (a modal page that takes no miss, a finger that follows the
-    topmost page, a key with no size row, a page that stays in the order).
-  - Proven 2026-11-22 on the user's PC, Vulkan: the whole suite 100 suites, 1299 passed, 0 failed, 64 ignored (`target/logs/engine_move_workspace.log`; 97, 1288, 0 and 63 before this change). The GPU tests of `turbodot` and `storvald`, asked for by hand: 3 passed. `turbodot` with no feature on: 15 passed. The packaged crates: 89 suites, 1250 passed, 0 failed, 54 ignored (`target/logs/engine_move_packages.log`; 88 and 1248 before). The first run of the packaged crates failed on the new manifest check: it read `Cargo.toml`, which cargo writes again in its own shape inside a package. The check now reads the file as it was written, and passed alone in the repository after that fix; the whole suite was not run again for it. FanRust's suite on this code: 278 suites, 2078 passed, 0 failed, 53 ignored, 3037 members across 455 ported files (its `build\engine_move_test1.log`; 2077 passed at its last run, 2026-11-12).
-  - Remaining: pieces 4 to 11; the commits and the pin move (the user's).
-    No phone ran the change: the moved code is the same code, and no line
-    of the GPU start or of Android was touched.
+  move all").
+  - MOVED 2026-11-22 (user: "yes"): the plan, the list of pieces and what
+    landed are in FanRust's `docs/todo-storvald.md`, row SV12. The text that
+    stood here is in this file's history (commit `ebb85e8`).
 - <span style='color:red'>TODO</span> AD32: gogo allocates in three places while a page moves.
-  Measured 2026-11-22 with `turbodot::alloc_count`; the check
-  `a_still_page_allocates_nothing_and_a_moving_one_no_more_than_gogo_does`
-  holds each at its count, so one more shows. USER SEES: nothing on a PC; on
-  a slow phone, an allocation at every move of a finger can show as a
-  stutter in a long pan.
-  - The frame after a step of a pan: 2. `Lay::visible_children`
-    (`crates/gogo-ui/src/layout.rs`) returns the children of a box as a new
-    list, and laying out a scrolling box asks for it twice. Ten places in
-    the layout call it.
-  - A move of the mouse, and each press: 1. `hit` (`crates/gogo-ui/src/draw.rs`)
-    lists the page's nodes in paint order to walk them from the top.
-  - A touch that causes an event: 1. `Input::touch`, `key` and `wheel`
-    return the events in a new list.
-  - PROPOSED: the first two are inside gogo and change no public call. The
-    third is gogo's public shape ("events come out as values"), with about
-    125 call sites in gogo's and FanRust's tests: a design change, the
-    user's to decide. A shape that keeps `for event in input.touch(..)`:
-    `Input` keeps one list and returns it as a slice.
+  - MOVED 2026-11-22: FanRust's `docs/todo-storvald.md`, row SV14.
+  - Landed 2026-11-22: two of the three are gone. Laying a box out no
+    longer lists its children (`Lay::visible_children` is a walk), and
+    the hit test reads the paint order the placed tree keeps
+    (`PlacedTree::paint_order`, written once per `build`).
+    Measured 2026-11-22 on the user's PC, a release build, a page of about 600 nodes: a mouse move 7.2 to 3.2 microseconds; a step of a pan (touch and frame) 365 to about 345, inside the run-to-run spread. A mouse move and a pan frame now allocate nothing (`crates/turbodot/tests/allocations.rs`).
+    Remaining: a touch that causes an event returns a new list.
 - <span style='color:red'>TODO</span> AD33: USER CALL: `Ui` and `pages::HostedPage` both run a
-  page. `Ui` (2026-11-22, for the first screen) is one page with a text
-  engine of its own; `HostedPage` (FanRust's, moved the same day) is one
-  page of a `PageStack`, with the text engine and the pictures shared in
-  `UiAssets`. Two ways to do one thing cost every reader. PROPOSED: `Ui`
-  becomes the window's side of a `PageStack` (the assets, the stack, the
-  scale), an app's code gets the page it handles, and `run` shows the whole
-  stack. It changes `App`, so it waits for the user's word.
-- <span style='color:red'>TODO</span> AD34: USER CALL: an app draws under its pages. FanRust draws
-  its canvas with its own GPU passes before the pages, in the same frame;
-  `App` has no call for that. PROPOSED: one more call on `App`, with the
-  device, the queue and the frame's target, which `run` makes before it
-  draws the pages. Piece 4 of AD31 waits for it.
+  page.
+  - MOVED 2026-11-22: FanRust's `docs/todo-storvald.md`, rows SV1 and SV2. Decided
+    there: TurboDot owns navigation, and a client writes pages.
+- <span style='color:red'>TODO</span> AD34: USER CALL: an app draws under its pages.
+  - MOVED 2026-11-22: FanRust's `docs/todo-storvald.md`, row SV5.
 - <span style='color:red'>TODO</span> AD35: a TurboDot app's pages are compiled when the program
-  is built (`gogo_ui::build_pages`), so a mistake in a page stops the build,
-  and code names a node as a constant (`NAMES.skill_list`) where it now asks
-  by text (`ui.node("skillList")`): a wrong name then stops the build too.
-  FanRust builds its pages this way. PROPOSED: `Ui` takes a built page, and
-  Storvald gets a build script. AD29's last point is this one.
+  is built (`gogo_ui::build_pages`).
+  - MOVED 2026-11-22: FanRust's `docs/todo-storvald.md`, row SV8. Decided there:
+    yes, by one line in `build.rs`.
 
 ## Phase 6 — what a visitor reads
 

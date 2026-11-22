@@ -1255,16 +1255,6 @@ fn pivot_frac(page: &Page, res: &Resolved, id: NodeId) -> (f32, f32) {
     }
 }
 
-/// The nodes in PAINT order (parents before children, siblings by their
-/// raise): what `hit` scans backwards, so the touch lands on what the eye
-/// sees on top.
-fn paint_order(page: &Page, res: &Resolved, id: NodeId, out: &mut Vec<NodeId>) {
-    out.push(id);
-    for c in res.paint_children(page, id) {
-        paint_order(page, res, c, out);
-    }
-}
-
 /// The top-most node under (x, y) that takes input — walking the paint
 /// order backwards (last painted first), honoring `visibility` and Scroll
 /// clips. The D103 input model: input-taking KINDS answer by default,
@@ -1406,9 +1396,10 @@ fn hit_laid_at(page: &Page, res: &Resolved, rects: &[Rect], x: f32, y: f32, any:
     if page.nodes.is_empty() {
         return None;
     }
-    let mut order: Vec<NodeId> = Vec::with_capacity(page.nodes.len());
-    paint_order(page, res, NodeId::new(0), &mut order);
-    for id in order.into_iter().rev() {
+    // The paint order backwards, so the touch lands on what the eye
+    // sees on top. The placed tree keeps that order: nothing is walked
+    // or listed here.
+    for &id in res.tree.paint_order().iter().rev() {
         let i = id.index();
         let (px, py) = pts.and_then(|p| p.get(i).copied()).unwrap_or((x, y));
         if !rects[i].contains(px, py) {

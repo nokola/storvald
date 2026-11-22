@@ -35,6 +35,11 @@ pub struct PlacedTree {
     /// with the rest of a re-measured subtree), skipped by the walks
     /// that draw, hit and lay out.
     off: Vec<bool>,
+    /// Every shown node in paint order, parents before children: the
+    /// walk `paint_subtree` of the root gives, written down once per
+    /// `build`. A hit test reads it from the back at every move of the
+    /// mouse, so it neither walks the tree nor makes a list then.
+    paint_order: Vec<NodeId>,
     /// Scratch for the build: each parent's chain tail, then a done mark.
     last: Vec<NodeId>,
     /// Scratch for the paint sort under a parent with raised children.
@@ -65,6 +70,7 @@ impl Clone for PlacedTree {
         self.paint_first.clone_from(&from.paint_first);
         self.paint_next.clone_from(&from.paint_next);
         self.off.clone_from(&from.off);
+        self.paint_order.clone_from(&from.paint_order);
     }
 }
 
@@ -174,6 +180,19 @@ impl PlacedTree {
                 self.paint_next[prev.index()] = NO_NODE;
             }
         }
+        // The paint order, from the finished chains.
+        let mut order: Vec<NodeId> = std::mem::take(&mut self.paint_order);
+        order.clear();
+        if n > 0 {
+            order.extend(self.paint_subtree(NodeId::new(0)));
+        }
+        self.paint_order = order;
+    }
+
+    /// Every shown node in paint order, parents before children, siblings
+    /// by their raise: the node painted last is the last one.
+    pub fn paint_order(&self) -> &[NodeId] {
+        &self.paint_order
     }
 
     fn link(&mut self, p: NodeId, c: NodeId) {
@@ -390,5 +409,6 @@ mod tests {
         assert_eq!(res.tree.children(l).collect::<Vec<NodeId>>(), vec![a, b, c]);
         assert_eq!(res.tree.paint_children(l).collect::<Vec<NodeId>>(), vec![b, c, a]);
         assert_eq!(res.tree.paint_subtree(l).collect::<Vec<NodeId>>(), vec![l, b, c, a]);
+        assert_eq!(res.tree.paint_order(), [page.find("v").unwrap(), l, b, c, a], "the kept order is the root's paint walk");
     }
 }

@@ -50,17 +50,12 @@ fn allocations_of(work: impl FnOnce()) -> u64 {
 /// allocation in any of them repeats at every frame or every move of a
 /// finger: the user sees it as a stutter on a slow phone.
 ///
-/// Three things allocate inside gogo today, and the checks hold each at
-/// the count it has, so one more shows:
-/// - a move of the mouse, once: gogo finds the node under it
-///   (`gogo_ui::hit`) by listing the page's nodes in paint order;
-/// - a touch that causes an event, once: the event comes back in a new
-///   list (`gogo_ui::Input::touch`). A touch that causes none returns an
-///   empty list, which allocates nothing;
-/// - the frame after a step of a pan, twice: laying the scrolling box out
-///   again lists its children two times.
+/// One thing allocates inside gogo today, and the check holds it at the
+/// count it has, so one more shows: a touch that causes an event, once.
+/// The event comes back in a new list (`gogo_ui::Input::touch`). A touch
+/// that causes none returns an empty list, which allocates nothing.
 #[test]
-fn a_still_page_allocates_nothing_and_a_moving_one_no_more_than_gogo_does() {
+fn a_still_page_and_a_moving_one_allocate_nothing_and_an_event_costs_one() {
     let mut ui: Ui = Ui::new(PageSource::Text(PAGE), &[("Roboto Regular", font())]).expect("the page compiles");
     for _ in 0..3 {
         ui.frame(WIDTH, HEIGHT, FRAME_SECONDS);
@@ -75,7 +70,7 @@ fn a_still_page_allocates_nothing_and_a_moving_one_no_more_than_gogo_does() {
     ui.hover(on_button.x + 10.0, on_button.y + 10.0);
     ui.frame(WIDTH, HEIGHT, FRAME_SECONDS);
     ui.frame(WIDTH, HEIGHT, FRAME_SECONDS);
-    assert!(allocations_of(|| ui.hover(on_button.x + 20.0, on_button.y + 12.0)) <= 1, "the mouse moves on the node it is over");
+    assert_eq!(allocations_of(|| ui.hover(on_button.x + 20.0, on_button.y + 12.0)), 0, "the mouse moves on the node it is over");
     assert_eq!(allocations_of(|| { ui.frame(WIDTH, HEIGHT, FRAME_SECONDS); }), 0, "the frame after that move");
     ui.unhover();
 
@@ -91,7 +86,7 @@ fn a_still_page_allocates_nothing_and_a_moving_one_no_more_than_gogo_does() {
         let for_the_frame: u64 = allocations_of(|| { ui.frame(WIDTH, HEIGHT, FRAME_SECONDS); });
         assert!(events.is_empty(), "a pan causes no event: {events:?}");
         if step >= 2 {
-            assert!(for_the_touch == 0 && for_the_frame <= 2, "step {step} of the pan: {for_the_touch} for the touch, {for_the_frame} for the frame after it");
+            assert!(for_the_touch == 0 && for_the_frame == 0, "step {step} of the pan: {for_the_touch} for the touch, {for_the_frame} for the frame after it");
         }
     }
     assert!(ui.scroll_of(scroll)[1] > 0.0, "the pan moved the text");

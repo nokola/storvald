@@ -46,6 +46,7 @@ use crate::locale::Locale;
 use crate::page::*;
 use crate::frame::Frame;
 use crate::runtime::{ResolveChanges, Resolved};
+use crate::tree::Children;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Rect {
@@ -238,6 +239,41 @@ struct Memo {
     final_w: bool,
     w: f32,
     h: f32,
+}
+
+/// The walk `Lay::visible_children` returns.
+struct VisibleChildren<'a> {
+    page: &'a Page,
+    res: &'a Resolved,
+    /// The children as the file nests them.
+    written: Children<'a>,
+    /// The shown items of the `repeat` the walk is inside, if it is in one.
+    repeated: Option<Children<'a>>,
+}
+
+impl Iterator for VisibleChildren<'_> {
+    type Item = NodeId;
+
+    fn next(&mut self) -> Option<NodeId> {
+        loop {
+            if let Some(items) = &mut self.repeated {
+                for item in items.by_ref() {
+                    if !self.res.gone(self.page, item) {
+                        return Some(item);
+                    }
+                }
+                self.repeated = None;
+            }
+            let child: NodeId = self.written.next()?;
+            if self.res.gone(self.page, child) {
+                continue;
+            }
+            if self.page.nodes[child].kind != Kind::Repeat {
+                return Some(child);
+            }
+            self.repeated = Some(self.res.children(self.page, child));
+        }
+    }
 }
 
 struct Lay<'a> {
@@ -472,25 +508,19 @@ impl<'a> Lay<'a> {
     /// stands for its shown items (they take the parent's slots as if
     /// written there — a Column's `spacing` spaces them), so an empty
     /// repeat is nothing on screen: no slot, no spacing.
-    fn visible_children(&self, id: NodeId) -> Vec<NodeId> {
-        let mut out: Vec<NodeId> = Vec::new();
-        for c in self.res.children(self.page, id) {
-            if self.gone(c) {
-                continue;
-            }
-            if self.node(c).kind == Kind::Repeat {
-                out.extend(self.res.children(self.page, c).into_iter().filter(|g| !self.gone(*g)));
-            } else {
-                out.push(c);
-            }
-        }
-        out
+    ///
+    /// Returns a walk that holds the page and the look, not this `Lay`, so
+    /// the loop over it can place each child. It makes no list: a box is
+    /// laid out again at every step of a pan.
+    fn visible_children(&self, id: NodeId) -> VisibleChildren<'a> {
+        VisibleChildren { page: self.page, res: self.res, written: self.res.children(self.page, id), repeated: None }
     }
 
     /// The children that count toward `id`'s minimum: `overlay=true` boxes
     /// sit on the parent without sizing it (touch-slop plates, badges).
-    fn sizing_children(&self, id: NodeId) -> Vec<NodeId> {
-        self.visible_children(id).into_iter().filter(|c| !self.res.bool(self.page, *c, PropKey::Overlay).unwrap_or(false)).collect()
+    fn sizing_children(&self, id: NodeId) -> impl Iterator<Item = NodeId> + use<'a> {
+        let (page, res): (&'a Page, &'a Resolved) = (self.page, self.res);
+        self.visible_children(id).filter(move |c| !res.bool(page, *c, PropKey::Overlay).unwrap_or(false))
     }
 
     /// The node's margins with `safe` edges read from the host insets.
@@ -1053,7 +1083,7 @@ impl<'a> Lay<'a> {
     /// of what they need along its axis, the widest across.
     fn stack_min(&self, id: NodeId, axis: Axis, inner_w: Option<f32>) -> (f32, f32) {
         let spacing = self.spacing(id);
-        let children = self.sizing_children(id);
+        let children: Vec<NodeId> = self.sizing_children(id).collect();
         let (mut main, mut cross) = (0.0f32, 0.0f32);
         for (i, c) in children.iter().enumerate() {
             let node = self.node(*c);
@@ -1084,7 +1114,7 @@ impl<'a> Lay<'a> {
 
     fn flow_min(&self, id: NodeId, inner_w: Option<f32>) -> (f32, f32) {
         let spacing = self.spacing(id);
-        let children = self.visible_children(id);
+        let children: Vec<NodeId> = self.visible_children(id).collect();
         let sizes: Vec<(f32, f32)> = children.iter().map(|c| self.size_at(*c, None)).collect();
         let widest = sizes.iter().map(|s| s.0).fold(0.0, f32::max);
         match inner_w {
@@ -1285,7 +1315,7 @@ impl<'a> Lay<'a> {
 
     fn place_stack(&mut self, id: NodeId, inner: Rect, axis: Axis) {
         let spacing = self.spacing(id);
-        let children = self.visible_children(id);
+        let children: Vec<NodeId> = self.visible_children(id).collect();
         let extent = if axis == Axis::Y { inner.h } else { inner.w };
         let cross = if axis == Axis::Y { Some(inner.w) } else { None };
         // Each child's slot: (floor or fixed size, share weight).
@@ -1363,7 +1393,7 @@ impl<'a> Lay<'a> {
 
     fn place_flow(&mut self, id: NodeId, inner: Rect) {
         let spacing = self.spacing(id);
-        let children = self.visible_children(id);
+        let children: Vec<NodeId> = self.visible_children(id).collect();
         let sizes: Vec<(f32, f32)> = children.iter().map(|c| self.size_at(*c, None)).collect();
         if self.res.ident(self.page, id, PropKey::Orientation) == Some("vertical") {
             // `orientation=vertical` (GPAR97, WrapPanel's other axis):
@@ -1507,7 +1537,7 @@ impl<'a> Lay<'a> {
     fn tiles_min(&self, id: NodeId, inner_w: Option<f32>) -> (f32, f32) {
         // Minimum width is the widest cell's own minimum (FlowContainer's
         // rule); the height needs a granted width.
-        let widest = self.visible_children(id).iter().map(|c| self.size_at(*c, None).0).fold(0.0, f32::max);
+        let widest = self.visible_children(id).map(|c| self.size_at(c, None).0).fold(0.0, f32::max);
         match inner_w {
             None => (widest, 0.0),
             Some(w) => {
@@ -1715,7 +1745,7 @@ impl<'a> Lay<'a> {
     fn grid_measure(&self, id: NodeId, inner_w: Option<f32>) -> (Vec<Len>, Vec<f32>, Vec<NodeId>, Vec<Len>, Vec<f32>, Vec<GridCell>) {
         let spacing = self.spacing(id);
         let tracks = self.grid_tracks(id);
-        let rows = self.visible_children(id);
+        let rows: Vec<NodeId> = self.visible_children(id).collect();
         let row_len: Vec<Len> = rows.iter().map(|r| self.grid_row_len(id, *r)).collect();
         let cells = self.grid_cells(&rows, inner_w);
         let mut track_min = vec![0.0f32; tracks.len()];
