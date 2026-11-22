@@ -376,6 +376,10 @@ pub struct TexturePlacement {
     pub turn: Option<(f32, (f32, f32))>,
 }
 
+/// How far a plate's edge may sit inside page's edge and still count as
+/// covering it, in epx: less than a device pixel on any screen.
+const COVER_SLACK_EPX: f32 = 0.01;
+
 /// One gogo page: its state, its input and its last frame. It is laid out
 /// again only when a state, the window's size or the scale changed.
 pub struct HostedPage {
@@ -474,6 +478,22 @@ impl HostedPage {
     /// page's root counts.
     pub fn covers(&self, x: f32, y: f32) -> bool {
         self.is_shown() && self.kept.rects()[0].contains(x, y)
+    }
+
+    /// True when page's root paints an opaque plate over page's whole
+    /// rectangle: nothing under page shows through it.
+    ///
+    /// Reads last frame's first draw command: root's plate, when root has
+    /// `background=`. False before first frame, for root with rounded
+    /// corners, and for root that is turned or clipped.
+    pub fn covers_viewport(&self) -> bool {
+        let Some(Draw::Quad { rect, color, corner, .. }) = self.draws.first() else { return false };
+        if !self.kept.is_laid_out() || *corner != 0.0 || color.to_f32()[3] < 1.0 {
+            return false;
+        }
+        let ((width_px, height_px), epx, _) = self.laid_out_for;
+        let whole: Rect = self.viewport.unwrap_or(Rect::new(0.0, 0.0, width_px as f32 / epx, height_px as f32 / epx));
+        rect.x <= whole.x + COVER_SLACK_EPX && rect.y <= whole.y + COVER_SLACK_EPX && rect.x + rect.w >= whole.x + whole.w - COVER_SLACK_EPX && rect.y + rect.h >= whole.y + whole.h - COVER_SLACK_EPX
     }
 
     /// The node under (`x`, `y`) that takes input, if any.

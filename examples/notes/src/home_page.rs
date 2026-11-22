@@ -3,6 +3,7 @@
 use turbodot::prelude::*;
 
 use crate::AppState;
+use crate::clear_page::ClearPage;
 use crate::edit_page::EditPage;
 use crate::settings_page::SettingsPage;
 use crate::ui::home_page::{Handler, NAMES, PAGE};
@@ -32,6 +33,7 @@ impl Page<AppState> for HomePage {
         match event.handler {
             Handler::AddNote => host.nav.go(EditPage::new(host.app.notes.len())),
             Handler::OpenSettings => host.nav.go(SettingsPage::new(host.app.notes.len())),
+            Handler::ClearNotes => host.nav.go(ClearPage),
         }
     }
 }

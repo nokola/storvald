@@ -20,6 +20,17 @@ pub enum Back {
     Stay,
 }
 
+/// How much of the screen a page covers. Page says it with `const KIND`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PageKind {
+    /// Page covers whole screen. Once it slid in, pages under it are not
+    /// drawn.
+    Fullscreen,
+    /// Page lets page under it show: a dialog, a translucent sheet. Pages
+    /// under it stay drawn.
+    Overlay,
+}
+
 /// One thing user did on a page, under handler name from page's file.
 ///
 /// Needed so page code matches on its own `Handler` enum: handler with no
@@ -60,6 +71,12 @@ pub trait Page<A = ()>: Sized + 'static {
     const PAGE: &'static BuiltPage;
     /// Handler names of page's file: `ui::<file>::Handler`.
     type Handler: HandlerName + 'static;
+    /// `PageKind::Overlay` for page that lets page under it show.
+    ///
+    /// Needed because engine stops drawing pages under a fullscreen
+    /// page: under a see-through page that leaves a hole. Debug build
+    /// checks this line against page's picture (`Program::frame`).
+    const KIND: PageKind = PageKind::Fullscreen;
 
     /// Writes program's data into page: texts, rows, selection.
     ///
@@ -100,6 +117,8 @@ pub trait CachedPage<A = ()>: Sized + 'static {
     const PAGE: &'static BuiltPage;
     /// As `Page::Handler`.
     type Handler: HandlerName + 'static;
+    /// As `Page::KIND`.
+    const KIND: PageKind = PageKind::Fullscreen;
 
     /// As `Page::show`.
     fn show(&mut self, host: &mut Host<'_, A>);
@@ -137,6 +156,7 @@ pub(crate) trait PageObject<A> {
     fn page_type(&self) -> TypeId;
     /// True when page cached on back (`CachedPage`).
     fn is_cached_page(&self) -> bool;
+    fn kind(&self) -> PageKind;
     fn show(&mut self, host: &mut Host<'_, A>);
     /// Hands `event` to page under handler name from page's file. Event
     /// with no handler name is not for code.
@@ -168,6 +188,9 @@ impl<A: 'static, P: Page<A>> PageObject<A> for Plain<P> {
     }
     fn is_cached_page(&self) -> bool {
         false
+    }
+    fn kind(&self) -> PageKind {
+        P::KIND
     }
     fn show(&mut self, host: &mut Host<'_, A>) {
         self.0.show(host);
@@ -203,6 +226,9 @@ impl<A: 'static, P: CachedPage<A>> PageObject<A> for Cached<P> {
     }
     fn is_cached_page(&self) -> bool {
         true
+    }
+    fn kind(&self) -> PageKind {
+        P::KIND
     }
     fn show(&mut self, host: &mut Host<'_, A>) {
         self.0.show(host);

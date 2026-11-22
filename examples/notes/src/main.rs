@@ -5,9 +5,11 @@
 //! - `home_page`: the notes. Opens the other two pages.
 //! - `edit_page`: a new note. Asks once before back drops it.
 //! - `settings_page`: cached page. Later open shows same view.
+//! - `clear_page`: overlay page. Home page stays in view under it.
 //!
 //! Run it with `cargo run -p turbodot-example-notes`. Esc is back.
 
+mod clear_page;
 mod edit_page;
 mod home_page;
 mod settings_page;
@@ -29,14 +31,17 @@ turbodot::start!(AppState, HomePage);
 #[cfg(test)]
 mod tests {
     use turbodot::Program;
+    use turbodot::prelude::*;
     use turbodot::gogo::{Phase, Rect};
 
     use super::*;
+    use crate::clear_page::ClearPage;
     use crate::edit_page::EditPage;
     use crate::settings_page::SettingsPage;
-    use crate::ui::{edit_page, home_page, settings_page};
+    use crate::ui::{clear_page, edit_page, home_page, settings_page};
 
     const HOME: home_page::Names = home_page::NAMES;
+    const CLEAR: clear_page::Names = clear_page::NAMES;
     const EDIT: edit_page::Names = edit_page::NAMES;
     const SETTINGS: settings_page::Names = settings_page::NAMES;
 
@@ -198,6 +203,65 @@ mod tests {
         assert_eq!((program.cached_page_count(), program.drawn_page_count()), (0, 1));
     }
 
+    /// Home page stays drawn under an overlay page, also after overlay
+    /// slid in. Under a fullscreen page it does not (tests above).
+    #[test]
+    fn the_page_under_an_overlay_stays_drawn() {
+        let mut program: Program<AppState> = started(AppState { notes: vec!["Note 1".to_string()], is_memory_short: false });
+        program.tap(HOME.clear_notes, 1.0);
+        assert!(program.page::<ClearPage>().is_some());
+        let_the_slides_end(&mut program);
+        assert_eq!((program.depth(), program.drawn_page_count()), (2, 2), "home page shows under the overlay");
+
+        program.tap(CLEAR.keep_notes, 2.0);
+        let_the_slides_end(&mut program);
+        assert_eq!((program.depth(), program.drawn_page_count()), (1, 1));
+        assert_eq!(program.app().notes.len(), 1, "Keep drops nothing");
+
+        program.tap(HOME.clear_notes, 3.0);
+        let_the_slides_end(&mut program);
+        program.tap(CLEAR.clear_all, 4.0);
+        assert!(program.app().notes.is_empty());
+        assert_eq!(program.ui().rows(HOME.notes).len(), 0, "home page wrote its list again");
+    }
+
+    /// A fullscreen page over an overlay covers both pages under it,
+    /// and back shows the overlay with home page under it again.
+    #[test]
+    fn a_fullscreen_page_over_an_overlay_covers_what_is_under_it() {
+        let mut program: Program<AppState> = started(AppState::default());
+        program.tap(HOME.clear_notes, 1.0);
+        let_the_slides_end(&mut program);
+        program.go(EditPage::new(0));
+        assert_eq!(program.drawn_page_count(), 3, "all three show while the edit page slides in");
+        let_the_slides_end(&mut program);
+        assert_eq!((program.depth(), program.drawn_page_count()), (3, 1));
+
+        assert!(program.back(), "the unsaved note asks first");
+        assert!(program.back());
+        let_the_slides_end(&mut program);
+        assert_eq!((program.depth(), program.drawn_page_count()), (2, 2));
+    }
+
+    /// Page with a see-through root that says nothing of its kind (so:
+    /// fullscreen) stops a debug build with the reason.
+    #[test]
+    #[should_panic(expected = "page `clearPage` is `PageKind::Fullscreen`, but its root does not cover the window")]
+    fn a_see_through_page_that_says_fullscreen_stops_a_debug_build() {
+        /// `clear_page.gogo` with no `KIND` line.
+        struct NoKindPage;
+        impl Page<AppState> for NoKindPage {
+            const PAGE: &'static BuiltPage = &clear_page::PAGE;
+            type Handler = clear_page::Handler;
+            fn show(&mut self, _host: &mut Host<AppState>) {}
+            fn handle(&mut self, _host: &mut Host<AppState>, _event: PageEvent<clear_page::Handler>) {}
+        }
+        let mut program: Program<AppState> = started(AppState::default());
+        program.go(NoKindPage);
+        let_the_slides_end(&mut program);
+        frame(&mut program, 0.016);
+    }
+
     /// Touch before first frame lands on nothing, and outline is empty.
     #[test]
     fn a_touch_before_the_first_frame_does_nothing() {
@@ -243,5 +307,13 @@ mod tests {
         let info = reader.next_frame(&mut bytes).expect("the pixels");
         assert_eq!((info.width, info.height, info.color_type), (960, 1280, png::ColorType::Rgba));
         assert_eq!(&bytes[..info.buffer_size()], &picture.pixels.Bytes[..], "the file holds the picture's bytes");
+
+        // Overlay: home page's button still shows through its dark sheet,
+        // darker than before and not black.
+        program.tap(HOME.clear_notes, 1.0);
+        let_the_slides_end(&mut program);
+        let picture: turbodot::Picture = gpu.draw_program(&program).expect("the pages are drawn");
+        let seen: [u8; 4] = picture.at(((button.x + 3.0) * 2.0) as u32, ((button.y + button.h / 2.0) * 2.0) as u32);
+        assert!(seen[0] > 0 && seen[0] < PLATE[0] && seen[3] == 0xFF, "home page's button under the overlay's sheet: {seen:?}");
     }
 }

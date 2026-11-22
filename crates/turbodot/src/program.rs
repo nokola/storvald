@@ -9,7 +9,7 @@ use gogo_text::TextEngine;
 use gogo_ui::reload::{BuildTables, Reloader, Sources};
 use gogo_ui::{Draw, Event, Images, Key, MOUSE_ID, Mods, NodeId, Orientation, Phase, Rect, ScreenClass};
 
-use crate::page::{Back, Host, IntoPage, Nav, PageObject, Request};
+use crate::page::{Back, Host, IntoPage, Nav, PageKind, PageObject, Request};
 use crate::pages::{HostedPage, ImageTable, PageId, PagePlatform, PagePose, PageStack, UiAssets};
 
 /// Time an opened page takes to slide in.
@@ -105,6 +105,10 @@ pub struct Program<A = ()> {
     back_stack: Vec<PageId>,
     /// Cached pages: alive, not drawn, waiting for next open.
     cached: Vec<PageId>,
+    /// True once page's `KIND` was checked against its picture, by page's
+    /// id in `stack`.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
+    is_kind_checked: Vec<bool>,
     slides: Vec<Slide>,
     nav: Nav<A>,
     reload: Reloader,
@@ -152,7 +156,7 @@ impl<A: 'static> Program<A> {
         let fonts: Vec<(&str, Vec<u8>)> = built.fonts.iter().map(|(key, bytes)| (*key, bytes.to_vec())).collect();
         let assets: UiAssets = UiAssets::new(TextEngine::new(&fonts), ImageTable::from_keys(Images::default()));
         let platform: PagePlatform = PagePlatform::new([0.0; 4], Orientation::from_view(1.0, 1.0), ScreenClass::from_view(1.0, 1.0), None);
-        let mut program: Program<A> = Program { app, assets, platform, stack: PageStack::new(), objects: Vec::new(), back_stack: Vec::new(), cached: Vec::new(), slides: Vec::new(), nav: Nav::new(), reload, epx: 1.0, size: (0.0, 0.0), posed: RefCell::new(Vec::new()) };
+        let mut program: Program<A> = Program { app, assets, platform, stack: PageStack::new(), objects: Vec::new(), back_stack: Vec::new(), cached: Vec::new(), is_kind_checked: Vec::new(), slides: Vec::new(), nav: Nav::new(), reload, epx: 1.0, size: (0.0, 0.0), posed: RefCell::new(Vec::new()) };
         program.open(first.into_page_object().0);
         program.carry_out_requests();
         Ok(program)
@@ -281,6 +285,8 @@ impl<A: 'static> Program<A> {
         let is_sliding: bool = self.move_slides(dt);
         let size_px: (u32, u32) = (((width * self.epx).round() as u32).max(1), ((height * self.epx).round() as u32).max(1));
         let is_moving: bool = self.stack.frame(dt, size_px, self.epx, &self.platform, &self.assets);
+        #[cfg(debug_assertions)]
+        self.check_page_kinds();
         is_sliding | is_moving
     }
 
@@ -340,6 +346,15 @@ impl<A: 'static> Program<A> {
         let top: PageId = self.top();
         let events: Vec<Event> = self.stack.get_mut(top).wheel(x, y, notches);
         self.hand_events(top, &events);
+    }
+
+    /// Opens `page` over page on screen, as `Nav::go` from a page does.
+    ///
+    /// Needed for what opens a page from outside a page: a host that got
+    /// a file to show, a test.
+    pub fn go<P: IntoPage<A, Kind>, Kind>(&mut self, page: P) {
+        self.open(page.into_page_object().0);
+        self.carry_out_requests();
     }
 
     /// Back request: Android back key, Esc on PC, a swipe. Page on screen
@@ -405,8 +420,10 @@ impl<A: 'static> Program<A> {
         let id: PageId = self.stack.add(hosted);
         if self.objects.len() <= id.index() {
             self.objects.resize_with(id.index() + 1, || None);
+            self.is_kind_checked.resize(id.index() + 1, false);
         }
         self.objects[id.index()] = Some(page);
+        self.is_kind_checked[id.index()] = false;
         self.call(id, |page, host| page.loaded(host));
         id
     }
@@ -439,11 +456,11 @@ impl<A: 'static> Program<A> {
         };
         let has_page_under: bool = !self.back_stack.is_empty();
         self.back_stack.push(id);
-        self.stack.order_top(id);
         self.stack.get_mut(id).pose = None;
         if has_page_under {
             self.slide(id, SlideKind::Open);
         }
+        self.order_drawn_pages();
         self.call(id, |page, host| page.show(host));
     }
 
@@ -477,9 +494,9 @@ impl<A: 'static> Program<A> {
         }
         let leaving: PageId = self.back_stack.pop().expect("two pages");
         let revealed: PageId = self.top();
-        self.stack.order_below(revealed, leaving);
         self.slide(revealed, SlideKind::Reveal);
         self.slide(leaving, SlideKind::Leave);
+        self.order_drawn_pages();
         self.call(revealed, |page, host| page.show(host));
         true
     }
@@ -501,21 +518,14 @@ impl<A: 'static> Program<A> {
             let slide: Slide = self.slides[i];
             self.stack.get_mut(slide.page).pose = if slide.has_ended() { None } else { Some(slide.pose()) };
         }
+        if !self.slides.iter().any(Slide::has_ended) {
+            return !self.slides.is_empty();
+        }
         let ended: Vec<Slide> = self.slides.iter().copied().filter(Slide::has_ended).collect();
         self.slides.retain(|slide| !slide.has_ended());
         for slide in ended {
             match slide.kind {
-                // Opened page covers the screen now: pages under it are
-                // drawn no more, until back shows one again.
-                SlideKind::Open => {
-                    if self.back_stack.last() == Some(&slide.page) {
-                        for i in 0..self.back_stack.len() - 1 {
-                            let under: PageId = self.back_stack[i];
-                            self.stack.order_remove(under);
-                        }
-                    }
-                }
-                SlideKind::Reveal => {}
+                SlideKind::Open | SlideKind::Reveal => {}
                 SlideKind::Leave => {
                     let is_cached_page: bool = self.objects[slide.page.index()].as_ref().is_some_and(|object| object.is_cached_page());
                     if is_cached_page && self.nav.is_page_cache_enabled {
@@ -527,7 +537,69 @@ impl<A: 'static> Program<A> {
                 }
             }
         }
+        // A fullscreen page in place now covers what is under it.
+        self.order_drawn_pages();
         !self.slides.is_empty()
+    }
+
+    /// True when page `id` hides everything under it: fullscreen page, in
+    /// place. A page still sliding in fades in, so what is under it shows.
+    fn covers_screen(&self, id: PageId) -> bool {
+        let is_fullscreen: bool = self.objects[id.index()].as_ref().is_some_and(|object| object.kind() == PageKind::Fullscreen);
+        is_fullscreen && !self.slides.iter().any(|slide| slide.page == id)
+    }
+
+    /// Puts into draw order what shows: back stack pages from topmost
+    /// covering page up, then pages on their way out.
+    ///
+    /// Needed so a page under a fullscreen page costs no drawing, and a
+    /// page under an overlay keeps showing.
+    fn order_drawn_pages(&mut self) {
+        let lowest_drawn: usize = (0..self.back_stack.len()).rev().find(|i| self.covers_screen(self.back_stack[*i])).unwrap_or(0);
+        for i in 0..self.back_stack.len() {
+            let id: PageId = self.back_stack[i];
+            if i < lowest_drawn {
+                self.stack.order_remove(id);
+            } else {
+                self.stack.order_top(id);
+            }
+        }
+        for i in 0..self.slides.len() {
+            if self.slides[i].kind == SlideKind::Leave {
+                let leaving: PageId = self.slides[i].page;
+                self.stack.order_top(leaving);
+            }
+        }
+    }
+
+    /// Debug build: compares `KIND` of each page that has a page under it
+    /// with its picture, once, at its first still frame.
+    ///
+    /// Needed because a wrong `KIND` shows late or never: fullscreen page
+    /// with see-through root leaves a hole where page under it was, and
+    /// overlay with opaque root makes engine draw a page nobody sees.
+    ///
+    /// WARNING: panics for fullscreen page whose root does not cover the
+    /// window. First page is not checked: nothing is under it.
+    #[cfg(debug_assertions)]
+    fn check_page_kinds(&mut self) {
+        for i in 1..self.back_stack.len() {
+            let id: PageId = self.back_stack[i];
+            let page: &HostedPage = self.stack.get(id);
+            let is_still: bool = page.kept.is_laid_out() && page.pose.is_none() && !page.runtime.is_moving();
+            if self.is_kind_checked[id.index()] || !is_still {
+                continue;
+            }
+            self.is_kind_checked[id.index()] = true;
+            let Some(kind) = self.objects[id.index()].as_ref().map(|object| object.kind()) else { continue };
+            let root = &page.page.nodes[0];
+            let name: &str = if root.name == gogo_ui::NO_STR { "(no name)" } else { page.page.str(root.name) };
+            match (kind, page.covers_viewport()) {
+                (PageKind::Fullscreen, false) => panic!("page `{name}` is `PageKind::Fullscreen`, but its root does not cover the window with an opaque `background=`: the page under it is not drawn, so a hole shows. Give the root an opaque background, or write `const KIND: PageKind = PageKind::Overlay;` in the page"),
+                (PageKind::Overlay, true) => eprintln!("page `{name}` is `PageKind::Overlay`, but its root covers the window with an opaque background: the page under it is drawn and never seen. Take `const KIND` out of the page"),
+                _ => {}
+            }
+        }
     }
 }
 

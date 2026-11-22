@@ -86,6 +86,26 @@ fn the_outline_gives_each_node_its_kind_its_name_and_its_rectangle() {
     assert_eq!((wide.x, wide.y, wide.w, wide.h), (0.0, 0.0, 300.0, 200.0));
 }
 
+/// Page covers its viewport when root paints an opaque plate with square
+/// corners over all of it, and from first frame on.
+#[test]
+fn a_page_covers_its_viewport_when_its_root_is_an_opaque_plate() {
+    let assets: UiAssets = assets();
+    let mut stack: PageStack = PageStack::new();
+    let opaque: PageId = stack.add(HostedPage::new(page(BOTTOM)));
+    let no_background: PageId = stack.add(HostedPage::new(page(TOP)));
+    let see_through: PageId = stack.add(HostedPage::new(page("View sheet background=black/0.6")));
+    let rounded: PageId = stack.add(HostedPage::new(page("View card background=#101010, corner_radius=12")));
+    let small: PageId = stack.add(HostedPage::new(page("View box background=#101010, width=200, height=100")));
+    assert!(!stack.get(opaque).covers_viewport(), "no frame yet");
+    stack.frame(0.0, SIZE, EPX, &platform(), &assets);
+    assert!(stack.get(opaque).covers_viewport());
+    assert!(!stack.get(no_background).covers_viewport());
+    assert!(!stack.get(see_through).covers_viewport());
+    assert!(!stack.get(rounded).covers_viewport());
+    assert!(!stack.get(small).covers_viewport());
+}
+
 /// A press where both pages have a button goes to the page on top. A
 /// press where only the page below has one goes through the page on top
 /// to it. A press where neither has one goes to no page.

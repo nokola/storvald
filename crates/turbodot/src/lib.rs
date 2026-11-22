@@ -32,6 +32,8 @@
 //! - [`Page`] and [`CachedPage`]: what a client writes per page. [`Host`]
 //!   is what a page gets with every call: `host.app` (program-wide state),
 //!   `host.ui` (the page's nodes), `host.nav` (open a page, ask for back).
+//!   A page that lets the page under it show, such as a dialog, says
+//!   `const KIND: PageKind = PageKind::Overlay;`.
 //! - [`Program`] runs the pages with no window and no GPU: a touch goes in
 //!   as numbers, and what the pages show is read back. A test and an AI
 //!   agent drive a program exactly as a user would.
@@ -75,7 +77,7 @@ pub use gogo_ui as gogo;
 #[cfg(feature = "gpu")]
 pub use gpu::{Buf_Straight_Srgb_4xU8_RGBA, Gpu, Picture};
 #[cfg(feature = "ui")]
-pub use page::{AsCachedPage, AsPage, Back, BuiltPage, CachedPage, Host, IntoPage, Nav, Page, PageBox, PageEvent};
+pub use page::{AsCachedPage, AsPage, Back, BuiltPage, CachedPage, Host, IntoPage, Nav, Page, PageBox, PageEvent, PageKind};
 #[cfg(feature = "ui")]
 pub use program::{Built, Program};
 #[cfg(feature = "window")]
@@ -87,7 +89,7 @@ pub use window::WindowOptions;
 #[cfg(feature = "ui")]
 pub mod prelude {
     pub use crate::pages::HostedPage;
-    pub use crate::{Back, BuiltPage, CachedPage, Host, Page, PageEvent};
+    pub use crate::{Back, BuiltPage, CachedPage, Host, Page, PageEvent, PageKind};
     pub use gogo_ui::runtime::{Item, ItemKey, ItemValue};
     pub use gogo_ui::{EventKind, NodeId};
 }
