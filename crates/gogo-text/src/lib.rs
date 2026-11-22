@@ -674,8 +674,12 @@ impl TextEngine {
         for run in buffer.layout_runs() {
             // The ink of the line: from its first letter to its last, so
             // the space a line ends on does not widen the word.
-            let from: f32 = run.glyphs.iter().filter(|g| !text[g.start..g.end].trim().is_empty()).map(|g| g.x).fold(f32::MAX, f32::min);
-            let to: f32 = run.glyphs.iter().filter(|g| !text[g.start..g.end].trim().is_empty()).map(|g| g.x + g.w).fold(0.0, f32::max);
+            //
+            // WARNING: a glyph's `start..end` are bytes of ITS line
+            // (`run.text`), not of `text`: they agree only on a text's
+            // first line.
+            let from: f32 = run.glyphs.iter().filter(|g| !run.text[g.start..g.end].trim().is_empty()).map(|g| g.x).fold(f32::MAX, f32::min);
+            let to: f32 = run.glyphs.iter().filter(|g| !run.text[g.start..g.end].trim().is_empty()).map(|g| g.x + g.w).fold(0.0, f32::max);
             if to > from {
                 w = w.max(to - from);
             }

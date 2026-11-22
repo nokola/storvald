@@ -1,0 +1,43 @@
+// The first screen of Storvald: the system skills this program carries
+// on the left, the one that is picked on the right.
+$back = #17181C
+$side = #1F2127
+$ink = #E8E8EC
+$dim = #9A9CA8
+$rule = #2C2F38
+$hover = #272A33
+$pick = #2F4C7A
+
+style SkillRow padding=10, corner_radius=6 {
+    when hovered background=$hover
+    when selected background=$pick
+}
+
+View skillsPage background=$back {
+    Row width=fill, height=fill {
+        Panel side width=260, height=fill, background=$side, padding=12 {
+            Column spacing=10, width=fill, height=fill {
+                Label sideTitle text="System skills", font_size=13, font_color=$dim
+                List skillList select=one, spacing=2, width=fill, height=fill {
+                    empty { Label text="No skills", font_color=$dim }
+                    repeat skills as $skill by $skill.name {
+                        ListItem .SkillRow {
+                            Label text=$skill.name, font_size=15, font_color=$ink
+                        }
+                    }
+                }
+                Label carried text="", font_size=12, font_color=$dim
+            }
+        }
+        Panel main width=fill, height=fill, padding=24 {
+            Column spacing=12, width=fill, height=fill {
+                Label skillName text="", font_size=26, font_color=$ink
+                Label skillAbout text="", wrap=true, width=fill, font_size=14, font_color=$dim
+                Rectangle rule color=$rule, width=fill, height=1
+                Scroll skillScroll width=fill, height=fill {
+                    Label skillText text="", wrap=true, width=fill, font_size=14, font_color=$ink
+                }
+            }
+        }
+    }
+}

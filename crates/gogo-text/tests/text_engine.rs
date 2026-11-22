@@ -396,6 +396,25 @@ fn the_narrowest_a_text_folds_to_is_its_longest_word() {
     assert_eq!(twice.narrowest_wrap(text, 15.0, None), twice.measure("wonderful", 15.0, None, None).0);
 }
 
+/// A text of several lines folds to its longest word, whichever line the
+/// word is on.
+///
+/// Needed because a letter's byte positions count from the start of its
+/// OWN line. Read against the whole text, the letters of a second line
+/// are taken for the letters of the first: a letter under a space counts
+/// as a space, and a position inside a character of several bytes ("—")
+/// stops the program.
+#[test]
+fn a_second_line_folds_to_its_own_longest_word() {
+    let engine: RefCell<TextEngine> = RefCell::new(engine());
+    let measure = EpxMeasure { engine: &engine, epx: 1.0, font: None, images: &[] };
+    let (word, _) = measure.measure("wonderful", 15.0, None, None);
+    // The first line has spaces where the second has its word.
+    assert_eq!(measure.narrowest_wrap("x         \nwonderful", 15.0, None), word, "a word under a line of spaces");
+    // The first line's dashes are three bytes each.
+    assert_eq!(measure.narrowest_wrap("—— ——\nab wonderful", 15.0, None), word, "a word under a line of long dashes");
+}
+
 /// A wrapping label that fills what is left of a Row too narrow for it
 /// keeps its longest word whole. Red when the label's smallest width
 /// comes from a measure at a wrap width of 0: with Roboto that is one

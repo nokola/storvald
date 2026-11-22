@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  Tells Windows to give `storvald.exe` no console of its own.
+
+  Needed because `storvald` is a console program, so that a terminal waits
+  for it and reads its exit code. Windows opens a console window for a
+  console program that is started with none, as a double click does, and
+  that window would sit beside the app's own.
+
+  With `detached`, a start from a terminal still uses that terminal, and a
+  double click opens the app's window alone. Windows 11 24H2 (build 26100)
+  and later read the line; an older Windows opens the console as before.
+  `build.rs` puts this file into the program.
+-->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <application>
+    <windowsSettings>
+      <consoleAllocationPolicy xmlns="http://schemas.microsoft.com/SMI/2024/WindowsSettings">detached</consoleAllocationPolicy>
+    </windowsSettings>
+  </application>
+</assembly>
