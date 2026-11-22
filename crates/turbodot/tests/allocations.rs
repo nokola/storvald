@@ -8,6 +8,9 @@
 //! from `assets/Fonts` at the top of the repository, which a package does
 //! not carry.
 
+// Built with no feature (a build script's use), TurboDot has no pages to test.
+#![cfg(feature = "ui")]
+
 use gogo_ui::{Event, NodeId, Phase, Rect};
 use turbodot::alloc_count::{self, CountingAlloc};
 use turbodot::{PageSource, Ui};

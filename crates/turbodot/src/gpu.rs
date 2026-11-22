@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use gogo_wgpu::{Tex_Tile_Premul_Srgb_4xU8_RGBA, UiRenderer};
 
+use crate::program::Program;
 use crate::ui::Ui;
 
 /// 8-bit sRGB pixels: straight alpha, 4 bytes per pixel, RGBA, row by row
@@ -113,20 +114,74 @@ impl Gpu {
         // sRGB-encoded values.
         let mut renderer: UiRenderer = UiRenderer::new(&self.device, wgpu::TextureFormat::Rgba8Unorm);
         let tile: Tex_Tile_Premul_Srgb_4xU8_RGBA = renderer.render_to_texture(&self.device, &self.queue, &ui.draws, &ui.page, &mut ui.text.borrow_mut(), None, epx, (0.0, 0.0), size);
-        let mut bytes: Vec<u8> = self.read_back(&tile)?;
+        let mut bytes: Vec<u8> = self.read_back(&tile.RGBA, tile.width(), tile.height())?;
         straight_from_premul(&mut bytes);
         Ok(Picture { width: size.0, height: size.1, pixels: Buf_Straight_Srgb_4xU8_RGBA { Bytes: bytes.into_boxed_slice() } })
     }
 
-    /// The tile's bytes, row by row, still multiplied by alpha.
-    fn read_back(&self, tile: &Tex_Tile_Premul_Srgb_4xU8_RGBA) -> Result<Vec<u8>, String> {
-        let (w, h): (u32, u32) = (tile.width(), tile.height());
+    /// Draws the pages of `program` as its last frame laid them out, to
+    /// a picture: every page that shows, bottom first, a sliding page
+    /// where it is.
+    ///
+    /// The same renderer and shader a window uses draw it, so the picture
+    /// is what a user would see. Where no page paints, the picture is
+    /// transparent.
+    ///
+    /// WARNING: builds a renderer on every call, about 70 ms on Direct3D 12
+    /// (it compiles the shader each time). Fine for a test, too slow for a
+    /// picture per frame.
+    ///
+    /// Returns why the GPU did not hand the pixels back, or that
+    /// `program` has had no frame yet.
+    pub fn draw_program<A: 'static>(&self, program: &Program<A>) -> Result<Picture, String> {
+        if program.size() == (0.0, 0.0) {
+            return Err("the program has had no frame yet: call `Program::frame` first".to_string());
+        }
+        let epx: f32 = program.epx();
+        let size: (u32, u32) = (((program.size().0 * epx).round() as u32).max(1), ((program.size().1 * epx).round() as u32).max(1));
+        // A format that stores colors as written: the renderer writes
+        // sRGB-encoded values.
+        let format: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+        let mut renderer: UiRenderer = UiRenderer::new(&self.device, format);
+        renderer.prepare_pages(&self.device, &self.queue, program, epx, size, &mut program.assets.text.borrow_mut(), None);
+        let texture: wgpu::Texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("a program's picture"),
+            size: wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&Default::default());
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("a program's picture"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: &view, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store } })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            renderer.render(&mut pass);
+        }
+        self.queue.submit([encoder.finish()]);
+        let mut bytes: Vec<u8> = self.read_back(&texture, size.0, size.1)?;
+        straight_from_premul(&mut bytes);
+        Ok(Picture { width: size.0, height: size.1, pixels: Buf_Straight_Srgb_4xU8_RGBA { Bytes: bytes.into_boxed_slice() } })
+    }
+
+    /// The bytes of a texture of `w` x `h` pixels, row by row, still
+    /// multiplied by alpha.
+    fn read_back(&self, texture: &wgpu::Texture, w: u32, h: u32) -> Result<Vec<u8>, String> {
         // The GPU copies rows at a fixed byte step, wider than the row.
         let padded: u32 = (w * 4).div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT) * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
         let buffer = self.device.create_buffer(&wgpu::BufferDescriptor { label: Some("a page's picture"), size: (padded * h) as u64, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
         let mut encoder = self.device.create_command_encoder(&Default::default());
         encoder.copy_texture_to_buffer(
-            wgpu::TexelCopyTextureInfo { texture: &tile.RGBA, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            wgpu::TexelCopyTextureInfo { texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
             wgpu::TexelCopyBufferInfo { buffer: &buffer, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(padded), rows_per_image: Some(h) } },
             wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
         );

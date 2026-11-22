@@ -1,12 +1,6 @@
-// The first screen of Storvald: the system skills this program carries
-// on the left, the one that is picked on the right.
-$back = #17181C
-$side = #1F2127
-$ink = #E8E8EC
-$dim = #9A9CA8
-$rule = #2C2F38
-$hover = #272A33
-$pick = #2F4C7A
+// The first page of Storvald: the system skills this program carries on
+// the left, the one that is picked on the right.
+uses "look.gogo"
 
 style SkillRow padding=10, corner_radius=6 {
     when hovered background=$hover
@@ -18,7 +12,7 @@ View skillsPage background=$back {
         Panel side width=260, height=fill, background=$side, padding=12 {
             Column spacing=10, width=fill, height=fill {
                 Label sideTitle text="System skills", font_size=13, font_color=$dim
-                List skillList select=one, spacing=2, width=fill, height=fill {
+                List skillList select=one, spacing=2, width=fill, height=fill, on:change=PickSkill {
                     empty { Label text="No skills", font_color=$dim }
                     repeat skills as $skill by $skill.name {
                         ListItem .SkillRow {
@@ -27,6 +21,7 @@ View skillsPage background=$back {
                     }
                 }
                 Label carried text="", font_size=12, font_color=$dim
+                Button aboutButton .QuietButton text="About", on:activate=OpenAbout
             }
         }
         Panel main width=fill, height=fill, padding=24 {

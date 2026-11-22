@@ -17,7 +17,7 @@ use crate::ui::Ui;
 
 /// How many device pixels of a touchpad's scroll count as one notch of a
 /// mouse wheel, at one device pixel per epx.
-const TOUCHPAD_PIXELS_PER_NOTCH: f32 = 48.0;
+pub(crate) const TOUCHPAD_PIXELS_PER_NOTCH: f32 = 48.0;
 
 /// What `run` needs to know to open a window.
 pub struct WindowOptions<'a> {
@@ -46,20 +46,20 @@ fn backends_to_try(named: Option<wgpu::Backends>, is_windows: bool) -> Vec<Optio
 }
 
 /// A window and the GPU objects that draw into it.
-struct Gfx {
-    window: Arc<Window>,
-    surface: wgpu::Surface<'static>,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
-    renderer: UiRenderer,
+pub(crate) struct Gfx {
+    pub(crate) window: Arc<Window>,
+    pub(crate) surface: wgpu::Surface<'static>,
+    pub(crate) device: wgpu::Device,
+    pub(crate) queue: wgpu::Queue,
+    pub(crate) config: wgpu::SurfaceConfiguration,
+    pub(crate) renderer: UiRenderer,
 }
 
 impl Gfx {
     /// Brings up a device that can draw into `window`.
     ///
     /// Returns why the last start that was tried gave no device.
-    fn new(window: Arc<Window>) -> Result<Gfx, String> {
+    pub(crate) fn new(window: Arc<Window>) -> Result<Gfx, String> {
         let tries: Vec<Option<wgpu::Backends>> = backends_to_try(wgpu::Backends::from_env(), cfg!(windows));
         let mut why: String = String::new();
         for (i, backends) in tries.iter().enumerate() {
@@ -214,7 +214,7 @@ impl<A: App> Host<'_, A> {
 }
 
 /// The gogo key a key of the keyboard means, if gogo has one for it.
-fn key_from_winit(key: &WinitKey, is_shift_held: bool) -> Option<Key> {
+pub(crate) fn key_from_winit(key: &WinitKey, is_shift_held: bool) -> Option<Key> {
     match key {
         WinitKey::Named(NamedKey::ArrowUp) => Some(Key::Up),
         WinitKey::Named(NamedKey::ArrowDown) => Some(Key::Down),

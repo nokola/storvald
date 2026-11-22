@@ -409,7 +409,7 @@ fn repeat_templates(page: &Page) -> Vec<(NodeId, String)> {
 pub fn emit_rust(page: &Page, module: &str) -> Result<String, String> {
     let mut out = String::new();
     out.push_str(&format!("#[allow(unused_imports, clippy::all)]\npub mod {module} {{\n"));
-    out.push_str("    use gogo_ui::page::*;\n    use gogo_ui::page::{Kind::*, Len::*, Align::*, PropKey::*, Value::*, State::*, Action::*, Auto::*, Payload::*};\n\n");
+    out.push_str("    use super::gogo_ui;\n    use gogo_ui::page::*;\n    use gogo_ui::page::{Kind::*, Len::*, Align::*, PropKey::*, Value::*, State::*, Action::*, Auto::*, Payload::*};\n\n");
     emit_arrangements(page, &mut out);
     emit_theme(page, &mut out);
     emit_anims(page, &mut out).map_err(|e| format!("{module}: {e}"))?;
@@ -453,6 +453,7 @@ pub fn emit_rust(page: &Page, module: &str) -> Result<String, String> {
         out.push_str(&format!("                {n:?} => Some(Handler::{}),\n", pascal_case(n)));
     }
     out.push_str("                _ => None,\n            }\n        }\n    }\n\n");
+    out.push_str("    impl gogo_ui::HandlerName for Handler {\n        fn from_name(name: &str) -> Option<Handler> {\n            Handler::from_name(name)\n        }\n    }\n\n");
 
     // Names struct: plain nodes by id; a widget instance as its
     // `<Widget>Names` (root + body), nested for a widget inside a widget.
@@ -633,7 +634,7 @@ pub fn emit_build(pages: &[BuiltPageRow], atlases: &[AtlasDecl], code_controls: 
 /// from a table), and a typed constant is found by grep and checked by
 /// the compiler, where a string lookup would fail at run time.
 pub fn emit_atlases(atlases: &[AtlasDecl]) -> Result<String, String> {
-    let mut out = String::from("/// The build's atlases (`atlas` lines), named as the `.gogo` files name them.\n#[allow(dead_code, unused_imports)]\npub mod atlas {\n    use gogo_ui::ImageKey;\n\n");
+    let mut out = String::from("/// The build's atlases (`atlas` lines), named as the `.gogo` files name them.\n#[allow(dead_code, unused_imports)]\npub mod atlas {\n    use super::gogo_ui;\n    use gogo_ui::ImageKey;\n\n");
     let mut taken: Vec<(String, &str)> = Vec::new();
     let key = |k: &ImageKey| format!("ImageKey::new({})", k.index());
     for a in atlases {
@@ -656,7 +657,7 @@ pub fn emit_atlases(atlases: &[AtlasDecl]) -> Result<String, String> {
                 out.push_str(&format!("    pub const {rust_name}: ImageKey = {};\n\n", key(k)));
             }
             AtlasShape::Named(list) => {
-                out.push_str(&format!("    /// `atlas {}`{from}: `{}.<slice>` in a `.gogo` file.\n    pub mod {rust_name} {{\n        use gogo_ui::ImageKey;\n", a.name, a.name));
+                out.push_str(&format!("    /// `atlas {}`{from}: `{}.<slice>` in a `.gogo` file.\n    pub mod {rust_name} {{\n        use super::gogo_ui;\n        use gogo_ui::ImageKey;\n", a.name, a.name));
                 let mut consts: Vec<String> = Vec::new();
                 for (sname, k) in list {
                     let c = snake_case(sname).to_ascii_uppercase();

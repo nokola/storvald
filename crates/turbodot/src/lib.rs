@@ -1,51 +1,103 @@
 //! TurboDot: an app and game engine built for AI agents.
 //!
-//! TurboDot is in development (<https://github.com/nokola/storvald>). This
-//! version runs one gogo page three ways, with the same app code in each:
+//! TurboDot is in development (<https://github.com/nokola/storvald>).
 //!
-//! - [`Ui`] holds a page with its state and its text engine. A touch goes
-//!   in as numbers and events come out as values, with no window and no
-//!   GPU, so a test or an AI agent drives a page exactly as a user would.
-//!   [`Ui::outline`] prints where every node sits, to check a layout by
-//!   numbers.
-//! - [`Gpu`] is a device with no window. [`Gpu::draw`] draws a `Ui` to a
-//!   [`Picture`] with the renderer a window uses, to check pixels or to
-//!   save a PNG and look at it.
-//! - [`run`] shows a `Ui` in a window and runs an [`App`] on it.
-//! - [`pages`] holds several pages in one window: a [`pages::PageStack`]
-//!   lays them out and draws them in one order, and gives a touch to the
-//!   topmost page that takes it.
+//! A program on TurboDot is pages. Each page is a `.gogo` file and a
+//! struct, and the engine does the rest: the window, the back stack, the
+//! slides between pages.
+//!
+//! ```text
+//! // build.rs: compiles every page in ui/ when the program is built
+//! fn main() { turbodot::build::pages("ui"); }
+//!
+//! // main.rs
+//! turbodot::built_pages!();               // the module `ui`
+//! turbodot::start!(AppState, HomePage);   // `main`, on every OS
+//!
+//! // home_page.rs; its picture is ui/home_page.gogo
+//! impl Page<AppState> for HomePage {
+//!     const PAGE: &'static BuiltPage = &PAGE;
+//!     type Handler = Handler;
+//!     fn show(&mut self, host: &mut Host<AppState>) { .. }
+//!     fn handle(&mut self, host: &mut Host<AppState>, event: PageEvent<Handler>) {
+//!         match event.handler {
+//!             Handler::AddNote => host.nav.go(EditPage::new(host.app.notes.len())),
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! `examples/notes` in the repository is a whole program in this shape.
+//!
+//! - [`Page`] and [`CachedPage`]: what a client writes per page. [`Host`]
+//!   is what a page gets with every call: `host.app` (program-wide state),
+//!   `host.ui` (the page's nodes), `host.nav` (open a page, ask for back).
+//! - [`Program`] runs the pages with no window and no GPU: a touch goes in
+//!   as numbers, and what the pages show is read back. A test and an AI
+//!   agent drive a program exactly as a user would.
+//! - [`start()`] shows a `Program` in a window. Esc is the back request.
+//! - [`Gpu`] is a device with no window. [`Gpu::draw_program`] draws a
+//!   program's pages to a [`Picture`] with the renderer a window uses, to
+//!   check pixels or to save a PNG and look at it.
+//! - [`build`] holds what a client's `build.rs` calls.
 //! - [`alloc_count`] counts heap allocations, for a test that says "this
 //!   frame allocates nothing".
 //!
-//! An app says what it writes into its page (`App::show`) and what the
-//! page's events mean (`App::handle`):
+//! Older, and still here: [`Ui`] holds one page with a text engine of its
+//! own, [`run`] shows a `Ui` in a window with an [`App`], and [`pages`]
+//! holds the page stack a `Program` is built on.
 //!
-//! ```text
-//! let ui = Ui::new(PageSource::Text(PAGE), &[("Roboto", font_bytes)])?;
-//! turbodot::run(WindowOptions { title: "Hello", width: 420.0, height: 640.0 }, ui, Hello::default())?;
-//! ```
-//!
-//! With the cargo feature `hot-reload`, a page that comes from a file
-//! (`PageSource::File`) follows that file while the program runs.
-//!
-//! A crate that holds an app's own code takes `turbodot` with
-//! `default-features = false`. It then gets `Ui` and `App` alone, and
-//! builds no window and no GPU crate. The cargo feature `gpu` adds `Gpu`,
-//! and `window`, which is on by default, adds `run`.
+//! Cargo features: `window` (the default) adds `start`; `gpu` adds `Gpu`;
+//! `ui` is `Program` and the pages alone, with no window and no GPU crate.
+//! A build script takes `turbodot` with `default-features = false`, which
+//! builds gogo's language and nothing else. With `hot-reload`, the pages
+//! of a debug build follow their `.gogo` files while the program runs.
 
 pub mod alloc_count;
+#[cfg(feature = "ui")]
 mod app;
+pub mod build;
 #[cfg(feature = "gpu")]
 mod gpu;
+#[cfg(feature = "ui")]
+mod page;
+#[cfg(feature = "ui")]
+mod page_ui;
+#[cfg(feature = "ui")]
 pub mod pages;
+#[cfg(feature = "ui")]
+mod program;
+#[cfg(feature = "window")]
+mod start;
+#[cfg(feature = "ui")]
 mod ui;
 #[cfg(feature = "window")]
 mod window;
 
+/// gogo, the UI language pages are written in, under TurboDot's own name:
+/// client has one dependency line and names no gogo crate.
+pub use gogo_ui as gogo;
+
+#[cfg(feature = "ui")]
 pub use app::App;
 #[cfg(feature = "gpu")]
 pub use gpu::{Buf_Straight_Srgb_4xU8_RGBA, Gpu, Picture};
+#[cfg(feature = "ui")]
+pub use page::{AsCachedPage, AsPage, Back, BuiltPage, CachedPage, Host, IntoPage, Nav, Page, PageBox, PageEvent};
+#[cfg(feature = "ui")]
+pub use program::{Built, Program};
+#[cfg(feature = "window")]
+pub use start::{start, start_main};
+#[cfg(feature = "ui")]
 pub use ui::{PageSource, Ui};
 #[cfg(feature = "window")]
 pub use window::{WindowOptions, run};
+
+/// What a file with a page needs: `use turbodot::prelude::*;`.
+#[cfg(feature = "ui")]
+pub mod prelude {
+    pub use crate::pages::HostedPage;
+    pub use crate::{Back, BuiltPage, CachedPage, Host, Page, PageEvent};
+    pub use gogo_ui::runtime::{Item, ItemKey, ItemValue};
+    pub use gogo_ui::{EventKind, NodeId};
+}

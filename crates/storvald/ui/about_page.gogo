@@ -1,0 +1,12 @@
+// What this version of Storvald is. Opened from first page; Back and Esc return to it.
+uses "look.gogo"
+
+View aboutPage background=$back {
+    Column spacing=12, padding=24, width=fill, height=fill {
+        Button backButton .QuietButton text="Back", width=hug, on:activate=GoBack
+        Label aboutTitle text="Storvald", font_size=26, font_color=$ink
+        Label aboutVersion text="", font_size=14, font_color=$dim
+        Label aboutText text="An AI-first creative environment for games and apps. In development.", wrap=true, width=fill, font_size=14, font_color=$ink
+        Label aboutLink text="https://github.com/nokola/storvald", font_size=14, font_color=$dim
+    }
+}

@@ -16,20 +16,24 @@ repository.workspace = true
 
 [features]
 default = ["window"]
-# A GPU device with no window (`Gpu`), and a page drawn to a `Picture`.
-gpu = ["dep:gogo-wgpu", "dep:png", "dep:pollster", "dep:wgpu"]
-# A page in a window (`run`). Takes `gpu` with it.
+# Pages that run with no window and no GPU: `Program`, `Page`, `Ui`.
+ui = ["dep:gogo-text"]
+# A GPU device with no window (`Gpu`), and pages drawn to a `Picture`.
+# Takes `ui` with it.
+gpu = ["ui", "dep:gogo-wgpu", "dep:png", "dep:pollster", "dep:wgpu"]
+# Pages in a window (`start`). Takes `gpu` with it.
 window = ["gpu", "dep:winit"]
 # A page that comes from a file follows that file while the program runs.
 # A program you ship leaves the feature off; the same code then reloads
 # nothing.
 hot-reload = ["gogo-ui/hot-reload"]
 
-# With `default-features = false` only the first two are built: a crate
-# that holds an app's own code takes `Ui` and `App` and builds neither a
-# window nor a GPU crate (`tests/manifest.rs` holds the list to that).
+# With `default-features = false` only gogo's language is built: that is
+# what a build script takes for `turbodot::build::pages`, so it compiles
+# no text engine, no window and no GPU crate (`tests/manifest.rs` holds
+# the list to that). A crate that holds an app's own pages adds `ui`.
 [dependencies]
-gogo-text = { path = "../gogo-text", version = "0.5.0" }
+gogo-text = { path = "../gogo-text", version = "0.5.0", optional = true }
 gogo-ui = { path = "../gogo-ui", version = "0.5.0" }
 gogo-wgpu = { path = "../gogo-wgpu", version = "0.5.0", optional = true }
 # Writes a page's picture as a PNG file.

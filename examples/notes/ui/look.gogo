@@ -1,0 +1,18 @@
+// What every page of the example shares: its font and its colors.
+//
+// The font is the repository's own, two folders up. A program of your own
+// keeps its font in its own folder and writes `res://assets/<file>.ttf`.
+theme {
+    font = "res://../../assets/Fonts/Roboto Regular.ttf"
+}
+
+$back = #17181C
+$ink = #E8E8EC
+$dim = #9A9CA8
+$warn = #E0A040
+$plate = #2C2F38
+$hover = #3A3E4A
+
+style Plain background=$plate, font_color=$ink, padding=10, corner_radius=6 {
+    when hovered background=$hover
+}

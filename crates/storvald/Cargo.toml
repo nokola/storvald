@@ -14,8 +14,13 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-gogo-ui = { path = "../gogo-ui", version = "0.5.0" }
-# `hot-reload`: a debug build run from this repository follows
-# `ui/skills.gogo` while its window is open. Every other build carries the
-# page's text and reads no file, so the feature does nothing there.
+# `hot-reload`: a debug build run from this repository follows the pages'
+# files in `ui/` while its window is open. Every other build carries the
+# pages as they were built and reads no file, so the feature does nothing
+# there.
 turbodot = { path = "../turbodot", version = "0.5.0", features = ["hot-reload"] }
+
+# The build script compiles the pages in `ui/` (`turbodot::build::pages`).
+# With no feature on, TurboDot builds gogo's language alone.
+[build-dependencies]
+turbodot = { path = "../turbodot", version = "0.5.0", default-features = false }

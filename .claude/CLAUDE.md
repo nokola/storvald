@@ -57,8 +57,8 @@ Every gogo language/design decision is measured against these:
   refuse it with that code), `warning=G1234`.
 - The tracker of Storvald and TurboDot: `docs/todo-ai-dev.md`. The
   user's notes on what Storvald is to be: `docs/TODO-main.md`.
-- The first screen: `crates/storvald/ui/skills.gogo`, run by
-  `crates/storvald/src/screen.rs`. A debug build follows the file: save
+- The first page: `crates/storvald/ui/skills_page.gogo`, with its code in
+  `crates/storvald/src/skills_page.rs`. A debug build follows the file: save
   it and the open window shows the change.
 
 ## The system skills are in two places

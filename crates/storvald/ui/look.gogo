@@ -1,0 +1,17 @@
+// What every page of Storvald shares: its font and its colors.
+theme {
+    font = "res://assets/Roboto Regular.ttf"
+}
+
+$back = #17181C
+$side = #1F2127
+$ink = #E8E8EC
+$dim = #9A9CA8
+$rule = #2C2F38
+$hover = #272A33
+$pick = #2F4C7A
+
+style QuietButton background=$rule, font_color=$ink, font_size=13, padding=8, corner_radius=6 {
+    when hovered background=$hover
+    when held background=$pick
+}

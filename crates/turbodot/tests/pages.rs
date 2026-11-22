@@ -6,6 +6,9 @@
 //! from `assets/Fonts` at the top of the repository, which a package does
 //! not carry.
 
+// Built with no feature (a build script's use), TurboDot has no pages to test.
+#![cfg(feature = "ui")]
+
 use gogo_text::TextEngine;
 use gogo_ui::{Event, EventKind, ImageKey, Images, NodeId, Orientation, Page, Phase, Rect, ScreenClass, compile, has_errors};
 use turbodot::pages::{HostedPage, ImageTable, PageId, PagePlatform, PageStack, UiAssets};

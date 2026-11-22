@@ -14,12 +14,13 @@ description: Write or review code comments - six-slot shape (what, why, gotchas,
 3. **Gotchas.** Where the guarantee stops, if anywhere.
 4. **Mechanism.** Only what the code can't show; skip if the code shows it.
 5. **Warnings.** Unexpected things to watch for, e.g.
-   `WARNING: This must be called only on effect apply to avoid allocation.`
-6. **What it returns.** E.g. "Returns item info if the item is found, or
-   `None` if no item found."
+   `WARNING: Call only on effect apply, to avoid allocation.`
+6. **What it returns.** E.g. "Returns item info if item found, or `None`
+   if not."
 
 Add empty line between slots. In Rust a comment is `///` lines with no tags, and what it returns is the last paragraph, opened with "Returns". In a language whose doc comments have tags (C#), keep the summary tags on their own line and use the returns tag if the method returns a value.
-Use "a" instead of "the" e.g. "a filter" rather than "the filter" unless the comment is specific to a single filter.
+Telegraphic: spend words on facts, not grammar. Drop "a", "the", "that is", "which", "there is", "in order to". Subject first, the thing the comment sits on: "Page cached on back", in page's file. Exact technical term over paraphrase: "cached", not "set aside". Keep a word when dropping it leaves two readings.
+Where an article stays, use "a" instead of "the" e.g. "a filter" rather than "the filter" unless the comment is specific to a single filter.
 Never write "the X" for something only the writer has in mind — a comment
 explains on its own: "an apply runs on the GPU", not "the live apply";
 "the same order EffectWorker.StartCycleBody uses", not "the worker's exact
@@ -34,19 +35,19 @@ through a live history item") — never soften or drop them.
 Worked example (slots marked; 3 and 4 empty here, so skipped):
 
 ```
-/// Converts a stored value to the `Box<dyn Any>` a filter takes.      [1]
+/// Converts stored value to the `Box<dyn Any>` a filter takes.        [1]
 ///
 /// Needed because filters take property values as `Box<dyn Any>`
-/// (`Filter::set_property`), so the value must be boxed somewhere —
+/// (`Filter::set_property`), so value must be boxed somewhere —
 /// this is that one conversion.                                       [2]
 ///
-/// WARNING: Allocates on every call — call it only on effect apply,
+/// WARNING: Allocates on every call — call only on effect apply,
 /// never per input event.                                             [5]
 ///
-/// Returns the boxed value; panics on an uninitialized default.       [6]
+/// Returns boxed value; panics on uninitialized default.              [6]
 ```
 
-## The generating rule: say it, then write it
+## The generating rule: say it, write it, then cut the grammar words
 
 Answer a coworker asking "what does this X do?" out loud, then write the
 words down. "Oh it gets distinct sectors that are touched by dirty rects.
@@ -58,6 +59,15 @@ during paint" — drop the "oh", and that IS slots 1 and 2:
 ///
 /// Used to make sure we diff each sector once when we draw multiple
 /// times during paint.
+```
+
+Then cut the grammar words ("that are", "to make sure"):
+
+```
+/// Gets distinct sectors touched by dirty rects.
+///
+/// Used so we diff each sector once when we draw multiple times
+/// during paint.
 ```
 
 Consequences:
@@ -135,7 +145,8 @@ tests.
 3. Old-behavior stories, invented metaphors, bare referents? Cut or fix.
 4. Could half the lines go with nothing action-relevant lost? Cut them.
    (The founding example went 22 lines → 9 with nothing lost.)
-5. "a" instead of "the" unless the comment is specific to a single instance.
+5. Any "a" / "the" / "that is" that can go? Where an article stays: "a"
+   instead of "the" unless the comment is specific to a single instance.
 6. Read slots 1-2 aloud: is that how you'd answer a coworker asking "what
    does this do?" If not, say the answer and transcribe it.
 7. Did the rewrite keep every invariant and constraint the old comment

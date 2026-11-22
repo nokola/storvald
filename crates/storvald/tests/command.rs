@@ -5,7 +5,7 @@
 //!
 //! A bare `storvald` is not run here: it opens a window, and a test machine
 //! may have no screen. `call.rs` checks that a bare call asks for the
-//! window, and `skills_screen.rs` runs the screen with no window.
+//! window, and `pages.rs` runs the pages with no window.
 
 use std::process::{Command, Output};
 

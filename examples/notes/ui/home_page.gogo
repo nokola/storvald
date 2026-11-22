@@ -1,0 +1,21 @@
+// The first page: the notes, and the two buttons that open the other
+// pages.
+uses "look.gogo"
+
+View homePage background=$back, padding=16 {
+    Column spacing=10, width=fill, height=fill {
+        Label title text="Notes", font_size=24, font_color=$ink
+        List noteList spacing=2, width=fill, height=fill {
+            empty { Label text="No notes yet", font_color=$dim }
+            repeat notes as $note by $note.key {
+                ListItem padding=8 {
+                    Label text=$note.text, font_color=$ink
+                }
+            }
+        }
+        Row spacing=8 {
+            Button addNote .Plain text="Add note"
+            Button openSettings .Plain text="Settings"
+        }
+    }
+}

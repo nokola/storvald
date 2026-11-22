@@ -1,4 +1,5 @@
-//! Puts `storvald.manifest` into the Windows program.
+//! Compiles the pages in `ui/`, and puts `storvald.manifest` into the
+//! Windows program.
 //!
 //! Needed because Windows reads a program's manifest from inside the
 //! program file, and Storvald is one file with nothing beside it. What the
@@ -11,6 +12,7 @@
 use std::path::PathBuf;
 
 fn main() {
+    turbodot::build::pages("ui");
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=storvald.manifest");
     let target_os: String = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();

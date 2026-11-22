@@ -1,16 +1,12 @@
 //! One gogo page with everything it needs to run, and no window.
 
 use std::cell::RefCell;
-use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use gogo_text::{EpxMeasure, TextEngine};
 use gogo_ui::reload::{Reloader, Sources};
-use gogo_ui::runtime::{Item, ItemKey, Resolved};
-use gogo_ui::{Compiled, Draw, Event, Input, KeptFrame, Key, Kind, MOUSE_ID, Mods, NO_NODE, NO_STR, NodeId, Orientation, Page, Phase, Rect, Runtime, ScreenClass, Touch, compile, compile_file, has_errors};
-
-/// How far one notch of a mouse wheel moves a scrolling box, in epx.
-const WHEEL_NOTCH_EPX: f32 = 48.0;
+use gogo_ui::runtime::{Item, ItemKey};
+use gogo_ui::{Compiled, Draw, Event, Input, KeptFrame, Key, MOUSE_ID, Mods, NodeId, Orientation, Page, Phase, Rect, Runtime, ScreenClass, Touch, compile, compile_file, has_errors};
 
 /// Where the text of a page comes from.
 pub enum PageSource<'a> {
@@ -294,29 +290,8 @@ impl Ui {
     ///
     /// Returns the events of a control that took the wheel.
     pub fn wheel(&mut self, x: f32, y: f32, notches: f32) -> Vec<Event> {
-        if !self.kept.is_laid_out() || notches == 0.0 {
-            return Vec::new();
-        }
-        let events: Vec<Event> = self.input.wheel(&self.page, &mut self.rt, self.kept.frame(), x, y, notches > 0.0);
-        if !events.is_empty() {
-            return events;
-        }
-        let look: &Resolved = self.kept.look();
-        let mut node: NodeId = match gogo_ui::hit(&self.page, self.kept.frame(), x, y, true) {
-            Some(node) => node,
-            None => return events,
-        };
-        while node != NO_NODE {
-            if matches!(self.page.nodes[node.index()].kind, Kind::Scroll | Kind::List) {
-                let [left, top]: [f32; 2] = self.scroll_of(node);
-                self.set_scroll(node, [left, (top - notches * WHEEL_NOTCH_EPX).max(0.0)]);
-                break;
-            }
-            node = look.placed_parent(&self.page, node);
-        }
-        events
+        crate::page_ui::wheel(&self.page, &mut self.rt, &mut self.input, &self.kept, x, y, notches)
     }
-
     /// Asks to be told when the page's file was saved. `wake` runs on
     /// another thread.
     ///
@@ -365,33 +340,6 @@ impl Ui {
     /// Returns an empty text before the first frame. A line reads
     /// `Label title x=16 y=12 w=228 h=28`.
     pub fn outline(&self) -> String {
-        let mut out: String = String::new();
-        if !self.kept.is_laid_out() {
-            return out;
-        }
-        let look: &Resolved = self.kept.look();
-        let count: usize = self.page.nodes.len();
-        let mut children: Vec<Vec<NodeId>> = vec![Vec::new(); count];
-        let mut roots: Vec<NodeId> = Vec::new();
-        for i in 0..count {
-            let node: NodeId = NodeId::from_index(i);
-            if look.gone(&self.page, node) {
-                continue;
-            }
-            match look.placed_parent(&self.page, node) {
-                parent if parent == NO_NODE => roots.push(node),
-                parent => children[parent.index()].push(node),
-            }
-        }
-        // Each (node, depth) still to print; the last one is printed next.
-        let mut todo: Vec<(NodeId, usize)> = roots.into_iter().rev().map(|n| (n, 0)).collect();
-        while let Some((node, depth)) = todo.pop() {
-            let n = &self.page.nodes[node.index()];
-            let r: Rect = self.rect(node);
-            let name: &str = if n.name == NO_STR { "-" } else { self.page.str(n.name) };
-            let _ = writeln!(out, "{:indent$}{} {} x={} y={} w={} h={}", "", n.kind.word(), name, r.x.round(), r.y.round(), r.w.round(), r.h.round(), indent = depth * 2);
-            todo.extend(children[node.index()].iter().rev().map(|c| (*c, depth + 1)));
-        }
-        out
+        crate::page_ui::outline(&self.page, &self.kept)
     }
 }

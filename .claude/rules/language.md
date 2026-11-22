@@ -14,6 +14,23 @@ there understands it six months later.
 
 In chat: one question, one answer. No recap. No options nobody asked for.
 
+## Telegraphic: comments, chat, trackers, commit messages
+
+Spend words on facts, not grammar.
+
+- Drop "a", "the", "that is", "which", "there is", "in order to".
+- Subject first: the thing the comment sits on. In page's file:
+  "Page cached on back". Name another actor only when it matters who acts.
+- Exact technical term over paraphrase: "cached", not "set aside".
+- Saved words go to a fact reader lacks: "shows same view".
+- Keep a word when dropping it leaves two readings.
+- Docs pages and error text shown to an author keep full sentences.
+
+| Not | Say |
+|---|---|
+| A page that is set aside on back and shown again at its next open | Page cached on back, shows again same view next open |
+| Whether a `CachedPage` is set aside on back | True when page cached on back |
+
 ## Active voice
 
 - Name who does what. "The compiler rejects the page", not "the page is

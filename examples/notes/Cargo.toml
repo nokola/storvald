@@ -1,0 +1,18 @@
+[package]
+name = "turbodot-example-notes"
+description = "A small notes program on TurboDot: three pages, a back stack, a page that asks before it leaves and a page that is cached."
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# The one line a client writes. `hot-reload`: a debug build follows the
+# pages' files in `ui/` while its window is open.
+[dependencies]
+turbodot = { path = "../../crates/turbodot", features = ["hot-reload"] }
+
+# The build script compiles the pages in `ui/`. With no feature on,
+# TurboDot builds gogo's language alone.
+[build-dependencies]
+turbodot = { path = "../../crates/turbodot", default-features = false }

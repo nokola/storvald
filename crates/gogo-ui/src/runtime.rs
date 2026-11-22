@@ -101,6 +101,19 @@ pub trait AnimName: Copy {
     fn id(self) -> StrId;
 }
 
+/// Built page's `Handler` enum: one variant per handler name in page's
+/// file.
+///
+/// Needed so code that runs any page (an engine) turns event's handler
+/// name into that page's own enum, and page code matches on variants:
+/// handler gone from file does not compile, new one with no arm stops
+/// build.
+pub trait HandlerName: Copy {
+    /// Variant for handler name as file writes it. `None`: file has no
+    /// such name.
+    fn from_name(name: &str) -> Option<Self>;
+}
+
 /// One field value a repeat item carries — the leaf types the shipped
 /// addon binds (gogo_repeat.gd: String, number, bool, Color; structures
 /// don't bind whole).
