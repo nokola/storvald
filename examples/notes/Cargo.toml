@@ -16,3 +16,7 @@ turbodot = { path = "../../crates/turbodot", features = ["hot-reload"] }
 # TurboDot builds gogo's language alone.
 [build-dependencies]
 turbodot = { path = "../../crates/turbodot", default-features = false }
+
+[dev-dependencies]
+# Reads a saved picture back, to check the file against the pixels.
+png = "0.18.1"

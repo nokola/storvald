@@ -47,9 +47,9 @@ say what is in it. Hand over a commit message when asked.
 
 - Never photograph the user's desktop. Never send mouse or key input to
   it.
-- Drive a page with no window (`turbodot::Ui`): a touch as numbers,
-  events as values, `Ui::outline` for the rectangles.
-- To see pixels, draw the page to a picture (`turbodot::Gpu::draw`,
+- Drive pages with no window (`turbodot::Program`): a touch as numbers,
+  `Program::ui().outline()` for the rectangles.
+- To see pixels, draw the pages to a picture (`turbodot::Gpu::draw_program`,
   `Picture::save_png`) and read the file.
 
 ## Who else builds this code

@@ -1,14 +1,13 @@
-//! A GPU device with no window, and a page drawn to a picture.
+//! A GPU device with no window, and a program's pages drawn to a picture.
 
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
 use std::time::Duration;
 
-use gogo_wgpu::{Tex_Tile_Premul_Srgb_4xU8_RGBA, UiRenderer};
+use gogo_wgpu::UiRenderer;
 
 use crate::program::Program;
-use crate::ui::Ui;
 
 /// 8-bit sRGB pixels: straight alpha, 4 bytes per pixel, RGBA, row by row
 /// from the top. The same bytes a decoded PNG holds.
@@ -89,34 +88,6 @@ impl Gpu {
         let adapter: wgpu::Adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).ok()?;
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).ok()?;
         Some(Gpu { instance, adapter, device, queue })
-    }
-
-    /// Draws the last frame of `ui` to a picture, at the frame's size
-    /// times the device pixels per epx `ui` was told.
-    ///
-    /// The same renderer and shader a window uses draw it, so the picture
-    /// is what a user would see. Where the page paints nothing, the
-    /// picture is transparent.
-    ///
-    /// WARNING: builds a renderer on every call, about 70 ms on Direct3D 12
-    /// (it compiles the shader each time). Fine for a test, too slow for a
-    /// picture per frame.
-    ///
-    /// Returns why the GPU did not hand the pixels back, or that `ui` has
-    /// had no frame yet.
-    pub fn draw(&self, ui: &Ui) -> Result<Picture, String> {
-        if !ui.kept.is_laid_out() {
-            return Err("the page has had no frame yet: call `Ui::frame` first".to_string());
-        }
-        let epx: f32 = ui.epx();
-        let size: (u32, u32) = (((ui.size().0 * epx).round() as u32).max(1), ((ui.size().1 * epx).round() as u32).max(1));
-        // A format that stores colors as written: the renderer writes
-        // sRGB-encoded values.
-        let mut renderer: UiRenderer = UiRenderer::new(&self.device, wgpu::TextureFormat::Rgba8Unorm);
-        let tile: Tex_Tile_Premul_Srgb_4xU8_RGBA = renderer.render_to_texture(&self.device, &self.queue, &ui.draws, &ui.page, &mut ui.text.borrow_mut(), None, epx, (0.0, 0.0), size);
-        let mut bytes: Vec<u8> = self.read_back(&tile.RGBA, tile.width(), tile.height())?;
-        straight_from_premul(&mut bytes);
-        Ok(Picture { width: size.0, height: size.1, pixels: Buf_Straight_Srgb_4xU8_RGBA { Bytes: bytes.into_boxed_slice() } })
     }
 
     /// Draws the pages of `program` as its last frame laid them out, to

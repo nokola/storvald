@@ -489,8 +489,9 @@ All rows PROPOSED.
     there: TurboDot owns navigation, and a client writes pages.
   - Landed 2026-11-22 (rows SV10 and SV11 there): `turbodot::Page`,
     `CachedPage`, `Host`, `Nav`, `Program`, `start`. The `storvald`
-    command runs on them, with a second page. `Ui`, `App` and `run`
-    are still here beside them.
+    command runs on them, with a second page. `Ui`, `App`, `run` and
+    `Gpu::draw` are gone (user, 2026-11-22: "remove if not called");
+    `Gpu::draw_program` draws a program's pages to a picture.
 - <span style='color:red'>TODO</span> AD34: USER CALL: an app draws under its pages.
   - MOVED 2026-11-22: FanRust's `docs/todo-storvald.md`, row SV5.
 - <span style='color:red'>TODO</span> AD35: a TurboDot app's pages are compiled when the program

@@ -70,6 +70,22 @@ fn tap(stack: &mut PageStack, assets: &UiAssets, x: f32, y: f32) -> Option<(Page
     Some((id, events))
 }
 
+/// Outline names every node that shows, with the rectangle a test reads
+/// from the same frame. Empty before first frame.
+#[test]
+fn the_outline_gives_each_node_its_kind_its_name_and_its_rectangle() {
+    let assets: UiAssets = assets();
+    let mut stack: PageStack = PageStack::new();
+    let id: PageId = stack.add(HostedPage::new(page(BOTTOM)));
+    assert_eq!(stack.get(id).outline(), "", "no frame yet");
+    stack.frame(0.0, SIZE, EPX, &platform(), &assets);
+    let outline: String = stack.get(id).outline();
+    let lines: Vec<&str> = outline.lines().collect();
+    assert_eq!(lines, ["View bottom x=0 y=0 w=400 h=300", "  Button wide x=0 y=0 w=300 h=200"], "{outline}");
+    let wide: Rect = stack.get(id).rect(stack.get(id).node("wide"));
+    assert_eq!((wide.x, wide.y, wide.w, wide.h), (0.0, 0.0, 300.0, 200.0));
+}
+
 /// A press where both pages have a button goes to the page on top. A
 /// press where only the page below has one goes through the page on top
 /// to it. A press where neither has one goes to no page.

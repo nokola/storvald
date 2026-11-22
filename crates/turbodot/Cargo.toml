@@ -1,6 +1,6 @@
 [package]
 name = "turbodot"
-description = "TurboDot: the app and game engine where AI can prove that its changes work. Headless, deterministic, high-performance. In development: this version shows one gogo page in a window, and draws it to a picture with no window."
+description = "TurboDot: the app and game engine where AI can prove that its changes work. Headless, deterministic, high-performance. In development: this version runs a program's gogo pages in a window, and with no window for a test or an agent."
 keywords = ["gamedev", "game-engine", "ai", "agent", "headless"]
 categories = ["game-engines", "game-development"]
 readme = "../../README.md"
@@ -8,7 +8,7 @@ readme = "../../README.md"
 # repository, which a crates.io package does not carry, so they stay out
 # of the package (`scripts/test-packages.sh` checks that `cargo test`
 # passes on it).
-exclude = ["tests/page.rs", "tests/pages.rs", "tests/allocations.rs"]
+exclude = ["tests/pages.rs", "tests/allocations.rs"]
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -16,7 +16,7 @@ repository.workspace = true
 
 [features]
 default = ["window"]
-# Pages that run with no window and no GPU: `Program`, `Page`, `Ui`.
+# Pages that run with no window and no GPU: `Program`, `Page`.
 ui = ["dep:gogo-text"]
 # A GPU device with no window (`Gpu`), and pages drawn to a `Picture`.
 # Takes `ui` with it.
@@ -42,7 +42,3 @@ pollster = { version = "1.0.1", optional = true }
 # The engine is the one that picks wgpu's backends: the default set here.
 wgpu = { version = "30.0.1", optional = true }
 winit = { version = "0.30.13", optional = true }
-
-[dev-dependencies]
-# Reads a saved picture back, to check the file against the pixels.
-png = "0.18.1"

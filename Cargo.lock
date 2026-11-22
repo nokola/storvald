@@ -2075,6 +2075,7 @@ dependencies = [
 name = "turbodot-example-notes"
 version = "0.5.0"
 dependencies = [
+ "png",
  "turbodot",
 ]
 

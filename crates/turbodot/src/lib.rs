@@ -42,10 +42,8 @@
 //! - [`build`] holds what a client's `build.rs` calls.
 //! - [`alloc_count`] counts heap allocations, for a test that says "this
 //!   frame allocates nothing".
-//!
-//! Older, and still here: [`Ui`] holds one page with a text engine of its
-//! own, [`run`] shows a `Ui` in a window with an [`App`], and [`pages`]
-//! holds the page stack a `Program` is built on.
+//! - [`pages`] holds the page stack a `Program` is built on, for a host
+//!   that lays out and draws its pages its own way.
 //!
 //! Cargo features: `window` (the default) adds `start`; `gpu` adds `Gpu`;
 //! `ui` is `Program` and the pages alone, with no window and no GPU crate.
@@ -54,8 +52,6 @@
 //! of a debug build follow their `.gogo` files while the program runs.
 
 pub mod alloc_count;
-#[cfg(feature = "ui")]
-mod app;
 pub mod build;
 #[cfg(feature = "gpu")]
 mod gpu;
@@ -69,8 +65,6 @@ pub mod pages;
 mod program;
 #[cfg(feature = "window")]
 mod start;
-#[cfg(feature = "ui")]
-mod ui;
 #[cfg(feature = "window")]
 mod window;
 
@@ -78,8 +72,6 @@ mod window;
 /// client has one dependency line and names no gogo crate.
 pub use gogo_ui as gogo;
 
-#[cfg(feature = "ui")]
-pub use app::App;
 #[cfg(feature = "gpu")]
 pub use gpu::{Buf_Straight_Srgb_4xU8_RGBA, Gpu, Picture};
 #[cfg(feature = "ui")]
@@ -88,10 +80,8 @@ pub use page::{AsCachedPage, AsPage, Back, BuiltPage, CachedPage, Host, IntoPage
 pub use program::{Built, Program};
 #[cfg(feature = "window")]
 pub use start::{start, start_main};
-#[cfg(feature = "ui")]
-pub use ui::{PageSource, Ui};
 #[cfg(feature = "window")]
-pub use window::{WindowOptions, run};
+pub use window::WindowOptions;
 
 /// What a file with a page needs: `use turbodot::prelude::*;`.
 #[cfg(feature = "ui")]

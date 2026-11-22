@@ -29,7 +29,7 @@ turbodot::start!(AppState, HomePage);
 #[cfg(test)]
 mod tests {
     use turbodot::Program;
-    use turbodot::gogo::Rect;
+    use turbodot::gogo::{Phase, Rect};
 
     use super::*;
     use crate::edit_page::EditPage;
@@ -196,5 +196,52 @@ mod tests {
         let_the_slides_end(&mut program);
         assert_eq!(program.ui().scroll_of(SETTINGS.body), [0.0, 150.0], "the same page");
         assert_eq!((program.cached_page_count(), program.drawn_page_count()), (0, 1));
+    }
+
+    /// Touch before first frame lands on nothing, and outline is empty.
+    #[test]
+    fn a_touch_before_the_first_frame_does_nothing() {
+        let mut program: Program<AppState> = Program::new(&crate::ui::BUILT, AppState::default(), HomePage).expect("the pages can be shown");
+        assert_eq!(program.ui().outline(), "");
+        program.touch(Phase::Down, 50.0, 600.0, 0.0);
+        program.touch(Phase::Up, 50.0, 600.0, 0.05);
+        assert_eq!(program.depth(), 1);
+        frame(&mut program, 0.0);
+        assert!(program.ui().outline().starts_with("View homePage x=0 y=0 w=480 h=640"), "{}", program.ui().outline());
+    }
+
+    /// Pages drawn on a real GPU at two device pixels per epx: twice the
+    /// pixels, page's own colors where page says, same bytes in a PNG read
+    /// back from disk.
+    ///
+    /// Ignored unless asked for: needs a GPU adapter, which a hosted test
+    /// machine may not have, and a test that returned early there would
+    /// count as passed without having run. On a machine with a GPU:
+    ///
+    ///     cargo test -p turbodot-example-notes -- --include-ignored
+    #[test]
+    #[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
+    fn the_pages_are_drawn_to_a_picture_in_device_pixels() {
+        const BACK: [u8; 4] = [0x17, 0x18, 0x1C, 0xFF];
+        const PLATE: [u8; 4] = [0x2C, 0x2F, 0x38, 0xFF];
+
+        let mut program: Program<AppState> = started(AppState::default());
+        program.set_epx(2.0);
+        frame(&mut program, 0.0);
+        let gpu: turbodot::Gpu = turbodot::Gpu::new().expect("this test needs a GPU adapter");
+        let picture: turbodot::Picture = gpu.draw_program(&program).expect("the pages are drawn");
+        assert_eq!((picture.width, picture.height), (960, 1280));
+        assert_eq!(picture.at(950, 20), BACK, "the page's background");
+        let button: Rect = program.ui().rect(HOME.add_note);
+        assert_eq!(picture.at(((button.x + 3.0) * 2.0) as u32, ((button.y + button.h / 2.0) * 2.0) as u32), PLATE, "the button's plate, left of its text");
+
+        let file = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/pictures/notes_home_page.png"));
+        picture.save_png(&file).expect("the picture is saved");
+        let decoder = png::Decoder::new(std::io::BufReader::new(std::fs::File::open(&file).expect("the saved file")));
+        let mut reader = decoder.read_info().expect("a PNG");
+        let mut bytes: Vec<u8> = vec![0; reader.output_buffer_size().expect("a size")];
+        let info = reader.next_frame(&mut bytes).expect("the pixels");
+        assert_eq!((info.width, info.height, info.color_type), (960, 1280, png::ColorType::Rgba));
+        assert_eq!(&bytes[..info.buffer_size()], &picture.pixels.Bytes[..], "the file holds the picture's bytes");
     }
 }
