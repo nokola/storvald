@@ -231,7 +231,7 @@ fn the_pages_are_drawn_as_their_files_say() {
     let mut program: Program<AppState> = shown();
     let gpu: Gpu = Gpu::new().expect("this test needs a GPU adapter");
     let pictures: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/pictures");
-    let picture: Picture = gpu.draw_program(&program).expect("the skills page is drawn");
+    let picture: Picture = gpu.draw_program(&mut program).expect("the skills page is drawn");
     picture.save_png(&std::path::Path::new(pictures).join("skills_page.png")).expect("the picture is saved");
     assert_eq!((picture.width, picture.height), (WINDOW_SIZE_EPX.0 as u32, WINDOW_SIZE_EPX.1 as u32));
 
@@ -251,7 +251,7 @@ fn the_pages_are_drawn_as_their_files_say() {
 
     program.tap(SKILLS.about_button, 1.0);
     let_the_slides_end(&mut program);
-    let picture: Picture = gpu.draw_program(&program).expect("the about page is drawn");
+    let picture: Picture = gpu.draw_program(&mut program).expect("the about page is drawn");
     picture.save_png(&std::path::Path::new(pictures).join("about_page.png")).expect("the picture is saved");
     assert_eq!(picture.at(picture.width - 4, picture.height - 4), BACK, "the about page covers the screen");
     assert_eq!(picture.at(4, picture.height - 4), BACK, "nothing of the skills page's left side shows through");

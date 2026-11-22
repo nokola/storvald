@@ -34,6 +34,11 @@
 //!   `host.ui` (the page's nodes), `host.nav` (open a page, ask for back).
 //!   A page that lets the page under it show, such as a dialog, says
 //!   `const KIND: PageKind = PageKind::Overlay;`.
+//! - A page with a GPU picture of its own (a painting, a game's world)
+//!   writes `gpu_draw_textures` and `gpu_draw_screen`. The picture goes
+//!   to the screen in the pass that draws every page, under the page's
+//!   nodes, with no copy. The engine calls neither while another page
+//!   covers the page.
 //! - [`Program`] runs the pages with no window and no GPU: a touch goes in
 //!   as numbers, and what the pages show is read back. A test and an AI
 //!   agent drive a program exactly as a user would.
@@ -73,11 +78,22 @@ mod window;
 /// gogo, the UI language pages are written in, under TurboDot's own name:
 /// client has one dependency line and names no gogo crate.
 pub use gogo_ui as gogo;
+/// Texture a page hands `Layers::picture`: its own, wrapped to say what
+/// its texels hold.
+#[cfg(feature = "gpu")]
+pub use gogo_wgpu::Tex_Image_Straight_Srgb_4xU8_RGBA;
+/// wgpu, which a page draws its own textures with, under TurboDot's own
+/// name: client names no wgpu version.
+#[cfg(feature = "gpu")]
+pub use wgpu;
 
 #[cfg(feature = "gpu")]
 pub use gpu::{Buf_Straight_Srgb_4xU8_RGBA, Gpu, Picture};
 #[cfg(feature = "ui")]
-pub use page::{AsCachedPage, AsPage, Back, BuiltPage, CachedPage, Host, IntoPage, Nav, Page, PageBox, PageEvent, PageKind};
+#[cfg(all(feature = "ui", not(feature = "gpu")))]
+pub use page::Gpu;
+#[cfg(feature = "ui")]
+pub use page::{AsCachedPage, AsPage, Back, BuiltPage, CachedPage, Host, IntoPage, Layers, Nav, Page, PageBox, PageEvent, PageKind};
 #[cfg(feature = "ui")]
 pub use program::{Built, Program};
 #[cfg(feature = "window")]
@@ -89,7 +105,7 @@ pub use window::WindowOptions;
 #[cfg(feature = "ui")]
 pub mod prelude {
     pub use crate::pages::HostedPage;
-    pub use crate::{Back, BuiltPage, CachedPage, Host, Page, PageEvent, PageKind};
+    pub use crate::{Back, BuiltPage, CachedPage, Gpu, Host, Layers, Page, PageEvent, PageKind};
     pub use gogo_ui::runtime::{Item, ItemKey, ItemValue};
     pub use gogo_ui::{EventKind, NodeId};
 }

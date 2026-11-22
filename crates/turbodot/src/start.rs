@@ -77,19 +77,20 @@ impl<A: 'static> ProgramWindow<'_, A> {
         self.program.set_epx(epx);
         let is_animating: bool = self.program.frame(size.0 as f32 / epx, size.1 as f32 / epx, dt);
 
-        gfx.renderer.prepare_pages(&gfx.device, &gfx.queue, &self.program, epx, size, &mut self.program.assets.text.borrow_mut(), None);
+        self.program.gpu_draw(&mut gfx.renderer, &gfx.gpu);
+        gfx.renderer.prepare_pages(&gfx.gpu.device, &gfx.gpu.queue, &self.program, epx, size, &mut self.program.assets.text.borrow_mut(), None);
         let frame = match gfx.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
             // A window that is hidden, being resized or lost its surface:
             // configure again and try on the next frame.
             _ => {
-                gfx.surface.configure(&gfx.device, &gfx.config);
+                gfx.surface.configure(&gfx.gpu.device, &gfx.config);
                 gfx.window.request_redraw();
                 return;
             }
         };
         let view = frame.texture.create_view(&Default::default());
-        let mut encoder = gfx.device.create_command_encoder(&Default::default());
+        let mut encoder = gfx.gpu.device.create_command_encoder(&Default::default());
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("the window"),
@@ -101,8 +102,8 @@ impl<A: 'static> ProgramWindow<'_, A> {
             });
             gfx.renderer.render(&mut pass);
         }
-        gfx.queue.submit([encoder.finish()]);
-        gfx.queue.present(frame);
+        gfx.gpu.queue.submit([encoder.finish()]);
+        gfx.gpu.queue.present(frame);
         if is_animating {
             gfx.window.request_redraw();
         }
@@ -135,7 +136,7 @@ impl<A: 'static> ApplicationHandler for ProgramWindow<'_, A> {
                 if let Some(gfx) = self.gfx.as_mut() {
                     gfx.config.width = size.width.max(1);
                     gfx.config.height = size.height.max(1);
-                    gfx.surface.configure(&gfx.device, &gfx.config);
+                    gfx.surface.configure(&gfx.gpu.device, &gfx.config);
                     gfx.window.request_redraw();
                 }
             }

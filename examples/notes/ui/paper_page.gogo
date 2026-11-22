@@ -1,0 +1,14 @@
+// Page with a GPU picture of its own: ruled paper, drawn by the page into
+// a texture and shown under its nodes. Root has no background: the picture
+// covers the screen.
+uses "look.gogo"
+
+View paperPage {
+    Column spacing=10, padding=16, width=fill, height=fill {
+        Label title text="Paper", font_size=24, font_color=#202020
+        Label hint text="The lines are a texture this page draws.", font_color=#404040
+        Row spacing=8 {
+            Button goBack .Plain text="Back"
+        }
+    }
+}

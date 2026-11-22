@@ -7,7 +7,7 @@ use std::path::Path;
 
 use gogo_text::TextEngine;
 use gogo_ui::reload::{BuildTables, Reloader, Sources};
-use gogo_ui::{Draw, Event, Images, Key, MOUSE_ID, Mods, NodeId, Orientation, Phase, Rect, ScreenClass};
+use gogo_ui::{Draw, Event, ImageKey, Images, Key, MOUSE_ID, Mods, NodeId, Orientation, Phase, Rect, ScreenClass};
 
 use crate::page::{Back, Host, IntoPage, Nav, PageKind, PageObject, Request};
 use crate::pages::{HostedPage, ImageTable, PageId, PagePlatform, PagePose, PageStack, UiAssets};
@@ -116,6 +116,17 @@ pub struct Program<A = ()> {
     epx: f32,
     /// Width and height of last frame, in epx.
     size: (f32, f32),
+    /// What each page put under its nodes this frame (`gpu_draw_screen`),
+    /// by page's id in `stack`.
+    #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
+    layer_draws: Vec<Vec<Draw>>,
+    /// Keys of each page's own pictures, by page's id in `stack`.
+    #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
+    picture_keys: Vec<Vec<ImageKey>>,
+    /// Pictures of freed pages: renderer lets go of their textures at
+    /// next GPU frame.
+    #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
+    pictures_to_release: Vec<ImageKey>,
     /// Draw commands of a sliding page, moved to where it is now. Filled
     /// and read within one `for_each_list` call.
     #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
@@ -156,7 +167,7 @@ impl<A: 'static> Program<A> {
         let fonts: Vec<(&str, Vec<u8>)> = built.fonts.iter().map(|(key, bytes)| (*key, bytes.to_vec())).collect();
         let assets: UiAssets = UiAssets::new(TextEngine::new(&fonts), ImageTable::from_keys(Images::default()));
         let platform: PagePlatform = PagePlatform::new([0.0; 4], Orientation::from_view(1.0, 1.0), ScreenClass::from_view(1.0, 1.0), None);
-        let mut program: Program<A> = Program { app, assets, platform, stack: PageStack::new(), objects: Vec::new(), back_stack: Vec::new(), cached: Vec::new(), is_kind_checked: Vec::new(), slides: Vec::new(), nav: Nav::new(), reload, epx: 1.0, size: (0.0, 0.0), posed: RefCell::new(Vec::new()) };
+        let mut program: Program<A> = Program { app, assets, platform, stack: PageStack::new(), objects: Vec::new(), back_stack: Vec::new(), cached: Vec::new(), is_kind_checked: Vec::new(), slides: Vec::new(), nav: Nav::new(), reload, epx: 1.0, size: (0.0, 0.0), layer_draws: Vec::new(), picture_keys: Vec::new(), pictures_to_release: Vec::new(), posed: RefCell::new(Vec::new()) };
         program.open(first.into_page_object().0);
         program.carry_out_requests();
         Ok(program)
@@ -357,6 +368,33 @@ impl<A: 'static> Program<A> {
         self.carry_out_requests();
     }
 
+    /// Pages' own GPU drawing for one frame: each drawn page's
+    /// `gpu_draw_textures`, then its `gpu_draw_screen`. A window calls it
+    /// after `frame` and before renderer prepares the pages.
+    ///
+    /// A page that is not drawn (under a fullscreen page, or cached) is
+    /// not called: its GPU work would be for a picture nobody sees.
+    #[cfg(feature = "gpu")]
+    pub fn gpu_draw(&mut self, renderer: &mut gogo_wgpu::UiRenderer, gpu: &crate::gpu::Gpu) {
+        for i in 0..self.pictures_to_release.len() {
+            let external: gogo_wgpu::ExternalImage = renderer.external_image(self.pictures_to_release[i]);
+            renderer.release_external_image(&gpu.device, external);
+        }
+        self.pictures_to_release.clear();
+        for i in 0..self.stack.order.len() {
+            let id: PageId = self.stack.order[i];
+            let Some(mut object) = self.objects[id.index()].take() else { continue };
+            let mut host: Host<'_, A> = Host { app: &mut self.app, ui: self.stack.get_mut(id), nav: &mut self.nav };
+            object.gpu_draw_textures(&mut host, gpu);
+            let draws: &mut Vec<Draw> = &mut self.layer_draws[id.index()];
+            draws.clear();
+            let mut layers: crate::page::Layers<'_> = crate::page::Layers { draws, renderer: &mut *renderer, device: &gpu.device, images: &mut self.assets.images, keys: &mut self.picture_keys[id.index()], used: 0, page_index: id.index() };
+            object.gpu_draw_screen(&host, &mut layers);
+            self.objects[id.index()] = Some(object);
+        }
+        self.carry_out_requests();
+    }
+
     /// Back request: Android back key, Esc on PC, a swipe. Page on screen
     /// answers first (`Page::back`). If it leaves, page before it shows.
     ///
@@ -421,6 +459,8 @@ impl<A: 'static> Program<A> {
         if self.objects.len() <= id.index() {
             self.objects.resize_with(id.index() + 1, || None);
             self.is_kind_checked.resize(id.index() + 1, false);
+            self.layer_draws.resize_with(id.index() + 1, Vec::new);
+            self.picture_keys.resize_with(id.index() + 1, Vec::new);
         }
         self.objects[id.index()] = Some(page);
         self.is_kind_checked[id.index()] = false;
@@ -433,6 +473,8 @@ impl<A: 'static> Program<A> {
         self.slides.retain(|slide| slide.page != id);
         self.stack.remove(id);
         self.objects[id.index()] = None;
+        self.layer_draws[id.index()].clear();
+        self.pictures_to_release.extend(self.picture_keys[id.index()].iter().copied());
     }
 
     /// Opens `fresh` over page on screen. Cached page of that type, or one
@@ -580,7 +622,8 @@ impl<A: 'static> Program<A> {
     /// overlay with opaque root makes engine draw a page nobody sees.
     ///
     /// WARNING: panics for fullscreen page whose root does not cover the
-    /// window. First page is not checked: nothing is under it.
+    /// window, unless page says it draws its own GPU picture. First page
+    /// is not checked: nothing is under it.
     #[cfg(debug_assertions)]
     fn check_page_kinds(&mut self) {
         for i in 1..self.back_stack.len() {
@@ -591,11 +634,11 @@ impl<A: 'static> Program<A> {
                 continue;
             }
             self.is_kind_checked[id.index()] = true;
-            let Some(kind) = self.objects[id.index()].as_ref().map(|object| object.kind()) else { continue };
+            let Some((kind, draws_gpu_picture)) = self.objects[id.index()].as_ref().map(|object| (object.kind(), object.draws_gpu_picture())) else { continue };
             let root = &page.page.nodes[0];
             let name: &str = if root.name == gogo_ui::NO_STR { "(no name)" } else { page.page.str(root.name) };
             match (kind, page.covers_viewport()) {
-                (PageKind::Fullscreen, false) => panic!("page `{name}` is `PageKind::Fullscreen`, but its root does not cover the window with an opaque `background=`: the page under it is not drawn, so a hole shows. Give the root an opaque background, or write `const KIND: PageKind = PageKind::Overlay;` in the page"),
+                (PageKind::Fullscreen, false) if !draws_gpu_picture => panic!("page `{name}` is `PageKind::Fullscreen`, but its root does not cover the window with an opaque `background=`: the page under it is not drawn, so a hole shows. Give the root an opaque background, or write `const KIND: PageKind = PageKind::Overlay;` in the page. A page that covers the screen with its own GPU picture writes `const DRAWS_GPU_PICTURE: bool = true;`"),
                 (PageKind::Overlay, true) => eprintln!("page `{name}` is `PageKind::Overlay`, but its root covers the window with an opaque background: the page under it is drawn and never seen. Take `const KIND` out of the page"),
                 _ => {}
             }
@@ -603,20 +646,26 @@ impl<A: 'static> Program<A> {
     }
 }
 
-/// Pages as renderer draws them: bottom first, a sliding page moved to
-/// where it is now.
+/// Pages as renderer draws them: bottom first, each page's own pictures
+/// under its nodes, a sliding page moved to where it is now.
 #[cfg(feature = "gpu")]
 impl<A> gogo_wgpu::DrawLists for Program<A> {
     fn for_each_list<'a>(&'a self, f: &mut dyn FnMut(&[Draw], &'a gogo_ui::Page)) {
-        self.stack.for_each_draws(&mut |draws, page, pose| match pose {
-            None => f(draws, page),
-            Some(pose) => {
-                let mut posed = self.posed.borrow_mut();
-                posed.clear();
-                posed.extend(draws.iter().map(|draw| draw.posed(pose.offset_x, pose.offset_y, pose.alpha)));
-                f(posed.as_slice(), page);
+        for id in &self.stack.order {
+            let page: &'a HostedPage = self.stack.get(*id);
+            for draws in [self.layer_draws[id.index()].as_slice(), page.draws.as_slice()] {
+                match page.pose {
+                    _ if draws.is_empty() => {}
+                    None => f(draws, &page.page),
+                    Some(pose) => {
+                        let mut posed = self.posed.borrow_mut();
+                        posed.clear();
+                        posed.extend(draws.iter().map(|draw| draw.posed(pose.offset_x, pose.offset_y, pose.alpha)));
+                        f(posed.as_slice(), &page.page);
+                    }
+                }
             }
-        });
+        }
     }
 }
 

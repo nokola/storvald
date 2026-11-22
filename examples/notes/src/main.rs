@@ -6,12 +6,14 @@
 //! - `edit_page`: a new note. Asks once before back drops it.
 //! - `settings_page`: cached page. Later open shows same view.
 //! - `clear_page`: overlay page. Home page stays in view under it.
+//! - `paper_page`: page with a GPU picture of its own under its nodes.
 //!
 //! Run it with `cargo run -p turbodot-example-notes`. Esc is back.
 
 mod clear_page;
 mod edit_page;
 mod home_page;
+mod paper_page;
 mod settings_page;
 
 turbodot::built_pages!();
@@ -24,6 +26,9 @@ pub struct AppState {
     pub notes: Vec<String>,
     /// True when device has too little memory to cache pages.
     pub is_memory_short: bool,
+    /// Count of frames paper page did its GPU drawing for. A test reads
+    /// it: engine skips that drawing while another page covers the page.
+    pub paper_frames_drawn: u32,
 }
 
 turbodot::start!(AppState, HomePage);
@@ -37,6 +42,7 @@ mod tests {
     use super::*;
     use crate::clear_page::ClearPage;
     use crate::edit_page::EditPage;
+    use crate::paper_page::{LINE, LINE_EVERY_TEXELS, PAPER, PAPER_SIDE_TEXELS, PaperPage};
     use crate::settings_page::SettingsPage;
     use crate::ui::{clear_page, edit_page, home_page, settings_page};
 
@@ -159,7 +165,7 @@ mod tests {
     /// any page.
     #[test]
     fn a_device_short_of_memory_caches_no_page() {
-        let mut program: Program<AppState> = started(AppState { notes: Vec::new(), is_memory_short: true });
+        let mut program: Program<AppState> = started(AppState { is_memory_short: true, ..AppState::default() });
         assert_eq!(program.cached_page_count(), 0, "nothing is made ahead");
         open_settings(&mut program, 1.0);
         program.ui_mut().set_scroll(SETTINGS.body, [0.0, 200.0]);
@@ -207,7 +213,7 @@ mod tests {
     /// slid in. Under a fullscreen page it does not (tests above).
     #[test]
     fn the_page_under_an_overlay_stays_drawn() {
-        let mut program: Program<AppState> = started(AppState { notes: vec!["Note 1".to_string()], is_memory_short: false });
+        let mut program: Program<AppState> = started(AppState { notes: vec!["Note 1".to_string()], ..AppState::default() });
         program.tap(HOME.clear_notes, 1.0);
         assert!(program.page::<ClearPage>().is_some());
         let_the_slides_end(&mut program);
@@ -262,6 +268,70 @@ mod tests {
         frame(&mut program, 0.016);
     }
 
+    /// Fullscreen page with a see-through root passes the debug check of
+    /// its kind when it says it draws its own GPU picture, and covers the
+    /// page under it.
+    #[test]
+    fn a_page_with_its_own_gpu_picture_covers_the_page_under_it() {
+        let mut program: Program<AppState> = started(AppState::default());
+        program.tap(HOME.open_paper, 1.0);
+        assert!(program.page::<PaperPage>().is_some());
+        let_the_slides_end(&mut program);
+        frame(&mut program, 0.016);
+        assert_eq!((program.depth(), program.drawn_page_count()), (2, 1));
+        assert_eq!(program.app().paper_frames_drawn, 0, "no GPU, no GPU drawing");
+    }
+
+    /// Page's own picture shows under its nodes, and engine calls page's
+    /// GPU drawing only while page is drawn: each frame while it is on
+    /// screen or under an overlay, never under a fullscreen page.
+    ///
+    /// Ignored unless asked for: needs a GPU adapter (see the test above
+    /// this file's last).
+    #[test]
+    #[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
+    fn a_page_draws_its_own_gpu_picture_only_while_it_is_drawn() {
+        let mut program: Program<AppState> = started(AppState::default());
+        let gpu: turbodot::Gpu = turbodot::Gpu::new().expect("this test needs a GPU adapter");
+        program.go(PaperPage::default());
+        let_the_slides_end(&mut program);
+
+        // Paper texture is stretched over the window: each texel row is
+        // this many pixels tall, read at its middle.
+        let picture: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
+        let row_px: u32 = picture.height / PAPER_SIDE_TEXELS;
+        let far_right: u32 = picture.width - 10;
+        // Smooth sampling blends a line's row a little with the paper row
+        // beside it: the line's color, within 8 of 255 per channel.
+        let line: [u8; 4] = picture.at(far_right, (LINE_EVERY_TEXELS - 1) * row_px + row_px / 2);
+        assert!((0..4).all(|c| line[c].abs_diff(LINE[c]) <= 8), "a ruled line: {line:?}");
+        assert_eq!(picture.at(far_right, (LINE_EVERY_TEXELS - 6) * row_px + row_px / 2), PAPER, "paper between two lines");
+        let title: Rect = program.ui().rect(crate::ui::paper_page::NAMES.title);
+        let ink: usize = (title.y as u32..(title.y + title.h) as u32).flat_map(|y| (title.x as u32..(title.x + title.w) as u32).map(move |x| (x, y))).filter(|&(x, y)| picture.at(x, y) == [0x20, 0x20, 0x20, 0xFF]).count();
+        assert!(ink > 20, "page's title is drawn over the paper: {ink} text-colored pixels");
+        picture.save_png(&std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/pictures/notes_paper_page.png"))).expect("the picture is saved");
+
+        let on_screen: u32 = program.app().paper_frames_drawn;
+        assert!(on_screen >= 1);
+        gpu.draw_program(&mut program).expect("the pages are drawn");
+        assert_eq!(program.app().paper_frames_drawn, on_screen + 1, "each frame while page is on screen");
+
+        program.go(SettingsPage::new(0));
+        let_the_slides_end(&mut program);
+        let covered: u32 = program.app().paper_frames_drawn;
+        gpu.draw_program(&mut program).expect("the pages are drawn");
+        gpu.draw_program(&mut program).expect("the pages are drawn");
+        assert_eq!(program.app().paper_frames_drawn, covered, "not while a fullscreen page covers it");
+
+        assert!(program.back());
+        let_the_slides_end(&mut program);
+        program.go(ClearPage);
+        let_the_slides_end(&mut program);
+        let under_overlay: u32 = program.app().paper_frames_drawn;
+        gpu.draw_program(&mut program).expect("the pages are drawn");
+        assert_eq!(program.app().paper_frames_drawn, under_overlay + 1, "each frame while page shows under an overlay");
+    }
+
     /// Touch before first frame lands on nothing, and outline is empty.
     #[test]
     fn a_touch_before_the_first_frame_does_nothing() {
@@ -293,7 +363,7 @@ mod tests {
         program.set_epx(2.0);
         frame(&mut program, 0.0);
         let gpu: turbodot::Gpu = turbodot::Gpu::new().expect("this test needs a GPU adapter");
-        let picture: turbodot::Picture = gpu.draw_program(&program).expect("the pages are drawn");
+        let picture: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
         assert_eq!((picture.width, picture.height), (960, 1280));
         assert_eq!(picture.at(950, 20), BACK, "the page's background");
         let button: Rect = program.ui().rect(HOME.add_note);
@@ -312,7 +382,7 @@ mod tests {
         // darker than before and not black.
         program.tap(HOME.clear_notes, 1.0);
         let_the_slides_end(&mut program);
-        let picture: turbodot::Picture = gpu.draw_program(&program).expect("the pages are drawn");
+        let picture: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
         let seen: [u8; 4] = picture.at(((button.x + 3.0) * 2.0) as u32, ((button.y + button.h / 2.0) * 2.0) as u32);
         assert!(seen[0] > 0 && seen[0] < PLATE[0] && seen[3] == 0xFF, "home page's button under the overlay's sheet: {seen:?}");
     }

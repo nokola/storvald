@@ -8,6 +8,8 @@ use gogo_wgpu::UiRenderer;
 use winit::keyboard::{Key as WinitKey, NamedKey};
 use winit::window::Window;
 
+use crate::gpu::Gpu;
+
 /// How many device pixels of a touchpad's scroll count as one notch of a
 /// mouse wheel, at one device pixel per epx.
 pub(crate) const TOUCHPAD_PIXELS_PER_NOTCH: f32 = 48.0;
@@ -42,8 +44,7 @@ fn backends_to_try(named: Option<wgpu::Backends>, is_windows: bool) -> Vec<Optio
 pub(crate) struct Gfx {
     pub(crate) window: Arc<Window>,
     pub(crate) surface: wgpu::Surface<'static>,
-    pub(crate) device: wgpu::Device,
-    pub(crate) queue: wgpu::Queue,
+    pub(crate) gpu: Gpu,
     pub(crate) config: wgpu::SurfaceConfiguration,
     pub(crate) renderer: UiRenderer,
 }
@@ -102,7 +103,7 @@ impl Gfx {
         };
         surface.configure(&device, &config);
         let renderer: UiRenderer = UiRenderer::new(&device, format);
-        Ok(Gfx { window, surface, device, queue, config, renderer })
+        Ok(Gfx { window, surface, gpu: Gpu { instance, adapter, device, queue }, config, renderer })
     }
 }
 

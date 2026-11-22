@@ -96,7 +96,8 @@ impl Gpu {
     ///
     /// The same renderer and shader a window uses draw it, so the picture
     /// is what a user would see. Where no page paints, the picture is
-    /// transparent.
+    /// transparent. Pages' own GPU drawing runs first, as in a window's
+    /// frame (`Page::gpu_draw_textures`).
     ///
     /// WARNING: builds a renderer on every call, about 70 ms on Direct3D 12
     /// (it compiles the shader each time). Fine for a test, too slow for a
@@ -104,7 +105,7 @@ impl Gpu {
     ///
     /// Returns why the GPU did not hand the pixels back, or that
     /// `program` has had no frame yet.
-    pub fn draw_program<A: 'static>(&self, program: &Program<A>) -> Result<Picture, String> {
+    pub fn draw_program<A: 'static>(&self, program: &mut Program<A>) -> Result<Picture, String> {
         if program.size() == (0.0, 0.0) {
             return Err("the program has had no frame yet: call `Program::frame` first".to_string());
         }
@@ -114,7 +115,8 @@ impl Gpu {
         // sRGB-encoded values.
         let format: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
         let mut renderer: UiRenderer = UiRenderer::new(&self.device, format);
-        renderer.prepare_pages(&self.device, &self.queue, program, epx, size, &mut program.assets.text.borrow_mut(), None);
+        program.gpu_draw(&mut renderer, self);
+        renderer.prepare_pages(&self.device, &self.queue, &*program, epx, size, &mut program.assets.text.borrow_mut(), None);
         let texture: wgpu::Texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("a program's picture"),
             size: wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 },
