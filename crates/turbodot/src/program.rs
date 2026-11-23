@@ -573,6 +573,7 @@ impl<A: 'static> Program<A> {
         for (id, page) in stack.iter_mut() {
             if placed_in[id.index()].is_none() {
                 is_moving |= page.frame(dt, size_px, *epx, platform, assets);
+                page.pose = page.root_pose();
             }
         }
         let window: Rect = Rect::new(0.0, 0.0, size.0, size.1);
@@ -581,11 +582,11 @@ impl<A: 'static> Program<A> {
             let Some((parent, node)) = placed_in[id.index()] else { continue };
             let parent_ui: &PageUi = stack.get(parent);
             let rect: Rect = if parent_ui.kept.is_laid_out() { parent_ui.rect(node) } else { Rect::new(0.0, 0.0, 0.0, 0.0) };
-            let pose: Option<PagePose> = PagePose::both(parent_ui.pose, parent_ui.drawn_pose(node));
+            let node_pose: Option<PagePose> = parent_ui.drawn_pose(node);
             let page: &mut PageUi = stack.get_mut(id);
             page.viewport = Some(rect);
-            page.pose = pose;
             is_moving |= page.frame(dt, size_px, *epx, &platform.residual(window, rect), assets);
+            page.pose = PagePose::both(node_pose, page.root_pose());
         }
         is_moving
     }
@@ -1064,6 +1065,9 @@ impl<A: 'static> Program<A> {
     fn make(&mut self, mut page: Box<dyn PageObject<A>>, is_shown_now: bool) -> PageId {
         let mut page_ui: PageUi = PageUi::new(self.reload.open(page.built()));
         page.read_handler_names(&page_ui);
+        // Root's slide moves the page's finished picture (`PageUi::pose`):
+        // page is not drawn again on each frame of it.
+        page_ui.runtime.is_root_posed_by_host = true;
         // Plays each visible node's `on:show` once. Page nobody sees
         // yet plays them at its first open: they would play unseen.
         if is_shown_now {
@@ -1333,19 +1337,15 @@ impl<A: 'static> Program<A> {
 }
 
 /// Pages as renderer draws them: bottom first, each page's own pictures
-/// under its nodes and moved and faded with its root, a page placed in
-/// a node moved and faded with that node.
+/// under its nodes, both moved and faded as page's root's anim says, a
+/// page placed in a node moved and faded with that node.
 #[cfg(feature = "gpu")]
 impl<A> gogo_wgpu::DrawLists for Program<A> {
     fn for_each_list<'a>(&'a self, f: &mut dyn FnMut(&[Draw], &'a gogo_ui::Page)) {
         for id in &self.stack.order {
             let page: &'a PageUi = self.stack.get(*id);
-            let pictures: &[Draw] = self.layer_draws[id.index()].as_slice();
-            // Page's own pictures lie under its nodes: where an anim
-            // has its root, they are too.
-            let pictures_pose: Option<PagePose> = if pictures.is_empty() { None } else { PagePose::both(page.pose, page.drawn_pose(ROOT)) };
-            for (draws, pose) in [(pictures, pictures_pose), (page.draws.as_slice(), page.pose)] {
-                match pose {
+            for draws in [self.layer_draws[id.index()].as_slice(), page.draws.as_slice()] {
+                match page.pose {
                     _ if draws.is_empty() => {}
                     None => f(draws, &page.page),
                     Some(pose) => {

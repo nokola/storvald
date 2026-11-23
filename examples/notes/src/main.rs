@@ -455,6 +455,9 @@ mod tests {
         let coming: turbodot::pages::PagePose = program.ui().drawn_pose(SETTINGS.settings_page).expect("the settings page is on its way in");
         assert!(coming.offset_x > 40.0 && coming.offset_x < 60.0 && coming.alpha > 0.0 && coming.alpha < 0.2, "from the right, still clear: {coming:?}");
         assert_eq!(program.drawn_page_count(), 2, "the home page shows under it");
+        // Engine moves page's finished picture: page's own draw list
+        // stays where page is laid out.
+        assert!(matches!(program.ui().draws.first(), Some(turbodot::gogo::Draw::Quad { rect, color, .. }) if rect.x == 0.0 && color.0[3] == 255), "the page's own picture is in place, solid: {:?}", program.ui().draws.first());
         let_the_slides_end(&mut program);
         assert_eq!(program.ui().drawn_pose(SETTINGS.settings_page), None, "in place, solid");
         assert_eq!(program.drawn_page_count(), 1, "and covers the home page");
@@ -520,6 +523,33 @@ mod tests {
         let_the_slides_end(&mut program);
         frame(&mut program, 0.016);
         assert_eq!(program.placed_ui(EDIT.footer).expect("the edit page's footer").pose, None, "and in place with it");
+    }
+
+    /// Placed page whose own root names an anim plays it where it is
+    /// placed: engine moves its finished picture, as it does for a page
+    /// of the back stack.
+    #[test]
+    fn a_placed_page_plays_its_own_roots_anim() {
+        /// `home_page.gogo` as a first page that places the clear page,
+        /// whose root slides in, where its footer goes.
+        struct HolderPage;
+        impl Page<AppState> for HolderPage {
+            const PAGE: &'static BuiltPage = &home_page::PAGE;
+            type Handler = home_page::Handler;
+            fn loaded(&mut self, host: &mut Host<AppState>) {
+                host.nav.place(HOME.footer, ClearPage);
+            }
+            fn handle(&mut self, _host: &mut Host<AppState>, _event: PageEvent<home_page::Handler>) {}
+        }
+        let mut program: Program<AppState> = Program::new(&crate::ui::BUILT, AppState::default(), HolderPage).expect("the pages can be shown");
+        frame(&mut program, 0.0);
+        frame(&mut program, 0.016);
+        let coming: turbodot::pages::PagePose = program.placed_ui(HOME.footer).expect("the placed page").pose.expect("its root's `on:show` plays");
+        assert!(coming.offset_x > 40.0 && coming.alpha < 0.2, "from the right, still clear: {coming:?}");
+        for _ in 0..25 {
+            frame(&mut program, 0.016);
+        }
+        assert_eq!(program.placed_ui(HOME.footer).expect("the placed page").pose, None, "in place, solid");
     }
 
     /// Page under a leaving overlay stays where it is: it never left the

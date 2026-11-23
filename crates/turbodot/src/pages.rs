@@ -386,8 +386,9 @@ fn is_same_locale(a: &Option<Arc<Locale>>, b: &Option<Arc<Locale>>) -> bool {
 
 /// Where a page is drawn this frame against where it is laid out:
 /// moved by the offset, in epx, and faded to `alpha`. A host's own
-/// slide sets it, and a program does for a page placed in a node that
-/// an anim moves.
+/// slide sets it. A program sets it from the anim on page's root
+/// (`on:show`, `on:hide`, `on:uncover`), and for a page placed in a
+/// node that an anim moves.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PagePose {
     pub offset_x: f32,
@@ -555,16 +556,28 @@ impl PageUi {
     }
 
     /// Where `node` is drawn this frame against where it is laid out:
-    /// what anims on it and on the nodes it sits under do together.
-    /// `None`: in place, not faded, or page has no frame yet.
+    /// page's own pose, and what anims on node and on the nodes it sits
+    /// under do together. `None`: in place, not faded, or page has no
+    /// frame yet.
     ///
     /// Needed for what is drawn in a node's rectangle and is not the
-    /// page's own node: a page placed there, a GPU picture.
+    /// page's own node: a page placed there.
     pub fn drawn_pose(&self, node: NodeId) -> Option<PagePose> {
         if !self.kept.is_laid_out() {
             return None;
         }
         let shift: gogo_ui::DrawnShift = gogo_ui::drawn_shift(&self.page, self.kept.frame(), node);
+        let within_page: Option<PagePose> = if shift == gogo_ui::DrawnShift::NONE { None } else { Some(PagePose { offset_x: shift.offset_x, offset_y: shift.offset_y, alpha: shift.opacity }) };
+        PagePose::both(self.pose, within_page)
+    }
+
+    /// Where anims have page's root now, and how solid. `None`: in
+    /// place, not faded.
+    ///
+    /// Needed by a program: it moves page's finished picture there,
+    /// where gogo would draw every node again on each frame.
+    pub fn root_pose(&self) -> Option<PagePose> {
+        let shift: gogo_ui::DrawnShift = self.runtime.root_pose();
         if shift == gogo_ui::DrawnShift::NONE { None } else { Some(PagePose { offset_x: shift.offset_x, offset_y: shift.offset_y, alpha: shift.opacity }) }
     }
 

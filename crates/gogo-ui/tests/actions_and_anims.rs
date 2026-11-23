@@ -192,6 +192,56 @@ fn a_host_plays_one_hook_and_a_hide_puts_back_what_it_moved() {
     assert_eq!((look.motion[p.index()].translate[0], look.num(&fx.page, p, PropKey::Opacity).unwrap_or(1.0)), (0.0, 1.0), "as before the hide");
 }
 
+/// Host that says it draws the root's translate and opacity itself gets
+/// them from `root_pose`, and they change no node's look: page is not
+/// laid out and drawn again while only they move.
+///
+/// Needed for a page that slides in: host moves the page's finished
+/// picture, where the look would have every node drawn again on each
+/// frame of the slide.
+#[test]
+fn a_host_can_draw_the_roots_slide_itself() {
+    let mut fx = Fx::new("anim slide { v.translate.x from=60, to=0, duration=1\n and v.opacity from=0, to=1, duration=1 }\nanim both { v.translate.x from=60, to=0, duration=1\n and p.translate.y from=10, to=0, duration=1 }\nView v { Panel p width=10, height=10 }");
+    let (v, p) = (fx.node("v"), fx.node("p"));
+    let (slide, both) = (fx.anim("slide"), fx.anim("both"));
+    let mut kept: KeptFrame = KeptFrame::default();
+    let mut draws: Vec<gogo_ui::Draw> = Vec::new();
+    fx.rt.is_root_posed_by_host = true;
+    fx.rt.play_id(&fx.page, slide, Finish::Nothing);
+    kept.frame_retained(&mut fx.rt, &fx.page, VIEW, &FixedAdvance, &mut draws, None);
+    fx.tick(0.5);
+    assert!(!fx.rt.dirty && fx.rt.is_moving(), "the slide moves on and asks for frames, with nothing to lay out or draw again");
+    assert_eq!(fx.rt.root_pose(), gogo_ui::DrawnShift { offset_x: 30.0, offset_y: 0.0, opacity: 0.5 }, "host reads where the root is");
+    kept.frame_retained(&mut fx.rt, &fx.page, VIEW, &FixedAdvance, &mut draws, None);
+    assert_eq!(gogo_ui::drawn_shift(&fx.page, kept.frame(), p), gogo_ui::DrawnShift::NONE, "the look has the root in place, solid");
+    assert_eq!(kept.frame().look().motion[v.index()].translate, [0.0, 0.0]);
+    fx.tick(0.6);
+    assert!(!fx.rt.dirty && fx.rt.root_pose() == gogo_ui::DrawnShift::NONE, "over: in place");
+
+    // An anim that moves another node too is laid out and drawn as
+    // any anim; the root's part still goes to host.
+    fx.rt.play_id(&fx.page, both, Finish::Nothing);
+    kept.frame_retained(&mut fx.rt, &fx.page, VIEW, &FixedAdvance, &mut draws, None);
+    fx.tick(0.5);
+    assert!(fx.rt.dirty, "a node of the page moves: page is drawn again");
+    kept.frame_retained(&mut fx.rt, &fx.page, VIEW, &FixedAdvance, &mut draws, None);
+    assert_eq!(gogo_ui::drawn_shift(&fx.page, kept.frame(), p), gogo_ui::DrawnShift { offset_x: 0.0, offset_y: 5.0, opacity: 1.0 });
+    assert_eq!(fx.rt.root_pose().offset_x, 30.0);
+
+    // A page that takes its file's new text while it runs keeps the
+    // word: its next slide costs as little.
+    let mut saved = compile("anim slide { v.translate.x from=60, to=0, duration=1 }
+View v { Panel p width=20, height=10 }", &|_| None).page;
+    assert!(fx.rt.carried_to(&fx.page, &mut saved).is_ok_and(|carried| carried.is_root_posed_by_host), "carried over a hot reload");
+
+    // Host that does not say so gets nothing: the look has the slide.
+    let mut plain = Fx::new("anim slide { v.translate.x from=60, to=0, duration=1 }\nView v { Panel p width=10, height=10 }");
+    let slide = plain.anim("slide");
+    plain.rt.play_id(&plain.page, slide, Finish::Nothing);
+    plain.tick(0.5);
+    assert!(plain.rt.dirty && plain.rt.root_pose() == gogo_ui::DrawnShift::NONE);
+}
+
 /// What host draws in a node's rectangle follows node: `drawn_shift`
 /// says how far an anim moved node and everything it sits under, and
 /// how see-through they are together.

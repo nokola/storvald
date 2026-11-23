@@ -414,6 +414,18 @@ pub struct Runtime {
     pub scroll: Vec<[f32; 2]>,
     /// Set by anything that changes what layout/draw would produce.
     pub dirty: bool,
+    /// True when host draws the root's `translate.x`, `translate.y` and
+    /// `opacity` anim lanes itself: it reads them from `root_pose` and
+    /// moves and fades the page's finished picture. Those lanes then
+    /// change no node's look here.
+    ///
+    /// Needed for a page that slides in: with the lanes in the look,
+    /// every node of the page is drawn again on each frame of the
+    /// slide (7 times the frame's page time on a 2014 phone).
+    ///
+    /// A touch during the slide lands where the page is laid out, not
+    /// where its picture is.
+    pub is_root_posed_by_host: bool,
     /// Scroll nodes whose offset code just set (`set_scroll`): the input
     /// tick clamps each to its content range once the node is idle and
     /// drops it from here. Not clamped at the write — the range needs a
@@ -658,6 +670,7 @@ impl Runtime {
             instant_flips: Vec::new(),
             pending_settle: None,
             dirty: true,
+            is_root_posed_by_host: false,
             locale: None,
             safe: [0.0; 4],
             writes: Vec::new(),
@@ -745,6 +758,7 @@ impl Runtime {
             scroll,
             locale,
             safe,
+            is_root_posed_by_host,
             writes,
             customs,
             pools,
@@ -812,6 +826,7 @@ impl Runtime {
         rt.remake_rows(old_page, new_page, pools)?;
         rt.set_locale(locale.clone());
         rt.safe = *safe;
+        rt.is_root_posed_by_host = *is_root_posed_by_host;
         rt.scroll = scroll.clone();
         rt.states = states.clone();
         // After the states: an item may set one (`selected=$item.done`).
@@ -1206,6 +1221,45 @@ impl Runtime {
         let n = &page.nodes[node];
         let event: StrId = page.intern_lookup(hook.event());
         page.handlers[n.handlers.0 as usize..(n.handlers.0 + n.handlers.1) as usize].iter().any(|h| h.event == event && matches!(h.action, Action::Play(anim) if self.is_playing_id(anim)))
+    }
+
+    /// True for an anim lane host draws itself (`is_root_posed_by_host`).
+    fn is_root_pose_lane(&self, node: NodeId, channel: Channel) -> bool {
+        self.is_root_posed_by_host && node.index() == 0 && matches!(channel, Channel::TranslateX | Channel::TranslateY | Channel::Opacity)
+    }
+
+    /// True for a play that moves nothing but lanes host draws itself.
+    fn is_root_pose_only(&self, owns: &[(NodeId, Channel)], owns_props: &[(NodeId, PropKey)]) -> bool {
+        owns_props.is_empty() && owns.iter().all(|(node, channel)| self.is_root_pose_lane(*node, *channel))
+    }
+
+    /// Where anims have the root now and how solid, for host that
+    /// draws that itself (`is_root_posed_by_host`). `DrawnShift::NONE`
+    /// when it does not, and when no anim moves the root.
+    pub fn root_pose(&self) -> crate::draw::DrawnShift {
+        let mut pose: crate::draw::DrawnShift = crate::draw::DrawnShift::NONE;
+        if !self.is_root_posed_by_host {
+            return pose;
+        }
+        let mut set = |channel: Channel, v: f32| match channel {
+            Channel::TranslateX => pose.offset_x = v,
+            Channel::TranslateY => pose.offset_y = v,
+            Channel::Opacity => pose.opacity = v.clamp(0.0, 1.0),
+            _ => {}
+        };
+        for (node, channel, v) in &self.held {
+            if node.index() == 0 {
+                set(*channel, *v);
+            }
+        }
+        for p in self.players.iter().filter(|p| !p.stopped) {
+            for (node, channel) in &p.owns {
+                if node.index() == 0 {
+                    set(*channel, self.motion[*node].get(*channel));
+                }
+            }
+        }
+        pose
     }
 
     /// Plays node's own `hook` anim, with no change to whether node
@@ -2043,6 +2097,9 @@ impl Runtime {
             }
             alive
         });
+        // A play that moves only lanes host draws itself changes no
+        // node's look: page is not resolved and drawn again for it.
+        let is_look_moving: bool = moving || players.iter().any(|p| !self.is_root_pose_only(&p.owns, &p.owns_props)) || finished.iter().any(|(_, owns, owns_props, _)| !self.is_root_pose_only(owns, owns_props));
         moving |= !players.is_empty() || !finished.is_empty();
         self.players = players;
         for (f, owns, owns_props, anim) in finished {
@@ -2095,7 +2152,7 @@ impl Runtime {
                 }
             }
         }
-        if moving {
+        if is_look_moving {
             self.dirty = true;
         }
         moving
@@ -2793,9 +2850,13 @@ impl Runtime {
     /// bumped — the draw cache diffs `motion` per node and walks only the
     /// mover's subtree.
     pub fn compose_motion(&mut self) {
-        let Runtime { resolved, held, players, motion, pulses, .. } = self;
+        let Runtime { resolved, held, players, motion, pulses, is_root_posed_by_host, .. } = self;
         let n: usize = resolved.motion.len();
         let mut stamp = |node: NodeId, channel: Channel, v: f32| {
+            // Host draws these itself (`is_root_posed_by_host`).
+            if *is_root_posed_by_host && node.index() == 0 && matches!(channel, Channel::TranslateX | Channel::TranslateY) {
+                return;
+            }
             if node.index() < n && !matches!(channel, Channel::Opacity | Channel::ColorA | Channel::RevealX | Channel::RevealY) {
                 resolved.motion[node].set(channel, v);
             }
@@ -3677,6 +3738,10 @@ pub fn resolve(page: &Page, rt: &Runtime) -> Resolved {
 /// to their ladder look next frame).
 fn compose_anim(page: &Page, rt: &Runtime, r: &mut Resolved, touched: &mut Vec<NodeId>) {
     let mut apply = |node: NodeId, channel: Channel, v: f32| {
+        // Host draws these itself: they stay out of the look.
+        if rt.is_root_pose_lane(node, channel) {
+            return;
+        }
         match channel {
             Channel::Opacity => r.overrides.push((node, Prop { key: PropKey::Opacity, value: Value::VNum(v) })),
             Channel::ColorA => r.overrides.push((node, Prop { key: PropKey::ColorA, value: Value::VNum(v) })),

@@ -1370,7 +1370,10 @@ anim entrance duration_each=0.2 {              // each: wearers + stagger
   `on:hide` if that still plays, and puts back what it moved: a page
   opened again while it leaves comes in anew.
   `Runtime::is_hook_playing` says whether a node's hook anim still
-  plays.
+  plays. A host may draw the root's `translate.x`, `translate.y` and
+  `opacity` anim lanes itself (`Runtime::is_root_posed_by_host`,
+  `Runtime::root_pose`): it moves the page's finished picture, and the
+  page is not drawn again on each frame of a slide.
 
 ## Grid (D82 — designed 2026-07-06, built 2026-07-10)
 

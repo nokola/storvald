@@ -1210,13 +1210,15 @@ View settingsPage .SlidingPage background=#17181C {
   build: `each .SlidingPage` finds no node that wears the style
   (G0060). So half a slide cannot slip through.
 - `translate` and `opacity` move the picture only. The page is laid out
-  once, however long the slide is.
+  once, however long the slide is. TurboDot goes one step further for
+  a page's root: it moves and fades the page's finished picture, so no
+  node is drawn again on any frame of the slide. A touch during the
+  slide lands where the page is laid out.
 - A program's first page comes in over nothing. Give it `on:uncover`
   alone, with an anim that names its root:
   `homePage.translate.x from=-30, to=0, duration=0.2`.
 - What the host draws in the page with its own code (a GPU picture, a
-  page placed in a node) moves and fades with the root: TurboDot asks
-  `gogo_ui::drawn_shift` where the root is drawn now.
+  page placed in a node) moves and fades with the page.
 
 ---
 
