@@ -5,8 +5,10 @@ use turbodot::prelude::*;
 use crate::AppState;
 use crate::clear_page::ClearPage;
 use crate::edit_page::EditPage;
+use crate::footer_page::FooterPage;
 use crate::paper_page::PaperPage;
 use crate::settings_page::SettingsPage;
+use crate::toast_page::ToastPage;
 use crate::ui::home_page::{Handler, NAMES, PAGE};
 
 #[derive(Default)]
@@ -21,6 +23,10 @@ impl Page<AppState> for HomePage {
     fn loaded(&mut self, host: &mut Host<AppState>) {
         host.nav.set_page_cache_enabled(!host.app.is_memory_short);
         host.nav.preload_if_cache_enabled(SettingsPage::new(host.app.notes.len()));
+        // Page inside this page: lives as long as this page does.
+        host.nav.place(NAMES.footer, FooterPage);
+        // Layer above every page: any page tells it what to say.
+        host.nav.add_layer(ToastPage::default());
     }
 
     /// Each time page comes into view: first, and on return by back.

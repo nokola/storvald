@@ -1,0 +1,11 @@
+// Part with its own file and code, placed inside other pages: the home
+// page and the edit page each place one in their `footer` node
+// (`host.nav.place`).
+uses "look.gogo"
+
+View footerPage {
+    Row spacing=8, width=fill {
+        Label noteCount text="", font_color=$dim
+        Button addSample .Plain text="Add sample"
+    }
+}

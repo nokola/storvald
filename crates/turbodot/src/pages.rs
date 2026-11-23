@@ -523,6 +523,24 @@ impl PageUi {
         self.laid_out_for = (size, epx, self.viewport);
     }
 
+    /// One frame of this page, `dt` seconds after the last: page takes
+    /// `platform`, moves its animations, and lays out again if something
+    /// changed. `size` is in device pixels, `epx` is device pixels per
+    /// epx.
+    ///
+    /// Returns true while something still moves.
+    pub fn frame(&mut self, dt: f32, size: (u32, u32), epx: f32, platform: &PagePlatform, assets: &UiAssets) -> bool {
+        platform.apply(&self.page, &mut self.runtime);
+        let mut is_moving: bool = self.runtime.tick(&mut self.page, dt);
+        if self.kept.is_laid_out() {
+            is_moving |= self.input.tick(&self.page, &mut self.runtime, self.kept.frame(), dt);
+        }
+        self.relayout(size, epx, assets);
+        // Asked after the layout: a glide that this frame's write
+        // started there must keep the frames coming.
+        is_moving | self.runtime.is_moving()
+    }
+
     /// Whether the page's root shows at all.
     pub fn is_shown(&self) -> bool {
         self.kept.is_laid_out() && !self.kept.look().gone(&self.page, NodeId::new(0)) && !self.kept.look().hidden(&self.page, NodeId::new(0))
@@ -820,15 +838,7 @@ impl PageStack {
     pub fn frame(&mut self, dt: f32, size: (u32, u32), epx: f32, platform: &PagePlatform, assets: &UiAssets) -> bool {
         let mut is_moving: bool = false;
         for (_, page) in self.iter_mut() {
-            platform.apply(&page.page, &mut page.runtime);
-            is_moving |= page.runtime.tick(&mut page.page, dt);
-            if page.kept.is_laid_out() {
-                is_moving |= page.input.tick(&page.page, &mut page.runtime, page.kept.frame(), dt);
-            }
-            page.relayout(size, epx, assets);
-            // Asked after the layout: a glide that this frame's write
-            // started there must keep the frames coming.
-            is_moving |= page.runtime.is_moving();
+            is_moving |= page.frame(dt, size, epx, platform, assets);
         }
         is_moving
     }

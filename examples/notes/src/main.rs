@@ -7,14 +7,18 @@
 //! - `settings_page`: cached page. Later open shows same view.
 //! - `clear_page`: overlay page. Home page stays in view under it.
 //! - `paper_page`: page with a GPU picture of its own under its nodes.
+//! - `footer_page`: page placed inside the home page and the edit page.
+//! - `toast_page`: layer above every page, shows a line for a moment.
 //!
 //! Run it with `cargo run -p turbodot-example-notes`. Esc is back.
 
 mod clear_page;
 mod edit_page;
+mod footer_page;
 mod home_page;
 mod paper_page;
 mod settings_page;
+mod toast_page;
 
 turbodot::built_pages!();
 
@@ -50,14 +54,18 @@ mod tests {
     use super::*;
     use crate::clear_page::ClearPage;
     use crate::edit_page::EditPage;
+    use crate::footer_page::FooterPage;
+    use crate::toast_page::{TOAST_SEC, ToastPage};
     use crate::paper_page::{LINE, LINE_EVERY_TEXELS, PAPER, PAPER_SIDE_TEXELS, PaperPage};
     use crate::settings_page::{MADE_PICTURE_COLOR, MADE_PICTURE_SIDE_PX, SettingsPage};
-    use crate::ui::{clear_page, edit_page, home_page, settings_page};
+    use crate::ui::{clear_page, edit_page, footer_page, home_page, settings_page, toast_page};
 
     const HOME: home_page::Names = home_page::NAMES;
     const CLEAR: clear_page::Names = clear_page::NAMES;
     const EDIT: edit_page::Names = edit_page::NAMES;
     const SETTINGS: settings_page::Names = settings_page::NAMES;
+    const FOOTER: footer_page::Names = footer_page::NAMES;
+    const TOAST: toast_page::Names = toast_page::NAMES;
 
     /// Size tests lay pages out for, in epx.
     const SIZE_EPX: (f32, f32) = (480.0, 640.0);
@@ -355,6 +363,136 @@ mod tests {
         open_settings(&mut program, 1.0);
         let banner: Rect = program.ui().rect(SETTINGS.banner);
         assert_eq!((banner.w, banner.h), (64.0, 16.0), "the jpeg's size");
+    }
+
+    /// Layer shows above every page when a page tells it to, takes no
+    /// touch beside its nodes, counts its own time by its frame call,
+    /// and asks for frames only while it shows.
+    ///
+    /// Needed for what any page may show over itself and what goes away
+    /// with time: a toast.
+    #[test]
+    fn a_layer_shows_above_the_pages_for_a_while_and_takes_no_touch() {
+        let mut program: Program<AppState> = started(AppState::default());
+        frame(&mut program, 0.016);
+        assert!(program.layer::<ToastPage>().is_some(), "the home page added the layer");
+        let shows = |program: &Program<AppState>| -> bool { let plate: Rect = program.layer_ui::<ToastPage>().expect("the toast").rect(TOAST.plate); plate.w > 0.0 && plate.h > 0.0 };
+        assert!(!shows(&program), "nothing to say yet");
+        assert!(!program.frame(SIZE_EPX.0, SIZE_EPX.1, 0.016), "a still program asks for no frame");
+
+        program.tap(HOME.add_note, 1.0);
+        let_the_slides_end(&mut program);
+        program.tap(EDIT.save_note, 2.0);
+        frame(&mut program, 0.016);
+        assert!(shows(&program), "the edit page told the toast");
+        assert_eq!(program.layer_ui::<ToastPage>().expect("the toast").text_of(TOAST.message), Some("Saved"));
+        let_the_slides_end(&mut program);
+        assert!(program.frame(SIZE_EPX.0, SIZE_EPX.1, 0.016), "the toast asks for frames while it shows");
+
+        // A tap on a home page's button goes through the layer.
+        program.tap(HOME.open_settings, 3.0);
+        assert!(program.page::<SettingsPage>().is_some(), "the layer took no touch");
+        let_the_slides_end(&mut program);
+        assert!(shows(&program), "the toast stays above the page opened under it");
+
+        for _ in 0..((TOAST_SEC / 0.1) as usize + 2) {
+            frame(&mut program, 0.1);
+        }
+        assert!(!shows(&program), "gone after its time");
+        frame(&mut program, 0.016);
+        assert!(!program.frame(SIZE_EPX.0, SIZE_EPX.1, 0.016), "and asks for no more frames");
+    }
+
+    /// Layer is drawn above the page on screen: its plate shows where the
+    /// page under it has its background.
+    ///
+    /// Ignored unless asked for: needs a GPU adapter.
+    #[test]
+    #[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
+    fn a_layer_is_drawn_above_the_pages() {
+        // Toast's own color: no node of the home page has it.
+        const PLATE: [u8; 4] = [0x2E, 0x5C, 0x3E, 0xFF];
+        let mut program: Program<AppState> = started(AppState::default());
+        program.tap(HOME.add_note, 1.0);
+        let_the_slides_end(&mut program);
+        program.tap(EDIT.save_note, 2.0);
+        let_the_slides_end(&mut program);
+        let plate: Rect = program.layer_ui::<ToastPage>().expect("the toast").rect(TOAST.plate);
+        let gpu: turbodot::Gpu = turbodot::Gpu::new().expect("this test needs a GPU adapter");
+        let picture: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
+        assert_eq!(picture.at((plate.x + 3.0) as u32, (plate.y + 3.0) as u32), PLATE, "the toast's plate, over the home page");
+    }
+
+    /// Page placed inside another is laid out in the node it was placed
+    /// in, takes a tap there and tells the page it sits in. It is freed
+    /// with that page.
+    ///
+    /// Needed for a part with its own file and code that several pages
+    /// show: a tool strip, a panel.
+    #[test]
+    fn a_page_placed_inside_a_page_lives_in_its_node_and_dies_with_its_page() {
+        let mut program: Program<AppState> = started(AppState::default());
+        frame(&mut program, 0.016);
+        let place: Rect = program.ui().rect(HOME.footer);
+        let footer: &PageUi = program.placed_ui(HOME.footer).expect("the footer page is placed");
+        assert!(program.placed::<FooterPage>(HOME.footer).is_some());
+        assert!(program.is_drawn::<FooterPage>());
+        let button: Rect = footer.rect(FOOTER.add_sample);
+        assert!(place.w > 0.0 && place.contains(button.x, button.y) && place.contains(button.x + button.w - 0.5, button.y + button.h - 0.5), "its button {button:?} sits inside the place {place:?}");
+        assert_eq!(footer.text_of(FOOTER.note_count), Some("0 notes"), "its `show` ran");
+
+        let (x, y): (f32, f32) = (button.x + button.w / 2.0, button.y + button.h / 2.0);
+        assert!(program.touch_finger(Phase::Down, x, y, 1.0, 1), "the placed page takes the finger");
+        assert!(program.touch_finger(Phase::Up, x, y, 1.05, 1));
+        frame(&mut program, 0.016);
+        assert_eq!(program.app().notes.len(), 1, "its handler ran");
+        assert_eq!(program.placed_ui(HOME.footer).expect("the footer page").text_of(FOOTER.note_count), Some("1 notes"));
+        assert_eq!(program.ui().rows(HOME.notes).len(), 1, "the page it sits in was told");
+
+        // Settings page covers the home page: what is placed in it is not
+        // drawn either.
+        open_settings(&mut program, 1.5);
+        assert!(!program.is_drawn::<FooterPage>(), "covered with its page");
+        program.back();
+        let_the_slides_end(&mut program);
+        assert!(program.is_drawn::<FooterPage>(), "back in view with its page");
+
+        // The edit page places a footer of its own: two more pages while
+        // it lives, none after.
+        let live_before: usize = program.live_page_count();
+        program.tap(HOME.add_note, 2.0);
+        let_the_slides_end(&mut program);
+        frame(&mut program, 0.016);
+        assert_eq!(program.live_page_count(), live_before + 2);
+        let place: Rect = program.ui().rect(EDIT.footer);
+        let button: Rect = program.placed_ui(EDIT.footer).expect("the edit page's footer").rect(FOOTER.add_sample);
+        assert!(place.contains(button.x, button.y), "{button:?} in {place:?}");
+        program.back();
+        program.back();
+        let_the_slides_end(&mut program);
+        assert_eq!(program.live_page_count(), live_before, "the placed page was freed with its page");
+        assert!(program.placed_ui(HOME.footer).is_some(), "the home page's own footer stays");
+    }
+
+    /// Page placed inside another is drawn over the node it was placed
+    /// in, and not while its page is covered.
+    ///
+    /// Ignored unless asked for: needs a GPU adapter.
+    #[test]
+    #[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
+    fn a_page_placed_inside_a_page_is_drawn_with_its_page() {
+        const PLATE: [u8; 4] = [0x2C, 0x2F, 0x38, 0xFF];
+        let mut program: Program<AppState> = started(AppState::default());
+        frame(&mut program, 0.016);
+        let gpu: turbodot::Gpu = turbodot::Gpu::new().expect("this test needs a GPU adapter");
+        let button: Rect = program.placed_ui(HOME.footer).expect("the footer page").rect(FOOTER.add_sample);
+        let (x, y): (u32, u32) = ((button.x + 3.0) as u32, (button.y + button.h / 2.0) as u32);
+        let picture: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
+        assert_eq!(picture.at(x, y), PLATE, "the placed page's button, left of its text");
+
+        open_settings(&mut program, 1.0);
+        let picture: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
+        assert_ne!(picture.at(x, y), PLATE, "covered with its page by the settings page");
     }
 
     /// Touch says whether a page took it. Page takes one on its empty

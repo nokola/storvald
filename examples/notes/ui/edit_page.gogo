@@ -9,5 +9,7 @@ View editPage background=$back, padding=16 {
         Row spacing=8 {
             Button saveNote .Plain text="Save"
         }
+        // Empty place: `edit_page.rs` places the footer page in it.
+        Panel footer width=fill, height=40
     }
 }

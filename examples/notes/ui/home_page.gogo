@@ -24,5 +24,7 @@ View homePage background=$back, padding=16 {
             Button clearNotes .Plain text="Drop all"
             Button openPaper .Plain text="Paper"
         }
+        // Empty place: `home_page.rs` places the footer page in it.
+        Panel footer width=fill, height=40
     }
 }

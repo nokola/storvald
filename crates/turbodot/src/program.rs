@@ -135,6 +135,14 @@ pub struct Program<A = ()> {
     /// next GPU frame.
     #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
     pictures_to_release: Vec<ImageKey>,
+    /// Layers above every page, in the order added (`Nav::add_layer`).
+    layers: Vec<PageId>,
+    /// By page's id in `stack`: page it is placed in and that page's
+    /// node (`Nav::place`). `None`: page of the back stack, or cached.
+    placed_in: Vec<Option<(PageId, NodeId)>>,
+    /// Placed pages in the order placed: page placed inside a placed
+    /// page comes after it.
+    placed_order: Vec<PageId>,
     /// Keys of freed pages' code-made pictures: renderer lets go of
     /// their textures at next GPU frame.
     #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
@@ -185,6 +193,9 @@ impl<A: 'static> Program<A> {
         let mut program: Program<A> = Program { app, assets, platform, stack: PageStack::new(), objects: Vec::new(), back_stack: Vec::new(), cached: Vec::new(), is_kind_checked: Vec::new(), slides: Vec::new(), nav: Nav::new(), reload, is_screen_from_host: false, epx: 1.0, size: (0.0, 0.0), layer_draws: Vec::new(), picture_keys: Vec::new(),
             pictures_to_release: Vec::new(),
             code_pictures_to_release: Vec::new(),
+            layers: Vec::new(),
+            placed_in: Vec::new(),
+            placed_order: Vec::new(),
             #[cfg(feature = "gpu")]
             pictures: crate::pictures::PictureLoader::default(),
             has_freed_a_page: false,
@@ -216,6 +227,58 @@ impl<A: 'static> Program<A> {
         self.stack.get_mut(top)
     }
 
+    /// Adds `page` as a layer above every page, as `Nav::add_layer` from
+    /// a page does.
+    pub fn add_layer<P: IntoPage<A, Kind>, Kind>(&mut self, page: P) {
+        self.add_layer_object(page.into_page_object().0);
+        self.carry_out_requests();
+    }
+
+    /// Layer whose struct is a `P`: its nodes, texts, rectangles.
+    pub fn layer_ui<P: 'static>(&self) -> Option<&PageUi> {
+        self.layer_of::<P>().map(|id| self.stack.get(id))
+    }
+
+    /// Struct of the layer that is a `P`.
+    pub fn layer<P: 'static>(&self) -> Option<&P> {
+        self.objects[self.layer_of::<P>()?.index()].as_ref()?.page().downcast_ref::<P>()
+    }
+
+    fn layer_of<P: 'static>(&self) -> Option<PageId> {
+        self.layers.iter().copied().find(|id| self.page_type(*id) == Some(TypeId::of::<P>()))
+    }
+
+    /// Page placed in `node` of page on screen (`Nav::place`): its
+    /// nodes, texts, rectangles. `None`: nothing is placed there.
+    pub fn placed_ui(&self, node: NodeId) -> Option<&PageUi> {
+        self.placed_at(self.top(), node).map(|id| self.stack.get(id))
+    }
+
+    /// Struct of page placed in `node` of page on screen. `None`:
+    /// nothing is placed there, or what is placed is not a `P`.
+    pub fn placed<P: 'static>(&self, node: NodeId) -> Option<&P> {
+        let id: PageId = self.placed_at(self.top(), node)?;
+        self.objects[id.index()].as_ref()?.page().downcast_ref::<P>()
+    }
+
+    /// True when a live page whose struct is a `P` is drawn this frame:
+    /// on screen, sliding, or under an overlay. False while a page above
+    /// it covers the screen, and for a cached page.
+    ///
+    /// Needed by a check that a covered page costs no drawing.
+    pub fn is_drawn<P: 'static>(&self) -> bool {
+        self.stack.order.iter().any(|id| self.page_type(*id) == Some(TypeId::of::<P>()))
+    }
+
+    /// Count of live pages: on the back stack, placed in a page, cached,
+    /// layers.
+    ///
+    /// Needed by a check that a page was freed, with what was placed in
+    /// it.
+    pub fn live_page_count(&self) -> usize {
+        self.stack.iter().count()
+    }
+
     /// Struct of page on screen, `None` when that page is not a `P`.
     ///
     /// Needed so a test reads what a page holds after a touch.
@@ -234,9 +297,10 @@ impl<A: 'static> Program<A> {
     }
 
     /// Count of pages drawn: page on screen, plus a sliding page or the
-    /// page a sliding page uncovers.
+    /// page a sliding page uncovers. Page placed in another counts with
+    /// it, not on its own. Layers do not count.
     pub fn drawn_page_count(&self) -> usize {
-        self.stack.order.len()
+        self.stack.order.iter().filter(|id| self.placed_in[id.index()].is_none() && !self.layers.contains(id)).count()
     }
 
     /// True while a page is on its way in or out.
@@ -325,13 +389,21 @@ impl<A: 'static> Program<A> {
                 Err(why) => eprintln!("the saved page cannot be shown, keeping the last one:\n{why}"),
             }
         }
+        // Each drawn page's own frame call. What a page asks of `Nav`
+        // there is carried out before pages are laid out.
+        let mut is_page_asking_for_frames: bool = false;
+        for i in 0..self.stack.order.len() {
+            let id: PageId = self.stack.order[i];
+            is_page_asking_for_frames |= self.call(id, |page, host| page.frame(host, dt));
+        }
+        self.carry_out_requests();
         self.place_code_pictures();
         let is_sliding: bool = self.move_slides(dt);
         let size_px: (u32, u32) = (((width * self.epx).round() as u32).max(1), ((height * self.epx).round() as u32).max(1));
-        let is_moving: bool = self.stack.frame(dt, size_px, self.epx, &self.platform, &self.assets);
+        let is_moving: bool = self.frame_pages(dt, size_px);
         #[cfg(debug_assertions)]
         self.check_page_kinds();
-        is_sliding | is_moving
+        is_sliding | is_moving | is_page_asking_for_frames
     }
 
     /// Screen's facts, from a host that knows them: what notch and
@@ -426,10 +498,123 @@ impl<A: 'static> Program<A> {
         self.touch_finger(phase, x, y, t, MOUSE_ID)
     }
 
+    /// True for page on its way out, and for page placed in one.
+    fn is_leaving(&self, id: PageId) -> bool {
+        let mut page: PageId = id;
+        loop {
+            if self.slides.iter().any(|slide| slide.page == page && slide.kind == SlideKind::Leave) {
+                return true;
+            }
+            match self.placed_in[page.index()] {
+                Some((parent, _)) => page = parent,
+                None => return false,
+            }
+        }
+    }
+
+    /// One frame of every live page. Page placed in another comes after
+    /// it: it is laid out in its node's rectangle as that page has it
+    /// this frame, with what is left of the safe insets there, and
+    /// slides where that page slides.
+    ///
+    /// Returns true while something still moves.
+    fn frame_pages(&mut self, dt: f32, size_px: (u32, u32)) -> bool {
+        let Program { stack, assets, platform, placed_in, placed_order, epx, size, .. } = self;
+        let mut is_moving: bool = false;
+        for (id, page) in stack.iter_mut() {
+            if placed_in[id.index()].is_none() {
+                is_moving |= page.frame(dt, size_px, *epx, platform, assets);
+            }
+        }
+        let window: Rect = Rect::new(0.0, 0.0, size.0, size.1);
+        for i in 0..placed_order.len() {
+            let id: PageId = placed_order[i];
+            let Some((parent, node)) = placed_in[id.index()] else { continue };
+            let parent_ui: &PageUi = stack.get(parent);
+            let rect: Rect = if parent_ui.kept.is_laid_out() { parent_ui.rect(node) } else { Rect::new(0.0, 0.0, 0.0, 0.0) };
+            let pose: Option<PagePose> = parent_ui.pose;
+            let page: &mut PageUi = stack.get_mut(id);
+            page.viewport = Some(rect);
+            page.pose = pose;
+            is_moving |= page.frame(dt, size_px, *epx, &platform.residual(window, rect), assets);
+        }
+        is_moving
+    }
+
+    /// Makes `page` a layer above every page.
+    fn add_layer_object(&mut self, page: Box<dyn PageObject<A>>) {
+        let id: PageId = self.make(page);
+        // A layer never keeps a touch beside its nodes: one that did
+        // would leave every page under it dead.
+        self.stack.get_mut(id).is_modal = false;
+        self.layers.push(id);
+        self.order_drawn_pages();
+        self.call(id, |page, host| page.show(host));
+    }
+
+    /// Places `page` inside `node` of page `parent`, in place of a page
+    /// placed there before.
+    fn place(&mut self, parent: PageId, node: NodeId, page: Box<dyn PageObject<A>>) {
+        if !self.stack.contains(parent) {
+            return; // asking page was freed before its request's turn
+        }
+        if let Some(old) = self.placed_at(parent, node) {
+            self.free(old);
+        }
+        let id: PageId = self.make(page);
+        self.placed_in[id.index()] = Some((parent, node));
+        self.placed_order.push(id);
+        if self.stack.is_ordered(parent) {
+            self.order_drawn_pages();
+        } else {
+            self.stack.order_remove(id);
+        }
+        self.call(id, |page, host| page.show(host));
+    }
+
+    /// Page placed in `node` of page `parent`.
+    fn placed_at(&self, parent: PageId, node: NodeId) -> Option<PageId> {
+        self.placed_order.iter().copied().find(|id| self.placed_in[id.index()] == Some((parent, node)))
+    }
+
+    /// Puts `id` on top of draw order, then pages placed in it, in the
+    /// order placed.
+    fn order_top_with_placed(&mut self, id: PageId) {
+        self.stack.order_top(id);
+        for i in 0..self.placed_order.len() {
+            let placed: PageId = self.placed_order[i];
+            if self.placed_in[placed.index()].is_some_and(|(parent, _)| parent == id) {
+                self.order_top_with_placed(placed);
+            }
+        }
+    }
+
+    /// Takes `id` out of draw order, with pages placed in it.
+    fn order_remove_with_placed(&mut self, id: PageId) {
+        self.stack.order_remove(id);
+        for i in 0..self.placed_order.len() {
+            let placed: PageId = self.placed_order[i];
+            if self.placed_in[placed.index()].is_some_and(|(parent, _)| parent == id) {
+                self.order_remove_with_placed(placed);
+            }
+        }
+    }
+
+    /// Calls `show` of page `id`, then of pages placed in it.
+    fn show_with_placed(&mut self, id: PageId) {
+        self.call(id, |page, host| page.show(host));
+        for i in 0..self.placed_order.len() {
+            let placed: PageId = self.placed_order[i];
+            if self.placed_in[placed.index()].is_some_and(|(parent, _)| parent == id) {
+                self.show_with_placed(placed);
+            }
+        }
+    }
+
     /// Topmost drawn page that takes a press at (`x`, `y`), in epx.
     fn page_that_takes(&self, x: f32, y: f32) -> Option<PageId> {
         self.stack.order.iter().rev().copied().find(|id| {
-            if self.slides.iter().any(|slide| slide.page == *id && slide.kind == SlideKind::Leave) {
+            if self.is_leaving(*id) {
                 return false;
             }
             let page: &PageUi = self.stack.get(*id);
@@ -451,9 +636,9 @@ impl<A: 'static> Program<A> {
     /// Mouse moved with no button held: node under it shows its `when
     /// hovered` look.
     pub fn hover(&mut self, x: f32, y: f32) {
-        let top: PageId = self.top();
-        if self.stack.get(top).kept.is_laid_out() {
-            self.stack.hover(Some(top), x, y);
+        if self.stack.get(self.top()).kept.is_laid_out() {
+            let under_mouse: Option<PageId> = self.page_that_takes(x, y);
+            self.stack.hover(under_mouse, x, y);
         }
     }
 
@@ -477,9 +662,9 @@ impl<A: 'static> Program<A> {
     /// Mouse wheel turned by `notches` at (`x`, `y`) over page on screen.
     /// Positive count: turn away from user.
     pub fn wheel(&mut self, x: f32, y: f32, notches: f32) {
-        let top: PageId = self.top();
-        let events: EventList = self.stack.get_mut(top).wheel(x, y, notches);
-        self.hand_events(top, &events);
+        let under_mouse: PageId = self.page_that_takes(x, y).unwrap_or(self.top());
+        let events: EventList = self.stack.get_mut(under_mouse).wheel(x, y, notches);
+        self.hand_events(under_mouse, &events);
     }
 
     /// Opens `page` over page on screen, as `Nav::go` from a page does.
@@ -564,12 +749,14 @@ impl<A: 'static> Program<A> {
         for i in 0..self.stack.order.len() {
             let id: PageId = self.stack.order[i];
             let Some(mut object) = self.objects[id.index()].take() else { continue };
+            self.nav.caller = Some(id);
             let mut host: Host<'_, A> = Host { app: &mut self.app, ui: self.stack.get_mut(id), nav: &mut self.nav };
             object.gpu_draw_textures(&mut host, gpu);
             let draws: &mut Vec<Draw> = &mut self.layer_draws[id.index()];
             draws.clear();
             let mut layers: crate::page::Layers<'_> = crate::page::Layers { draws, renderer: &mut *renderer, device: &gpu.device, images: &mut self.assets.images, keys: &mut self.picture_keys[id.index()], used: 0, page_index: id.index() };
             object.gpu_draw_screen(&host, &mut layers);
+            self.nav.caller = None;
             self.objects[id.index()] = Some(object);
         }
         self.carry_out_requests();
@@ -594,8 +781,10 @@ impl<A: 'static> Program<A> {
     /// Calls a function of page `id` with what a page gets.
     fn call<R>(&mut self, id: PageId, f: impl FnOnce(&mut dyn PageObject<A>, &mut Host<'_, A>) -> R) -> R {
         let mut object: Box<dyn PageObject<A>> = self.objects[id.index()].take().expect("a live page has its struct");
+        self.nav.caller = Some(id);
         let mut host: Host<'_, A> = Host { app: &mut self.app, ui: self.stack.get_mut(id), nav: &mut self.nav };
         let result: R = f(object.as_mut(), &mut host);
+        self.nav.caller = None;
         self.objects[id.index()] = Some(object);
         result
     }
@@ -619,6 +808,14 @@ impl<A: 'static> Program<A> {
                         self.back_once();
                     }
                     Request::Preload(page) => self.preload(page),
+                    Request::Layer(page) => self.add_layer_object(page),
+                    Request::Place { parent, node, page } => self.place(parent, node, page),
+                    Request::Tell { page_type, call } => {
+                        let told: Option<PageId> = self.stack.iter().map(|(id, _)| id).find(|id| self.objects[id.index()].as_ref().is_some_and(|object| object.page_type() == page_type));
+                        if let Some(id) = told {
+                            self.call(id, |page, host| call(page.page_mut(), host));
+                        }
+                    }
                 }
             }
         }
@@ -643,7 +840,9 @@ impl<A: 'static> Program<A> {
             self.is_kind_checked.resize(id.index() + 1, false);
             self.layer_draws.resize_with(id.index() + 1, Vec::new);
             self.picture_keys.resize_with(id.index() + 1, Vec::new);
+            self.placed_in.resize(id.index() + 1, None);
         }
+        self.placed_in[id.index()] = None;
         self.objects[id.index()] = Some(page);
         self.is_kind_checked[id.index()] = false;
         self.call(id, |page, host| page.loaded(host));
@@ -652,6 +851,12 @@ impl<A: 'static> Program<A> {
 
     /// Frees a page for good.
     fn free(&mut self, id: PageId) {
+        // Pages placed in it go with it.
+        while let Some(placed) = self.placed_order.iter().copied().find(|placed| self.placed_in[placed.index()].is_some_and(|(parent, _)| parent == id)) {
+            self.free(placed);
+        }
+        self.placed_order.retain(|other| *other != id);
+        self.placed_in[id.index()] = None;
         self.slides.retain(|slide| slide.page != id);
         self.code_pictures_to_release.extend(self.stack.get(id).code_pictures.iter().filter_map(|picture| picture.key));
         self.stack.remove(id);
@@ -687,7 +892,7 @@ impl<A: 'static> Program<A> {
             self.slide(id, SlideKind::Open);
         }
         self.order_drawn_pages();
-        self.call(id, |page, host| page.show(host));
+        self.show_with_placed(id);
     }
 
     /// Makes a cached page ahead of its first open.
@@ -698,7 +903,7 @@ impl<A: 'static> Program<A> {
             return;
         }
         let id: PageId = self.make(page);
-        self.stack.order_remove(id);
+        self.order_remove_with_placed(id);
         self.cached.push(id);
     }
 
@@ -723,7 +928,7 @@ impl<A: 'static> Program<A> {
         self.slide(revealed, SlideKind::Reveal);
         self.slide(leaving, SlideKind::Leave);
         self.order_drawn_pages();
-        self.call(revealed, |page, host| page.show(host));
+        self.show_with_placed(revealed);
         true
     }
 
@@ -755,7 +960,7 @@ impl<A: 'static> Program<A> {
                 SlideKind::Leave => {
                     let is_cached_page: bool = self.objects[slide.page.index()].as_ref().is_some_and(|object| object.is_cached_page());
                     if is_cached_page && self.nav.is_page_cache_enabled {
-                        self.stack.order_remove(slide.page);
+                        self.order_remove_with_placed(slide.page);
                         self.cached.push(slide.page);
                     } else {
                         self.free(slide.page);
@@ -785,16 +990,20 @@ impl<A: 'static> Program<A> {
         for i in 0..self.back_stack.len() {
             let id: PageId = self.back_stack[i];
             if i < lowest_drawn {
-                self.stack.order_remove(id);
+                self.order_remove_with_placed(id);
             } else {
-                self.stack.order_top(id);
+                self.order_top_with_placed(id);
             }
         }
         for i in 0..self.slides.len() {
             if self.slides[i].kind == SlideKind::Leave {
                 let leaving: PageId = self.slides[i].page;
-                self.stack.order_top(leaving);
+                self.order_top_with_placed(leaving);
             }
+        }
+        for i in 0..self.layers.len() {
+            let layer: PageId = self.layers[i];
+            self.order_top_with_placed(layer);
         }
     }
 

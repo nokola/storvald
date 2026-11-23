@@ -6,7 +6,7 @@ use gogo_ui::{Draw, Event, EventKind, HandlerName, NodeId, StaticPage, StrId};
 
 #[cfg(feature = "gpu")]
 use crate::gpu::Gpu;
-use crate::pages::PageUi;
+use crate::pages::{PageId, PageUi};
 
 /// Page as build compiled it from its `.gogo` file: `PAGE` of page's
 /// module in `ui`.
@@ -182,6 +182,20 @@ pub trait Page<A = ()>: Sized + 'static {
         let _ = host;
     }
 
+    /// Called once a frame while page is drawn, before pages are laid
+    /// out. `dt_sec`: seconds since last frame.
+    ///
+    /// Needed for what changes with time and not with a touch: a toast
+    /// that goes away, a progress bar.
+    ///
+    /// Returns true while page needs more frames. A program whose pages
+    /// all return false, with nothing moving, draws no frame until next
+    /// touch.
+    fn frame(&mut self, host: &mut Host<'_, A>, dt_sec: f32) -> bool {
+        let _ = (host, dt_sec);
+        false
+    }
+
     /// Answers back request: Android back key, Esc on PC, page's own
     /// `Nav::back`.
     ///
@@ -258,6 +272,20 @@ pub trait CachedPage<A = ()>: Sized + 'static {
         let _ = host;
     }
 
+    /// Called once a frame while page is drawn, before pages are laid
+    /// out. `dt_sec`: seconds since last frame.
+    ///
+    /// Needed for what changes with time and not with a touch: a toast
+    /// that goes away, a progress bar.
+    ///
+    /// Returns true while page needs more frames. A program whose pages
+    /// all return false, with nothing moving, draws no frame until next
+    /// touch.
+    fn frame(&mut self, host: &mut Host<'_, A>, dt_sec: f32) -> bool {
+        let _ = (host, dt_sec);
+        false
+    }
+
     /// As `Page::back`.
     fn back(&mut self, host: &mut Host<'_, A>) -> Back {
         let _ = host;
@@ -303,6 +331,7 @@ pub(crate) trait PageObject<A> {
     /// with no handler name is not for code.
     fn handle(&mut self, host: &mut Host<'_, A>, event: &Event);
     fn loaded(&mut self, host: &mut Host<'_, A>);
+    fn frame(&mut self, host: &mut Host<'_, A>, dt_sec: f32) -> bool;
     fn back(&mut self, host: &mut Host<'_, A>) -> Back;
     /// `CachedPage::reopened` with `fresh`: struct of this page's own
     /// type.
@@ -311,6 +340,8 @@ pub(crate) trait PageObject<A> {
     fn into_page(self: Box<Self>) -> Box<dyn Any>;
     /// Client's struct, for a test to read.
     fn page(&self) -> &dyn Any;
+    /// Client's struct, to write into (`Nav::tell`).
+    fn page_mut(&mut self) -> &mut dyn Any;
 }
 
 /// Page's handlers by id of their names in page's strings.
@@ -402,6 +433,9 @@ impl<A: 'static, P: Page<A>> PageObject<A> for Plain<P, P::Handler> {
     fn loaded(&mut self, host: &mut Host<'_, A>) {
         self.0.loaded(host);
     }
+    fn frame(&mut self, host: &mut Host<'_, A>, dt_sec: f32) -> bool {
+        self.0.frame(host, dt_sec)
+    }
     fn back(&mut self, host: &mut Host<'_, A>) -> Back {
         self.0.back(host)
     }
@@ -411,6 +445,9 @@ impl<A: 'static, P: Page<A>> PageObject<A> for Plain<P, P::Handler> {
     }
     fn page(&self) -> &dyn Any {
         &self.0
+    }
+    fn page_mut(&mut self) -> &mut dyn Any {
+        &mut self.0
     }
 }
 
@@ -455,6 +492,9 @@ impl<A: 'static, P: CachedPage<A>> PageObject<A> for Cached<P, P::Handler> {
     fn loaded(&mut self, host: &mut Host<'_, A>) {
         self.0.loaded(host);
     }
+    fn frame(&mut self, host: &mut Host<'_, A>, dt_sec: f32) -> bool {
+        self.0.frame(host, dt_sec)
+    }
     fn back(&mut self, host: &mut Host<'_, A>) -> Back {
         self.0.back(host)
     }
@@ -468,6 +508,9 @@ impl<A: 'static, P: CachedPage<A>> PageObject<A> for Cached<P, P::Handler> {
     }
     fn page(&self) -> &dyn Any {
         &self.0
+    }
+    fn page_mut(&mut self) -> &mut dyn Any {
+        &mut self.0
     }
 }
 
@@ -509,17 +552,29 @@ pub(crate) enum Request<A> {
     Go(Box<dyn PageObject<A>>),
     Back,
     Preload(Box<dyn PageObject<A>>),
+    /// Page to add as a layer above every page.
+    Layer(Box<dyn PageObject<A>>),
+    /// Page to place inside node `node` of page `parent`.
+    Place { parent: PageId, node: NodeId, page: Box<dyn PageObject<A>> },
+    /// Call for the live page whose struct is of type `page_type`.
+    Tell { page_type: TypeId, call: TellCall<A> },
 }
+
+/// What `Nav::tell` keeps until program carries it out: caller's
+/// function, taking the told page's struct as `Any`.
+pub(crate) type TellCall<A> = Box<dyn FnOnce(&mut dyn Any, &mut Host<'_, A>)>;
 
 /// Opens another page, asks for back.
 pub struct Nav<A = ()> {
     pub(crate) requests: Vec<Request<A>>,
     pub(crate) is_page_cache_enabled: bool,
+    /// Page whose function is running now. `None` between calls.
+    pub(crate) caller: Option<PageId>,
 }
 
 impl<A: 'static> Nav<A> {
     pub(crate) fn new() -> Nav<A> {
-        Nav { requests: Vec::new(), is_page_cache_enabled: true }
+        Nav { requests: Vec::new(), is_page_cache_enabled: true, caller: None }
     }
 
     /// Opens `page` over page on screen. Back returns to page that asked.
@@ -528,6 +583,55 @@ impl<A: 'static> Nav<A> {
     /// its `reopened`.
     pub fn go<P: IntoPage<A, Kind>, Kind>(&mut self, page: P) {
         self.requests.push(Request::Go(page.into_page_object().0));
+    }
+
+    /// Adds `page` as a layer: always there, drawn above every page of
+    /// the back stack and above layers added before it. For what any
+    /// page may show over itself: a toast, a progress bar.
+    ///
+    /// Layer takes a touch on its own nodes only: a touch beside them
+    /// goes to the page under it, whatever layer's `TAKES_EVERY_TOUCH`
+    /// says. Back is not asked of it. It lives as long as the program.
+    /// Another page reaches it with `tell`.
+    pub fn add_layer<P: IntoPage<A, Kind>, Kind>(&mut self, page: P) {
+        self.requests.push(Request::Layer(page.into_page_object().0));
+    }
+
+    /// Places `page` inside `node` of the page that asks. `page` is laid
+    /// out in that node's rectangle, drawn over it, and takes touches
+    /// there. It is a page like any other: its own file, its own struct,
+    /// its own handlers.
+    ///
+    /// Needed for a part several pages share (a tool strip), and for a
+    /// part one page shows several of.
+    ///
+    /// Placed page lives until the asking page is freed, or until
+    /// another page is placed in same node. It shows and hides with the
+    /// asking page, and slides with it.
+    ///
+    /// WARNING: panics when no page's function is running: only a page
+    /// places a page.
+    pub fn place<P: IntoPage<A, Kind>, Kind>(&mut self, node: NodeId, page: P) {
+        let parent: PageId = self.caller.expect("`Nav::place` is for a page's own function (`loaded`, `show`, `handle`): no page is running now");
+        self.requests.push(Request::Place { parent, node, page: page.into_page_object().0 });
+    }
+
+    /// Calls `call` with the live page whose struct is a `P`, once the
+    /// running function returns. Does nothing when no such page is
+    /// alive.
+    ///
+    /// Needed for one page to say something to another: a placed page
+    /// to the page it sits in, a page to its tool strip.
+    ///
+    /// Allocates once per call: for what a user's action causes, not
+    /// for every frame.
+    pub fn tell<P: 'static>(&mut self, call: impl FnOnce(&mut P, &mut Host<'_, A>) + 'static) {
+        let call: TellCall<A> = Box::new(move |page: &mut dyn Any, host: &mut Host<'_, A>| {
+            if let Some(page) = page.downcast_mut::<P>() {
+                call(page, host);
+            }
+        });
+        self.requests.push(Request::Tell { page_type: TypeId::of::<P>(), call });
     }
 
     /// Asks for back, as back key does: page on screen answers first

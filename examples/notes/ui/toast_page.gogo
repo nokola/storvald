@@ -1,0 +1,9 @@
+// Layer above every page: one line of text that shows for a moment
+// (`toast_page.rs`). Hidden until a page tells it something.
+uses "look.gogo"
+
+View toastPage {
+    Panel plate background=#2E5C3EFF, padding=10, halign=center, valign=bottom, margin_bottom=60, visibility=gone {
+        Label message text="", font_color=$ink
+    }
+}
