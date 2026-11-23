@@ -3142,6 +3142,24 @@ impl Retained {
 /// (`Resolved::seat`, or the Runtime's copy of it): the seat host while
 /// a `when … n.seat = name` holds, else the parent that wrote `n`. A
 /// table shorter than the arena (rows cloned since) means "at home".
+/// Copies a resolve's repeat rows into `to`, into the memory `to` holds.
+///
+/// Needed because `Vec::clone_from` on this table makes every inner row
+/// list new: one allocation per repeat, in every frame that resolves a
+/// page with a list again.
+pub(crate) fn copy_repeat_rows(to: &mut Vec<(NodeId, Vec<NodeId>)>, from: &[(NodeId, Vec<NodeId>)]) {
+    to.truncate(from.len());
+    for (k, (repeat, rows)) in from.iter().enumerate() {
+        match to.get_mut(k) {
+            Some((to_repeat, to_rows)) => {
+                *to_repeat = *repeat;
+                to_rows.clone_from(rows);
+            }
+            None => to.push((*repeat, rows.clone())),
+        }
+    }
+}
+
 fn placed_parent_in(seat: &[NodeId], page: &Page, n: NodeId) -> NodeId {
     match seat.get(n.index()).copied().unwrap_or(NO_NODE) {
         NO_NODE => page.declared_parent(n),
@@ -3253,7 +3271,7 @@ impl Clone for Resolved {
         self.seat.clone_from(&from.seat);
         self.states.clone_from(&from.states);
         self.raised.clone_from(&from.raised);
-        self.repeat_rows.clone_from(&from.repeat_rows);
+        copy_repeat_rows(&mut self.repeat_rows, &from.repeat_rows);
         self.tree.clone_from(&from.tree);
         self.hiding.clone_from(&from.hiding);
         self.auto.clone_from(&from.auto);
@@ -4765,6 +4783,15 @@ fn resolve_into(page: &Page, rt: &mut Runtime, r: &mut Resolved) {
     rt.retained.touched = prev_touched;
     rt.retained.reach = reach;
     rt.retained.before = before;
+    // Change list goes back too, emptied, for the next state flip.
+    // Needed because a list made new for every flip is an allocation at
+    // every finger down, hover and focus move. A flip this resolve itself
+    // caused has made its own list: that one stays.
+    if rt.changes.capacity() == 0 {
+        let mut changes = changes;
+        changes.clear();
+        rt.changes = changes;
+    }
     let _ = lerp_value;
 }
 

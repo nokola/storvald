@@ -37,7 +37,7 @@
 
 use std::cell::RefCell;
 
-use crate::compile::{CompileOptions, Loader, compile_with};
+use crate::compile::{BuiltNumbers, CompileOptions, Loader, compile_keeping_numbers};
 use crate::diag::{Diagnostic, Severity, has_errors};
 use crate::locale::Keys;
 use crate::page::{AtlasDecl, AtlasShape, BehaviorSpec, ImageKey, ImageSlice, Images, Kind, Page, StaticPage};
@@ -188,7 +188,11 @@ fn compile_against(source: &str, source_name: &str, loader: Loader<'_>, baked: &
         .collect();
     let images = RefCell::new(images);
     let options = CompileOptions { code_controls: baked.code_controls, behaviors: baked.behaviors, keys: Some(&keys), images: Some(&images), require_keys: baked.require_keys, source_name, refuse_new_keys_and_pictures: true, ..CompileOptions::default() };
-    let compiled = compile_with(source, loader, options);
+    // Built page of this file: its strings and arrangements keep their
+    // numbers, which program's code holds (`Anim`, `Theme`,
+    // `Arrangement`).
+    let built: Option<BuiltNumbers<'_>> = baked.pages.iter().find(|p| !p.file.is_empty() && p.file == source_name).map(|p| BuiltNumbers { strings: p.page.strings, arrangements: p.page.arrangements });
+    let compiled = compile_keeping_numbers(source, loader, options, built);
     if has_errors(&compiled.diags) {
         return Err(compiled.diags.into_iter().filter(|d| d.severity == Severity::Error).collect());
     }

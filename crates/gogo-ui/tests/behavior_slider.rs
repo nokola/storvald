@@ -14,7 +14,7 @@
 
 use gogo_ui::compile;
 use gogo_ui::KeptFrame;
-use gogo_ui::input::{Event, EventKind, Input, Key, Mods, Phase, Touch};
+use gogo_ui::input::{Event, EventKind, EventList, Input, Key, Mods, Phase, Touch};
 use gogo_ui::layout::{FixedAdvance, Rect};
 use gogo_ui::page::{NodeId, Page, PropKey, Value};
 use gogo_ui::runtime::{DISABLED, Resolved, Runtime, resolve};
@@ -39,12 +39,12 @@ impl Fx {
         Fx { page, rt, input: Input::default(), kept: f }
     }
 
-    fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> Vec<Event> {
+    fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> EventList {
         self.kept = KeptFrame::fresh(&self.page, resolve(&self.page, &self.rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
         self.input.touch(&self.page, &mut self.rt, self.kept.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1 })
     }
 
-    fn key(&mut self, k: Key) -> Vec<Event> {
+    fn key(&mut self, k: Key) -> EventList {
         self.kept = KeptFrame::fresh(&self.page, resolve(&self.page, &self.rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
         self.input.key(&mut self.page, &mut self.rt, self.kept.frame(), k, Mods::NONE)
     }

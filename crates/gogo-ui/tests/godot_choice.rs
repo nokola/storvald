@@ -24,7 +24,7 @@
 use gogo_ui::compile;
 use gogo_ui::KeptFrame;
 use gogo_ui::draw::{Draw, draw};
-use gogo_ui::input::{Event, EventKind, Input, Phase, Touch};
+use gogo_ui::input::{Event, EventKind, EventList, Input, Phase, Touch};
 use gogo_ui::layout::{FixedAdvance, Rect};
 use gogo_ui::page::{Action, Kind, NO_CHOICE, PropKey, Color_Straight_Srgb_4xU8_RGBA, Value};
 use gogo_ui::runtime::{HELD, Runtime, SELECTED, resolve};
@@ -71,7 +71,7 @@ impl Fx {
         self.page.nodes[(self.id(name)).index()].choice
     }
     /// A finger down and up at the node's center (Godot's `_conf_press` pair).
-    fn tap(&mut self, name: &str, t: f64) -> Vec<Event> {
+    fn tap(&mut self, name: &str, t: f64) -> EventList {
         let n = self.id(name);
         let f = self.lay();
         let rects = f.rects();

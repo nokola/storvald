@@ -5,7 +5,7 @@
 //! raising is the device half and stays open (the tracker row).
 use gogo_ui::draw::{Draw, draw};
 use gogo_ui::KeptFrame;
-use gogo_ui::input::{Event, EventKind, Input, Key, MOUSE_ID, Mods, Phase, SEL_HANDLE_EPX, Touch, sel_handle_rect};
+use gogo_ui::input::{EventKind, EventList, Input, Key, MOUSE_ID, Mods, Phase, SEL_HANDLE_EPX, Touch, sel_handle_rect};
 use gogo_ui::layout::{DEFAULT_FONT_SIZE, FixedAdvance, Rect};
 use gogo_ui::page::{NodeId, PropKey, Color_Straight_Srgb_4xU8_RGBA, Value};
 use gogo_ui::runtime::{FOCUSED, Runtime, resolve};
@@ -29,7 +29,7 @@ impl Fx {
         let rt = Runtime::new(&page);
         Fx { page, rt, input: Input::new(), mods: Mods::NONE }
     }
-    fn tap(&mut self, node: &str, t0: f64) -> Vec<Event> {
+    fn tap(&mut self, node: &str, t0: f64) -> EventList {
         let id = self.page.find(node).unwrap();
         let f = KeptFrame::fresh(&self.page, resolve(&self.page, &self.rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
         let rects = f.rects();
@@ -41,7 +41,7 @@ impl Fx {
     }
     /// One raw pointer sample — `id` picks the pointer (`MOUSE_ID` = the
     /// mouse; anything else is a finger).
-    fn point(&mut self, phase: Phase, x: f32, y: f32, t: f64, id: u64) -> Vec<Event> {
+    fn point(&mut self, phase: Phase, x: f32, y: f32, t: f64, id: u64) -> EventList {
         let f = KeptFrame::fresh(&self.page, resolve(&self.page, &self.rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
         self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase, x, y, t, id })
     }
@@ -50,7 +50,7 @@ impl Fx {
         let f = KeptFrame::fresh(&self.page, resolve(&self.page, &self.rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
         self.input.tick(&self.page, &mut self.rt, f.frame(), dt);
     }
-    fn key(&mut self, k: Key) -> Vec<Event> {
+    fn key(&mut self, k: Key) -> EventList {
         let f = KeptFrame::fresh(&self.page, resolve(&self.page, &self.rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
         self.input.key(&mut self.page, &mut self.rt, f.frame(), k, self.mods)
     }

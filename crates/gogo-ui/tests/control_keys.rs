@@ -9,7 +9,7 @@
 
 use gogo_ui::compile;
 use gogo_ui::KeptFrame;
-use gogo_ui::input::{Event, EventKind, Input, Key, Mods};
+use gogo_ui::input::{EventKind, EventList, Input, Key, Mods};
 use gogo_ui::layout::{FixedAdvance, Rect};
 use gogo_ui::page::{NodeId, Page};
 use gogo_ui::runtime::{FOCUSED, Runtime, resolve};
@@ -34,7 +34,7 @@ impl Fx {
         Fx { page, rt, input: Input::default(), kept: f }
     }
 
-    fn key(&mut self, k: Key) -> Vec<Event> {
+    fn key(&mut self, k: Key) -> EventList {
         self.kept = KeptFrame::fresh(&self.page, resolve(&self.page, &self.rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
         self.input.key(&mut self.page, &mut self.rt, self.kept.frame(), k, Mods::NONE)
     }

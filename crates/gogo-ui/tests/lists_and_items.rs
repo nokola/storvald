@@ -6,7 +6,7 @@
 use gogo_ui::KeptFrame;
 use gogo_ui::compile;
 use gogo_ui::draw::{Draw, draw};
-use gogo_ui::input::{Event, EventKind, Input, Phase, Touch};
+use gogo_ui::input::{Event, EventKind, EventList, Input, Phase, Touch};
 use gogo_ui::layout::{FixedAdvance, Rect};
 use gogo_ui::page::{Action, Color_Straight_Srgb_4xU8_RGBA, NodeId, Page, PropKey, Value};
 use gogo_ui::runtime::{DISABLED, HELD, Item, ItemKey, ItemValue, Runtime, SELECTED, resolve_animated};
@@ -70,8 +70,8 @@ impl Rows {
         draw(&self.page, kept.frame())
     }
 
-    fn tap(&mut self, row: usize) -> Vec<Event> {
-        let mut events: Vec<Event> = Vec::new();
+    fn tap(&mut self, row: usize) -> EventList {
+        let mut events: EventList = EventList::new();
         for (phase, t) in [(Phase::Down, 1.0), (Phase::Up, 1.05)] {
             let kept = self.kept();
             let r = kept.rects()[self.rows[row].index()];

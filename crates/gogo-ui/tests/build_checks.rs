@@ -3,7 +3,7 @@
 //! names, small slips of syntax, words a kind takes no notice of, and
 //! messages that used to point the wrong way.
 
-use gogo_ui::input::{Event, EventKind, Input, Key, Mods, Phase, Touch};
+use gogo_ui::input::{Event, EventKind, EventList, Input, Key, Mods, Phase, Touch};
 use gogo_ui::layout::{FixedAdvance, Rect};
 use gogo_ui::page::{NodeId, PropKey, Value};
 use gogo_ui::runtime::{Runtime, resolve};
@@ -255,7 +255,7 @@ impl Field {
     }
 
     /// Presses one key on the focused field; returns the events it raised.
-    fn key(&mut self, k: Key) -> Vec<Event> {
+    fn key(&mut self, k: Key) -> EventList {
         let f = KeptFrame::fresh(&self.page, resolve(&self.page, &self.rt), VIEW, &FixedAdvance);
         self.input.key(&mut self.page, &mut self.rt, f.frame(), k, Mods::NONE)
     }

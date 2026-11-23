@@ -19,7 +19,7 @@
 //! - `fvis.authored-replaces-ring` 9668, `fring.default-injected` .. `fring.shape-composes`
 //!   9689-9716: the engine focus StyleBox ring.
 //! - `input.twin-first` 9830-9859: engine touch-emulation dispatch order.
-use gogo_ui::input::{Event, EventKind, FLING_BOOST, Input, Phase, SCROLL_DEADZONE, Touch};
+use gogo_ui::input::{EventKind, EventList, FLING_BOOST, Input, Phase, SCROLL_DEADZONE, Touch};
 use gogo_ui::KeptFrame;
 use gogo_ui::layout::{FixedAdvance, Rect, SCROLL_BAR_EPX, scroll_axes_of};
 use gogo_ui::page::{Kind, NodeId, PropKey, Color_Straight_Srgb_4xU8_RGBA, Value};
@@ -78,7 +78,7 @@ impl Fx {
         self.lay().rects()[(self.id(name)).index()]
     }
 
-    fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> Vec<Event> {
+    fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> EventList {
         let f = self.lay();
         self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1 })
     }

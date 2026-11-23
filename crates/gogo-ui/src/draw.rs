@@ -1824,7 +1824,7 @@ impl DrawCache {
         self.anim_owned_props.clone_from(&res.anim_owned_props);
         self.raised.clone_from(&res.raised);
         self.seat.clone_from(&res.seat);
-        self.repeat_rows.clone_from(&res.repeat_rows);
+        crate::runtime::copy_repeat_rows(&mut self.repeat_rows, &res.repeat_rows);
         self.hiding.clone_from(&res.hiding);
         self.presence.clone_from(&res.presence);
         self.auto.clone_from(&res.auto);

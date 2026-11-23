@@ -18,7 +18,7 @@ use gogo_ui::locale::Keys;
 use gogo_ui::page::Action;
 use gogo_ui::reload::{Reloader, Sources};
 use gogo_ui::runtime::{Item, ItemKey, ItemValue};
-use gogo_ui::{ArrangementId, Behavior, BehaviorSpec, Claim, Compiled, CompileOptions, Cx, Draw, Event, EventKind, Finish, Input, KEYS_ARROWS, KeptFrame, KeyAction, KeyId, Locale, NO_NODE, NO_STR, NodeId, Orientation, Page, Payload, Phase, PropKey, Runtime, ScreenClass, StrId, Touch, Value, compile, compile_with, has_errors};
+use gogo_ui::{ArrangementId, Behavior, BehaviorSpec, Claim, Compiled, CompileOptions, Cx, Draw, Event, EventKind, EventList, Finish, Input, KEYS_ARROWS, KeptFrame, KeyAction, KeyId, Locale, NO_NODE, NO_STR, NodeId, Orientation, Page, Payload, Phase, PropKey, Runtime, ScreenClass, StrId, Touch, Value, compile, compile_with, has_errors};
 
 /// Compiles a page from text and prints what the compiler says.
 ///
@@ -82,15 +82,15 @@ impl Hosted {
     }
 
     /// Hands one touch to the page. `t` is the time in seconds.
-    pub fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> Vec<Event> {
+    pub fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> EventList {
         self.input.touch(&self.page, &mut self.rt, self.kept.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1 })
     }
 
     /// A finger down and up at the middle of `node`.
-    pub fn tap(&mut self, node: NodeId, t: f64) -> Vec<Event> {
+    pub fn tap(&mut self, node: NodeId, t: f64) -> EventList {
         let r: Rect = self.kept.rects()[node.index()];
         let (x, y) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
-        let mut events: Vec<Event> = self.touch(Phase::Down, x, y, t);
+        let mut events: EventList = self.touch(Phase::Down, x, y, t);
         events.extend(self.touch(Phase::Up, x, y, t + 0.05));
         events
     }
@@ -173,7 +173,7 @@ fn events_tour(host: &mut Hosted) {
     let slider: NodeId = host.page.find("sizeSlider").expect("sizeSlider");
     let r: Rect = host.kept.rects()[slider.index()];
     let y: f32 = r.y + r.h / 2.0;
-    let mut events: Vec<Event> = host.touch(Phase::Down, r.x + 10.0, y, 3.0);
+    let mut events: EventList = host.touch(Phase::Down, r.x + 10.0, y, 3.0);
     events.extend(host.touch(Phase::Move, r.x + 120.0, y, 3.1));
     events.extend(host.touch(Phase::Up, r.x + 120.0, y, 3.2));
     let mut committed: Option<f32> = None;
@@ -415,7 +415,7 @@ fn behavior_tour() {
     host.input.register(Box::new(VFader));
 
     let volume: NodeId = host.page.find("volume").expect("Vol volume");
-    let mut events: Vec<Event> = host.touch(Phase::Down, 20.0, 150.0, 1.0);
+    let mut events: EventList = host.touch(Phase::Down, 20.0, 150.0, 1.0);
     events.extend(host.touch(Phase::Up, 20.0, 150.0, 1.1));
     let change = events.iter().find_map(|ev| if let EventKind::Change(Value::VNum(v)) = ev.kind { Some((ev.node, v)) } else { None });
     // The track is 200 tall and y = 150 is a quarter of the way up: 2.5 of 0..10.

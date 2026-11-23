@@ -38,7 +38,7 @@
 //! batch reads it).
 use gogo_ui::draw::{Draw, SLIDER_FILL, SLIDER_TRACK, TOGGLE_OFF, draw};
 use gogo_ui::KeptFrame;
-use gogo_ui::input::{Event, EventKind, Input, Phase, Touch};
+use gogo_ui::input::{Event, EventKind, EventList, Input, Phase, Touch};
 use gogo_ui::layout::{FixedAdvance, Rect, TOGGLE_PILL};
 use gogo_ui::page::{Action, Kind, PropKey, Color_Straight_Srgb_4xU8_RGBA, Value};
 use gogo_ui::runtime::{DISABLED, HELD, Runtime, SELECTED, resolve};
@@ -108,11 +108,11 @@ impl Fx {
     fn node(&self, name: &str) -> gogo_ui::NodeId {
         self.page.find(name).unwrap_or_else(|| panic!("no node {name:?}"))
     }
-    fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> Vec<Event> {
+    fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> EventList {
         let f = self.lay();
         self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1 })
     }
-    fn tap(&mut self, x: f32, y: f32, t: f64) -> Vec<Event> {
+    fn tap(&mut self, x: f32, y: f32, t: f64) -> EventList {
         let mut ev = self.touch(Phase::Down, x, y, t);
         ev.extend(self.touch(Phase::Up, x, y, t + 0.05));
         ev

@@ -23,7 +23,7 @@ use std::sync::Arc;
 use gogo_text::{EpxMeasure, TextEngine};
 use gogo_ui::page::{Action, NO_NODE, NO_STR, StaticPage, StrId};
 use gogo_ui::reload::{Refused, Reloader};
-use gogo_ui::{ArrangementId, Draw, Event, ImageKey, Images, Input, KeptFrame, Key, Kind, Locale, Mods, NodeId, Orientation, Page, Phase, PropKey, Rect, Runtime, ScreenClass, Touch, Value, hit};
+use gogo_ui::{ArrangementId, Draw, Event, EventList, ImageKey, Images, Input, KeptFrame, Key, Kind, Locale, Mods, NodeId, Orientation, Page, Phase, PropKey, Rect, Runtime, ScreenClass, Touch, Value, hit};
 
 /// Every picture an app's pages name or its code shows, with what the host
 /// keeps about each: its size, whether it loads late, and the file bytes
@@ -159,6 +159,22 @@ impl ImageTable {
 
 #[cfg(feature = "gpu")]
 impl ImageTable {
+    /// Marks every picture that has a file as still to decode.
+    ///
+    /// Needed for a renderer that was made new: it has none of the
+    /// pictures the table counts as uploaded, and a page would show an
+    /// empty place where each belongs.
+    ///
+    /// A picture code uploaded has no file: code uploads it again.
+    pub fn forget_uploads(&mut self) {
+        for i in 0..self.files.len() {
+            if self.pending[i].is_none() && self.files[i].is_some() {
+                self.pending[i] = self.files[i];
+                self.pending_count += 1;
+            }
+        }
+    }
+
     /// Frees the GPU copy of every `release=unused` picture that `live`
     /// (by key index) does not mark. Each decodes again from its file when
     /// a page shows it the next time.
@@ -890,14 +906,14 @@ impl PageStack {
     ///
     /// Returns the events the touch caused on that page.
     #[allow(clippy::too_many_arguments)]
-    pub fn touch_to(&mut self, id: PageId, phase: Phase, x: f32, y: f32, t: f64, finger: u64, epx: f32, assets: &UiAssets) -> Vec<Event> {
+    pub fn touch_to(&mut self, id: PageId, phase: Phase, x: f32, y: f32, t: f64, finger: u64, epx: f32, assets: &UiAssets) -> EventList {
         if phase == Phase::Down {
             self.touched.retain(|(other, _)| *other != finger);
             self.touched.push((finger, id));
         }
         let measure: EpxMeasure<'_> = assets.measure(epx);
         let page: &mut PageUi = self.get_mut(id);
-        let events: Vec<Event> = page.input.touch(&page.page, &mut page.runtime, page.kept.frame(), &measure, Touch { phase, x, y, t, id: finger });
+        let events: EventList = page.input.touch(&page.page, &mut page.runtime, page.kept.frame(), &measure, Touch { phase, x, y, t, id: finger });
         if matches!(phase, Phase::Up | Phase::Cancel) {
             self.touched.retain(|(other, _)| *other != finger);
         }
@@ -915,7 +931,7 @@ impl PageStack {
     /// Returns the page and the events, or `None` when no page took the
     /// touch.
     #[allow(clippy::too_many_arguments)]
-    pub fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64, finger: u64, epx: f32, assets: &UiAssets) -> Option<(PageId, Vec<Event>)> {
+    pub fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64, finger: u64, epx: f32, assets: &UiAssets) -> Option<(PageId, EventList)> {
         let id: PageId = if phase == Phase::Down { self.pick(x, y).or_else(|| self.caret_holder().map(|(id, _)| id)) } else { self.touched_by(finger) }?;
         Some((id, self.touch_to(id, phase, x, y, t, finger, epx, assets)))
     }
@@ -934,7 +950,7 @@ impl PageStack {
         };
         for id in targets {
             let page: &mut PageUi = self.get_mut(id);
-            let events: Vec<Event> = page.input.key(&mut page.page, &mut page.runtime, page.kept.frame(), key, mods);
+            let events: EventList = page.input.key(&mut page.page, &mut page.runtime, page.kept.frame(), key, mods);
             let has_taken_it: bool = page.input.focused().is_some();
             for event in events {
                 out.push((id, event));
@@ -978,7 +994,7 @@ impl PageStack {
     /// steps a Slider or a Toggle under the mouse.
     ///
     /// Returns the events of the control that took it.
-    pub fn wheel_to(&mut self, id: PageId, x: f32, y: f32, is_up: bool) -> Vec<Event> {
+    pub fn wheel_to(&mut self, id: PageId, x: f32, y: f32, is_up: bool) -> EventList {
         let page: &mut PageUi = self.get_mut(id);
         page.input.wheel(&page.page, &mut page.runtime, page.kept.frame(), x, y, is_up)
     }

@@ -3,7 +3,7 @@
 use std::fmt::Write as _;
 
 use gogo_ui::runtime::{Item, ItemKey, Resolved};
-use gogo_ui::{Event, Kind, NO_NODE, NO_STR, NodeId, Rect};
+use gogo_ui::{EventList, Kind, NO_NODE, NO_STR, NodeId, Rect};
 
 use crate::pages::PageUi;
 
@@ -142,11 +142,11 @@ impl PageUi {
     /// next frame.
     ///
     /// Returns events of a control that took the wheel.
-    pub fn wheel(&mut self, x: f32, y: f32, notches: f32) -> Vec<Event> {
+    pub fn wheel(&mut self, x: f32, y: f32, notches: f32) -> EventList {
         if !self.kept.is_laid_out() || notches == 0.0 {
-            return Vec::new();
+            return EventList::new();
         }
-        let events: Vec<Event> = self.input.wheel(&self.page, &mut self.runtime, self.kept.frame(), x, y, notches > 0.0);
+        let events: EventList = self.input.wheel(&self.page, &mut self.runtime, self.kept.frame(), x, y, notches > 0.0);
         if !events.is_empty() {
             return events;
         }

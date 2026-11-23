@@ -39,7 +39,7 @@ pub use compile::{CompileOptions, Compiled, compile, compile_with};
 pub use diag::{Diagnostic, Severity, has_errors};
 pub use draw::{Draw, Fit, GradientKind, Sampling, TextAlign, draw, hit};
 pub use frame::{Frame, KeptFrame};
-pub use input::{Behavior, Claim, Cx, Event, EventKind, Input, Key, KeyAction, MOUSE_ID, Mods, Phase, Touch};
+pub use input::{Behavior, Claim, Cx, Event, EventKind, EventList, EventListIntoIter, Input, Key, KeyAction, MOUSE_ID, Mods, Phase, Touch};
 pub use layout::{FixedAdvance, LayoutBuffers, Rect, TextMeasure, layout, layout_into};
 pub use locale::{KeyName, Keys, Locale};
 pub use runtime::{AnimName, ArrangementName, HandlerName, ThemeName};

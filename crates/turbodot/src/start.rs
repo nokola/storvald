@@ -73,6 +73,7 @@ impl<A: 'static> ProgramWindow<'_, A> {
         let is_animating: bool = self.program.frame(size.0 as f32 / epx, size.1 as f32 / epx, dt);
 
         self.program.gpu_draw(&mut gfx.renderer, &gfx.gpu);
+        let is_animating: bool = is_animating || self.program.is_loading_pictures();
         gfx.renderer.prepare_pages(&gfx.gpu.device, &gfx.gpu.queue, &self.program, epx, size, &mut self.program.assets.text.borrow_mut(), None);
         let frame = match gfx.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,

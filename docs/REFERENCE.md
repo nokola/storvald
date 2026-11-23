@@ -2806,7 +2806,7 @@ glide freezes mid-flight until the next input.
 **A touch** goes in, events come out:
 
 ```rust
-    pub fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> Vec<Event> {
+    pub fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> EventList {
         self.input.touch(&self.page, &mut self.rt, self.kept.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1 })
     }
 ```

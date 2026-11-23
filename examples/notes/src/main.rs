@@ -339,6 +339,67 @@ mod tests {
         assert_eq!(program.app().paper_frames_drawn, under_overlay + 1, "each frame while page shows under an overlay");
     }
 
+    /// Picture has its size in the first frame, read from its file's
+    /// header, with no GPU and before a pixel is decoded.
+    ///
+    /// Needed because a page lays out around its pictures: without the
+    /// size an Image is 0 wide until its pixels come, and user sees the
+    /// page jump.
+    #[test]
+    fn a_picture_has_its_size_in_the_first_frame_with_no_gpu() {
+        let mut program: Program<AppState> = started(AppState::default());
+        let icon: Rect = program.ui().rect(HOME.note_icon);
+        assert_eq!((icon.w, icon.h), (24.0, 24.0), "the png's size");
+        let title: Rect = program.ui().rect(HOME.title);
+        assert!(title.x >= icon.x + icon.w, "the title sits right of the picture: {title:?} {icon:?}");
+        open_settings(&mut program, 1.0);
+        let banner: Rect = program.ui().rect(SETTINGS.banner);
+        assert_eq!((banner.w, banner.h), (64.0, 16.0), "the jpeg's size");
+    }
+
+    /// Picture loads late only when every line that names it says
+    /// `loading=lazy`: the jpeg does, the png is also named by a line
+    /// without the mark.
+    ///
+    /// Needed because a page that shows a picture at once wants it in its
+    /// first frame: decoded late, user sees an empty place first.
+    #[test]
+    fn a_picture_loads_late_only_when_every_line_says_so() {
+        let table: turbodot::pages::ImageTable = turbodot::pictures::image_table(crate::ui::BUILT.tables, crate::ui::BUILT.release_unused);
+        let (icon, banner) = (table.get("res://assets/note.png").expect("the png"), table.get("res://assets/banner.jpg").expect("the jpeg"));
+        assert!(!table.is_lazy(icon), "the home page names the png with no mark");
+        assert!(table.is_lazy(banner), "every line that names the jpeg says lazy");
+        assert_eq!((table.size(icon), table.size(banner)), (Some((24, 24)), Some((64, 16))));
+        assert_eq!(table.pending_count(), 2, "both still to decode");
+    }
+
+    /// Pictures show in a picture of the pages: a png, and a jpeg marked
+    /// `loading=lazy`, each in its own colors where its Image sits. Second
+    /// picture of same page shows them again.
+    ///
+    /// Ignored unless asked for: needs a GPU adapter.
+    #[test]
+    #[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
+    fn pictures_show_where_their_images_sit() {
+        const ORANGE: [u8; 4] = [255, 136, 0, 255];
+        const BLUE: [u8; 4] = [32, 96, 192, 255];
+        let center = |rect: Rect| -> (u32, u32) { ((rect.x + rect.w / 2.0) as u32, (rect.y + rect.h / 2.0) as u32) };
+
+        let mut program: Program<AppState> = started(AppState::default());
+        let gpu: turbodot::Gpu = turbodot::Gpu::new().expect("this test needs a GPU adapter");
+        let (x, y): (u32, u32) = center(program.ui().rect(HOME.note_icon));
+        for round in 0..2 {
+            let picture: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
+            assert_eq!(picture.at(x, y), ORANGE, "the png, picture {round} of the page");
+        }
+
+        open_settings(&mut program, 1.0);
+        let (x, y): (u32, u32) = center(program.ui().rect(SETTINGS.banner));
+        let picture: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
+        let seen: [u8; 4] = picture.at(x, y);
+        // A jpeg does not keep a color to the last digit.
+        assert!((0..4).all(|i| seen[i].abs_diff(BLUE[i]) <= 3), "the lazy jpeg: {seen:?}");
+    }
     /// Touch before first frame lands on nothing, and outline is empty.
     #[test]
     fn a_touch_before_the_first_frame_does_nothing() {

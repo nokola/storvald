@@ -10,7 +10,7 @@
 #![cfg(feature = "ui")]
 
 use gogo_text::TextEngine;
-use gogo_ui::{Event, EventKind, ImageKey, Images, NodeId, Orientation, Page, Phase, Rect, ScreenClass, compile, has_errors};
+use gogo_ui::{Event, EventKind, EventList, ImageKey, Images, NodeId, Orientation, Page, Phase, Rect, ScreenClass, compile, has_errors};
 use turbodot::pages::{PageUi, ImageTable, PageId, PagePlatform, PageStack, UiAssets};
 
 /// A page with one wide button at its top left.
@@ -64,7 +64,7 @@ fn node(stack: &PageStack, id: PageId, name: &str) -> NodeId {
 /// A press and a lift at (`x`, `y`).
 ///
 /// Returns the page that took the press, with the events of both.
-fn tap(stack: &mut PageStack, assets: &UiAssets, x: f32, y: f32) -> Option<(PageId, Vec<Event>)> {
+fn tap(stack: &mut PageStack, assets: &UiAssets, x: f32, y: f32) -> Option<(PageId, EventList)> {
     let (id, mut events) = stack.touch(Phase::Down, x, y, 1.0, 1, EPX, assets)?;
     events.extend(stack.touch(Phase::Up, x, y, 1.05, 1, EPX, assets).expect("the lift follows the press").1);
     Some((id, events))

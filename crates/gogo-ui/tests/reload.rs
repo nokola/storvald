@@ -454,7 +454,6 @@ impl ThemeName for BuiltTheme {
 /// another anim, and `Runtime::theme_color(page, Theme::Accent)` returns
 /// another value's color, until next build.
 #[test]
-#[ignore = "fails: reload gives strings new numbers, code keeps numbers build wrote into Anim and Theme; fix not decided"]
 fn the_builds_anim_and_theme_numbers_name_the_same_things_after_a_reload() {
     let kit = build(&[("page.gogo", ANIM_PAGE)], &[("theme.gogo", THEME)], &[]);
     let mut page: Page = kit.page("page.gogo");
@@ -489,7 +488,6 @@ fn the_builds_anim_and_theme_numbers_name_the_same_things_after_a_reload() {
 /// such a save `Runtime::go(Arrangement::Names)` shows the page in the
 /// new arrangement, until next build.
 #[test]
-#[ignore = "fails: reload gives arrangements new numbers, code keeps number build wrote into Arrangement; fix not decided"]
 fn the_builds_arrangement_number_names_the_same_arrangement_after_a_reload() {
     let kit = plain();
     let mut page: Page = kit.page("page.gogo");
@@ -502,4 +500,11 @@ fn the_builds_arrangement_number_names_the_same_arrangement_after_a_reload() {
     swap(&mut page, &mut runtime, fresh).unwrap();
 
     assert_eq!(page.str(page.arrangements[names.index()]), "names", "number in build's `Arrangement::Names` names another arrangement after reload");
+
+    // File drops the built arrangement: its place stays, under the empty
+    // name, so the new one never takes the number code holds.
+    kit.edit("page.gogo", "arrangement wide\narrangement names", "arrangement wide");
+    let fresh: Page = kit.recompile("page.gogo").unwrap();
+    swap(&mut page, &mut runtime, fresh).unwrap();
+    assert_eq!((page.str(page.arrangements[names.index()]), page.str(page.arrangements[1])), ("", "wide"));
 }

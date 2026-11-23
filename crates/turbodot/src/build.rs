@@ -44,7 +44,7 @@ fn write_pages(folder: &str) -> Result<(), String> {
     gogo_ui::build_pages(&dir, &out, BuildOptions { gogo_path: "turbodot::gogo", ..BuildOptions::new(&crate_dir) })?;
     let mut source: String = std::fs::read_to_string(&out).map_err(|e| format!("{}: {e}", out.display()))?;
     let folder_as_text: String = dir.display().to_string().replace('\\', "/");
-    let _ = write!(source, "/// What `turbodot::Program` starts from: this build's fonts and tables, and the folder its pages came from.\npub static BUILT: turbodot::Built = turbodot::Built {{ fonts: FONTS, tables: &BUILD, folder: {folder_as_text:?} }};\n");
+    let _ = write!(source, "/// What `turbodot::Program` starts from: this build's fonts and tables, and the folder its pages came from.\npub static BUILT: turbodot::Built = turbodot::Built {{ fonts: FONTS, tables: &BUILD, release_unused: RELEASE_UNUSED, folder: {folder_as_text:?} }};\n");
     std::fs::write(&out, source).map_err(|e| format!("{}: {e}", out.display()))
 }
 

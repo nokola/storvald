@@ -115,7 +115,10 @@ impl Gpu {
         // sRGB-encoded values.
         let format: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
         let mut renderer: UiRenderer = UiRenderer::new(&self.device, format);
-        program.gpu_draw(&mut renderer, self);
+        // Renderer is new: it has no picture yet. And a picture of the
+        // pages shows the lazy ones too.
+        program.assets.images.forget_uploads();
+        program.gpu_draw_as(&mut renderer, self, crate::pictures::LazyPictures::Now);
         renderer.prepare_pages(&self.device, &self.queue, &*program, epx, size, &mut program.assets.text.borrow_mut(), None);
         let texture: wgpu::Texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("a program's picture"),

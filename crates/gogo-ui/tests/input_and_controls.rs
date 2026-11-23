@@ -7,7 +7,7 @@
 use gogo_ui::layout::{FixedAdvance, Rect};
 use gogo_ui::page::{PropKey, Value};
 use gogo_ui::runtime::{HELD, Runtime, SELECTED};
-use gogo_ui::{ArrangementId, Draw, Event, EventKind, Input, KeptFrame, Key, Mods, NodeId, Page, Phase, Touch, compile, hit};
+use gogo_ui::{ArrangementId, Draw, EventList, EventKind, Input, KeptFrame, Key, Mods, NodeId, Page, Phase, Touch, compile, hit};
 
 const VIEW: Rect = Rect { x: 0.0, y: 0.0, w: 400.0, h: 800.0 };
 /// One frame of a 60 Hz screen, in seconds.
@@ -70,14 +70,14 @@ impl Fx {
         (r.x + r.w / 2.0, r.y + r.h / 2.0)
     }
 
-    fn touch(&mut self, phase: Phase, x: f32, y: f32) -> Vec<Event> {
+    fn touch(&mut self, phase: Phase, x: f32, y: f32) -> EventList {
         self.now += 0.01;
         self.input.touch(&self.page, &mut self.rt, self.kept.frame(), &FixedAdvance, Touch { phase, x, y, t: self.now, id: 1 })
     }
 
     /// A tap in the middle of `name`, a second after the touch before it
     /// (two taps closer than that are a double tap).
-    fn tap(&mut self, name: &str) -> Vec<Event> {
+    fn tap(&mut self, name: &str) -> EventList {
         let (x, y) = self.center(name);
         self.now += 1.0;
         let mut events = self.touch(Phase::Down, x, y);
@@ -85,7 +85,7 @@ impl Fx {
         events
     }
 
-    fn key(&mut self, k: Key) -> Vec<Event> {
+    fn key(&mut self, k: Key) -> EventList {
         let events = self.input.key(&mut self.page, &mut self.rt, self.kept.frame(), k, Mods::NONE);
         self.frame(0.0);
         events
@@ -264,7 +264,7 @@ fn a_dragged_toggle_follows_the_finger_and_stays_held() {
     assert!(fx.rt.has(t, HELD), "`held` lasts through the drag, off the Toggle's box too");
     assert!(further > under, "{under} -> {further}");
     assert_eq!(fx.knob_x(), further, "off its box the knob still follows at once");
-    let events: Vec<Event> = fx.touch(Phase::Up, x + 20.0, y + 300.0);
+    let events: EventList = fx.touch(Phase::Up, x + 20.0, y + 300.0);
     assert!(!fx.rt.has(t, HELD), "the lift ends `held`");
     assert!(events.iter().any(|e| matches!(e.kind, EventKind::Change(Value::VBool(true)))), "{events:?}");
 }
@@ -355,7 +355,7 @@ fn a_focused_control_switched_off_answers_no_key_and_tab_moves_on() {
     let off = Value::VIdent(fx.page.intern("off"));
     fx.rt.set_prop(b, PropKey::KeyboardTarget, off);
     fx.frame(0.0);
-    let events: Vec<Event> = fx.key(Key::Enter);
+    let events: EventList = fx.key(Key::Enter);
     assert!(events.is_empty(), "Enter on a control that is no keyboard target does nothing: {events:?}");
     assert_eq!(fx.walk(Key::Tab, 2), ["z", "a"], "Tab goes on from where `b` is");
 }

@@ -15,10 +15,6 @@ static ALLOC: CountingAlloc = CountingAlloc;
 
 const FRAME_SECONDS: f32 = 0.016;
 
-/// Allocations inside gogo when mouse moves onto another list row, and
-/// in the frame that draws that row's hovered look.
-const ONTO_ANOTHER_ROW: u64 = 3;
-const FRAME_AFTER: u64 = 2;
 
 /// Allocations `work` makes.
 fn allocations_of(work: impl FnOnce()) -> u64 {
@@ -33,7 +29,7 @@ fn frame(program: &mut Program<AppState>) {
 }
 
 /// Still pages allocate nothing: not a frame, not a mouse move inside one
-/// row, not a frame while a page slides in or out.
+/// row or onto another, not a frame while a page slides in or out.
 ///
 /// Needed because a program does these most of the time: an allocation
 /// in one repeats every frame, and user sees stutter on a slow phone.
@@ -50,12 +46,14 @@ fn still_pages_a_mouse_move_and_a_slide_allocate_nothing() {
     frame(&mut program);
     assert_eq!(allocations_of(|| program.hover(list.x + 24.0, list.y + 22.0)), 0, "a move of the mouse inside one row");
     assert_eq!(allocations_of(|| frame(&mut program)), 0, "a frame after that move");
-    // Move onto another row changes which row looks hovered. gogo
-    // allocates for that change today; check holds the count, so one
-    // more shows.
-    let onto_another_row: u64 = allocations_of(|| program.hover(list.x + 20.0, list.y + 60.0));
+    // Move onto another row changes which row looks hovered. First such
+    // move makes gogo's list of state changes long enough, once.
+    program.hover(list.x + 20.0, list.y + 60.0);
+    frame(&mut program);
+    frame(&mut program);
+    let onto_another_row: u64 = allocations_of(|| program.hover(list.x + 20.0, list.y + 100.0));
     let frame_after: u64 = allocations_of(|| frame(&mut program));
-    assert_eq!((onto_another_row, frame_after), (ONTO_ANOTHER_ROW, FRAME_AFTER), "a move of the mouse onto another row, and the frame after it");
+    assert_eq!((onto_another_row, frame_after), (0, 0), "a move of the mouse onto another row, and the frame after it");
     assert_eq!(allocations_of(|| frame(&mut program)), 0, "the next frame");
 
     // About page slides in: slide frames lay nothing out again, only move the page.

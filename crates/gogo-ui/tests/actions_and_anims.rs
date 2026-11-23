@@ -6,7 +6,7 @@
 use gogo_ui::KeptFrame;
 use gogo_ui::anim::Finish;
 use gogo_ui::compile;
-use gogo_ui::input::{Event, Input, Phase, Touch};
+use gogo_ui::input::{EventList, Input, Phase, Touch};
 use gogo_ui::layout::{FixedAdvance, Rect};
 use gogo_ui::page::{ArrangementId, BASE, Kind, NodeId, Page, PropKey, StrId};
 use gogo_ui::runtime::{Resolved, Runtime, resolve, resolve_animated};
@@ -50,7 +50,7 @@ impl Fx {
         self.page.intern_lookup(name)
     }
 
-    fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> Vec<Event> {
+    fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> EventList {
         let kept = KeptFrame::fresh(&self.page, resolve(&self.page, &self.rt), VIEW, &FixedAdvance);
         self.input.touch(&self.page, &mut self.rt, kept.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1 })
     }

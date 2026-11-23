@@ -7,10 +7,10 @@ use std::path::Path;
 
 use gogo_text::TextEngine;
 use gogo_ui::reload::{BuildTables, Reloader, Sources};
-use gogo_ui::{Draw, Event, ImageKey, Images, Key, MOUSE_ID, Mods, NodeId, Orientation, Phase, Rect, ScreenClass};
+use gogo_ui::{Draw, Event, EventList, ImageKey, Key, MOUSE_ID, Mods, NodeId, Orientation, Phase, Rect, ScreenClass};
 
 use crate::page::{Back, Host, IntoPage, Nav, PageKind, PageObject, Request};
-use crate::pages::{PageUi, ImageTable, PageId, PagePlatform, PagePose, PageStack, UiAssets};
+use crate::pages::{PageUi, PageId, PagePlatform, PagePose, PageStack, UiAssets};
 
 /// Time an opened page takes to slide in.
 const OPEN_SLIDE_SEC: f32 = 0.3;
@@ -33,6 +33,10 @@ pub struct Built {
     pub fonts: &'static [(&'static str, &'static [u8])],
     /// gogo's tables of the build: pages, keys, pictures.
     pub tables: &'static BuildTables<'static>,
+    /// Pictures every line marks `release=unused` (the build's
+    /// `RELEASE_UNUSED`): they leave the GPU once no live page names
+    /// them.
+    pub release_unused: &'static [ImageKey],
     /// Folder the pages' files were in at build.
     pub folder: &'static str,
 }
@@ -127,6 +131,13 @@ pub struct Program<A = ()> {
     /// next GPU frame.
     #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
     pictures_to_release: Vec<ImageKey>,
+    /// Decodes and uploads pictures the drawn pages name.
+    #[cfg(feature = "gpu")]
+    pictures: crate::pictures::PictureLoader,
+    /// True from a page's free until next GPU frame, which then frees
+    /// the `release=unused` pictures no live page names.
+    #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
+    has_freed_a_page: bool,
     /// Draw commands of a sliding page, moved to where it is now. Filled
     /// and read within one `for_each_list` call.
     #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
@@ -137,8 +148,7 @@ impl<A: 'static> Program<A> {
     /// Program that opens on `first`. `built`: `&ui::BUILT`. `app`:
     /// program-wide state, every page's `Host::app`.
     ///
-    /// Returns why pages cannot show: no page names a font, or a page
-    /// names a picture (`Program` shows no pictures yet).
+    /// Returns why pages cannot show: no page names a font.
     pub fn new<P: IntoPage<A, Kind>, Kind>(built: &'static Built, app: A, first: P) -> Result<Program<A>, String> {
         Program::with_reloader(built, app, first, Reloader::off())
     }
@@ -161,13 +171,16 @@ impl<A: 'static> Program<A> {
         if built.fonts.is_empty() {
             return Err("no page names a font, so no text can be drawn: write `theme { font = \"res://assets/<file>.ttf\" }` in a page".to_string());
         }
-        if let Some((path, _)) = built.tables.images.first() {
-            return Err(format!("a page names the picture `{path}`: a `Program` cannot show pictures yet"));
-        }
         let fonts: Vec<(&str, Vec<u8>)> = built.fonts.iter().map(|(key, bytes)| (*key, bytes.to_vec())).collect();
-        let assets: UiAssets = UiAssets::new(TextEngine::new(&fonts), ImageTable::from_keys(Images::default()));
+        let assets: UiAssets = UiAssets::new(TextEngine::new(&fonts), crate::pictures::image_table(built.tables, built.release_unused));
         let platform: PagePlatform = PagePlatform::new([0.0; 4], Orientation::from_view(1.0, 1.0), ScreenClass::from_view(1.0, 1.0), None);
-        let mut program: Program<A> = Program { app, assets, platform, stack: PageStack::new(), objects: Vec::new(), back_stack: Vec::new(), cached: Vec::new(), is_kind_checked: Vec::new(), slides: Vec::new(), nav: Nav::new(), reload, epx: 1.0, size: (0.0, 0.0), layer_draws: Vec::new(), picture_keys: Vec::new(), pictures_to_release: Vec::new(), posed: RefCell::new(Vec::new()) };
+        let mut program: Program<A> = Program { app, assets, platform, stack: PageStack::new(), objects: Vec::new(), back_stack: Vec::new(), cached: Vec::new(), is_kind_checked: Vec::new(), slides: Vec::new(), nav: Nav::new(), reload, epx: 1.0, size: (0.0, 0.0), layer_draws: Vec::new(), picture_keys: Vec::new(),
+            pictures_to_release: Vec::new(),
+            #[cfg(feature = "gpu")]
+            pictures: crate::pictures::PictureLoader::default(),
+            has_freed_a_page: false,
+            posed: RefCell::new(Vec::new()),
+        };
         program.open(first.into_page_object().0);
         program.carry_out_requests();
         Ok(program)
@@ -318,7 +331,7 @@ impl<A: 'static> Program<A> {
         if !self.stack.get(top).kept.is_laid_out() {
             return;
         }
-        let events: Vec<Event> = self.stack.touch_to(top, phase, x, y, t, MOUSE_ID, self.epx, &self.assets);
+        let events: EventList = self.stack.touch_to(top, phase, x, y, t, MOUSE_ID, self.epx, &self.assets);
         self.hand_events(top, &events);
     }
 
@@ -363,7 +376,7 @@ impl<A: 'static> Program<A> {
     /// Positive count: turn away from user.
     pub fn wheel(&mut self, x: f32, y: f32, notches: f32) {
         let top: PageId = self.top();
-        let events: Vec<Event> = self.stack.get_mut(top).wheel(x, y, notches);
+        let events: EventList = self.stack.get_mut(top).wheel(x, y, notches);
         self.hand_events(top, &events);
     }
 
@@ -382,8 +395,35 @@ impl<A: 'static> Program<A> {
     ///
     /// A page that is not drawn (under a fullscreen page, or cached) is
     /// not called: its GPU work would be for a picture nobody sees.
+    ///
+    /// Before that it uploads the pictures the drawn pages name. One
+    /// marked `loading=lazy` goes to a decode thread and shows in a
+    /// later frame (`is_loading_pictures`).
     #[cfg(feature = "gpu")]
     pub fn gpu_draw(&mut self, renderer: &mut gogo_wgpu::UiRenderer, gpu: &crate::gpu::Gpu) {
+        self.gpu_draw_as(renderer, gpu, crate::pictures::LazyPictures::OnThread);
+    }
+
+    /// True while pictures marked `loading=lazy` are being decoded.
+    ///
+    /// Needed by a loop that draws no frame while nothing moves: it
+    /// keeps drawing until they land, or they show only at next touch.
+    #[cfg(feature = "gpu")]
+    pub fn is_loading_pictures(&self) -> bool {
+        self.pictures.is_decoding()
+    }
+
+    /// `gpu_draw`, with what this frame does with a `loading=lazy`
+    /// picture.
+    #[cfg(feature = "gpu")]
+    pub(crate) fn gpu_draw_as(&mut self, renderer: &mut gogo_wgpu::UiRenderer, gpu: &crate::gpu::Gpu, lazy: crate::pictures::LazyPictures) {
+        if self.has_freed_a_page {
+            self.has_freed_a_page = false;
+            let stack: &PageStack = &self.stack;
+            self.pictures.release_unshown(&mut self.assets.images, renderer, &gpu.device, |live| stack.mark_pictures(live));
+        }
+        let stack: &PageStack = &self.stack;
+        self.pictures.upload_for_draws(&mut self.assets.images, renderer, &gpu.device, &gpu.queue, lazy, |wanted| stack.wanted_images(wanted));
         for i in 0..self.pictures_to_release.len() {
             let external: gogo_wgpu::ExternalImage = renderer.external_image(self.pictures_to_release[i]);
             renderer.release_external_image(&gpu.device, external);
@@ -484,6 +524,7 @@ impl<A: 'static> Program<A> {
         self.objects[id.index()] = None;
         self.layer_draws[id.index()].clear();
         self.pictures_to_release.extend(self.picture_keys[id.index()].iter().copied());
+        self.has_freed_a_page = true;
     }
 
     /// Opens `fresh` over page on screen. Cached page of that type, or one

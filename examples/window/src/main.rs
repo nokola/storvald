@@ -25,7 +25,7 @@ use std::time::Instant;
 use gogo_text::{EpxMeasure, TextEngine};
 use gogo_ui::page::NodeId;
 use gogo_ui::reload::{Reloader, Sources};
-use gogo_ui::{Draw, Event, EventKind, Input, KeptFrame, MOUSE_ID, Page, Phase, Rect, Runtime, Touch, compile_file, has_errors};
+use gogo_ui::{Draw, Event, EventKind, EventList, Input, KeptFrame, MOUSE_ID, Page, Phase, Rect, Runtime, Touch, compile_file, has_errors};
 use gogo_wgpu::UiRenderer;
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
@@ -171,9 +171,9 @@ impl App {
         let epx: f32 = self.epx();
         let (x, y) = (self.cursor.0 / epx, self.cursor.1 / epx);
         let measure = EpxMeasure { engine: &self.text, epx, font: None, images: &[] };
-        let events: Vec<Event> = if phase == Phase::Move && !self.is_mouse_down {
+        let events: EventList = if phase == Phase::Move && !self.is_mouse_down {
             self.ui.input.hover(&self.ui.page, &mut self.ui.runtime, self.ui.kept.frame(), x, y);
-            Vec::new()
+            EventList::new()
         } else {
             let touch = Touch { phase, x, y, t: self.started.elapsed().as_secs_f64(), id: MOUSE_ID };
             self.ui.input.touch(&self.ui.page, &mut self.ui.runtime, self.ui.kept.frame(), &measure, touch)
@@ -352,7 +352,7 @@ mod tests {
         let r: Rect = ui.kept.rects()[button.index()];
         let (x, y) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
         for (phase, t) in [(Phase::Down, 0.0), (Phase::Up, 0.05)] {
-            let events: Vec<Event> = ui.input.touch(&ui.page, &mut ui.runtime, ui.kept.frame(), &measure, Touch { phase, x, y, t, id: MOUSE_ID });
+            let events: EventList = ui.input.touch(&ui.page, &mut ui.runtime, ui.kept.frame(), &measure, Touch { phase, x, y, t, id: MOUSE_ID });
             ui.handle(&events);
         }
         assert_eq!(ui.taps, 1);

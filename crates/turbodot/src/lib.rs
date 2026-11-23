@@ -52,6 +52,9 @@
 //! - [`gpu_start`] holds what a GPU start decides by: the backends to ask
 //!   for, the Vulkan drivers known to be bad, and the file a phone keeps
 //!   its backend in.
+//! - [`pictures`] holds how a program's pictures get their sizes and
+//!   their pixels. A `Program` does it by itself: a page names
+//!   `res://assets/x.png` and the picture shows.
 //! - [`build`] holds what a client's `build.rs` calls.
 //! - [`alloc_count`] counts heap allocations, for a test that says "this
 //!   frame allocates nothing".
@@ -76,6 +79,8 @@ mod page;
 mod page_ui;
 #[cfg(feature = "ui")]
 pub mod pages;
+#[cfg(feature = "ui")]
+pub mod pictures;
 #[cfg(feature = "ui")]
 mod program;
 #[cfg(feature = "window")]

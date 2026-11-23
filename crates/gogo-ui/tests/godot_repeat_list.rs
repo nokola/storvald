@@ -30,7 +30,7 @@
 //! - `list.root-class` (12781): the root's GDScript class.
 use gogo_ui::draw::{Draw, draw};
 use gogo_ui::KeptFrame;
-use gogo_ui::input::{Event, EventKind, Input, Phase, Touch};
+use gogo_ui::input::{Event, EventKind, EventList, Input, Phase, Touch};
 use gogo_ui::layout::{FixedAdvance, Rect, layout};
 use gogo_ui::page::{Action, Kind, NodeId, PropKey, palette_color};
 use gogo_ui::layout::starved;
@@ -122,12 +122,12 @@ impl Fx {
     fn rects(&self) -> Vec<Rect> {
         lay(&self.page, &self.rt)
     }
-    fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> Vec<Event> {
+    fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> EventList {
         let f = KeptFrame::fresh(&self.page, resolve(&self.page, &self.rt), FRAME, &FixedAdvance);
         self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1 })
     }
     /// A tap at the middle of `node` (Godot's `_conf_press(at, true/false)`).
-    fn tap(&mut self, node: NodeId, t: f64) -> Vec<Event> {
+    fn tap(&mut self, node: NodeId, t: f64) -> EventList {
         let r = self.rects()[node.index()];
         let (x, y) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
         let mut ev = self.touch(Phase::Down, x, y, t);

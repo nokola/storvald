@@ -292,7 +292,7 @@ pub fn draw(page: &Page, f: Frame<'_>) -> Vec<Draw>   // a Frame = one frame's l
 
 ```rust
 pub fn hit(page: &Page, f: Frame<'_>, x: f32, y: f32, any: bool) -> Option<NodeId>   // last drawn wins
-impl Input { pub fn touch(&mut self, page: &Page, rt: &mut Runtime, f: Frame<'_>, measure: &dyn TextMeasure, t: Touch) -> Vec<Event> }
+impl Input { pub fn touch(&mut self, page: &Page, rt: &mut Runtime, f: Frame<'_>, measure: &dyn TextMeasure, t: Touch) -> EventList }
 ```
 
 - `hit` walks the paint order backwards (top-most painted first), skipping

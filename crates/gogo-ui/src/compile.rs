@@ -826,6 +826,11 @@ pub struct Compiler<'a> {
     /// the key field — `NO_STR` = the item is its own key, `capacity=`,
     /// keyed?). `finish` resolves them to `Page::repeats` once ids exist.
     pending_repeats: Vec<(StrId, StrId, StrId, u32, bool)>,
+    /// Arrangement names of the built page this compile keeps the
+    /// numbers of (`compile_keeping_numbers`), in the build's order: name
+    /// `k` is declared into place `k` of `Page::arrangements`. Empty for
+    /// any other compile.
+    built_arrangements: Vec<StrId>,
 }
 
 /// A value as the file spells it, for a message.
@@ -890,6 +895,34 @@ pub fn compile(source: &str, loader: Loader<'_>) -> Compiled {
 }
 
 pub fn compile_with<'a>(source: &str, loader: Loader<'a>, options: CompileOptions<'a>) -> Compiled {
+    compile_keeping_numbers(source, loader, options, None)
+}
+
+/// Numbers a build wrote into a program's code for one page: each
+/// string's place in page's strings (`enum Anim`, `enum Theme`), each
+/// arrangement's place in page's arrangement list (`enum Arrangement`).
+#[derive(Clone, Copy)]
+pub(crate) struct BuiltNumbers<'a> {
+    /// Built page's strings, in the build's order.
+    pub strings: &'a [&'a str],
+    /// Built page's arrangement names, in the build's order.
+    pub arrangements: &'a [StrId],
+}
+
+/// `compile_with` for a page a running program already holds as built
+/// (hot reload): every string and arrangement of `built` keeps its
+/// number, a new one gets a number after them.
+///
+/// Needed because program's code holds those numbers and a reload does
+/// not build the code again: without it, after a save that adds a name
+/// ahead of others, `Runtime::play(page, Anim::Appear, ..)` plays
+/// another anim or none, `theme_color` returns another value's color and
+/// `Runtime::go` shows another arrangement, until next build.
+///
+/// An arrangement of `built` the file no longer declares keeps its place
+/// under the empty name: no `when` names it, so going to it shows the
+/// page at rest.
+pub(crate) fn compile_keeping_numbers<'a>(source: &str, loader: Loader<'a>, options: CompileOptions<'a>, built: Option<BuiltNumbers<'_>>) -> Compiled {
     let mut diags = Vec::new();
     let doc = parse(source, &mut diags);
     let mut c = Compiler {
@@ -947,7 +980,16 @@ pub fn compile_with<'a>(source: &str, loader: Loader<'a>, options: CompileOption
         entry_styles: HashMap::new(),
         palette_links: std::collections::HashMap::new(),
         pending_repeats: Vec::new(),
+        built_arrangements: Vec::new(),
     };
+    if let Some(built) = built {
+        // Built page's strings first, in the build's order: a string
+        // this file names again finds its old number (`Page::intern`).
+        c.page.strings = built.strings.iter().map(|s| std::borrow::Cow::Owned((*s).to_string())).collect();
+        // A place per built arrangement, empty until file declares it.
+        c.page.arrangements = vec![NO_STR; built.arrangements.len()];
+        c.built_arrangements = built.arrangements.to_vec();
+    }
     c.page.intern("");
     // The well-known variant name exists on every page, so a host can set
     // `Runtime::variant` to it whether or not the file has a `theme dark`
@@ -3961,7 +4003,12 @@ impl<'a> Compiler<'a> {
         if self.page.arrangements.contains(&id) {
             self.error("G0033", n.line, format!("arrangement `{name}` is declared twice"));
         }
-        self.page.arrangements.push(id);
+        // An arrangement the build knew goes into the build's place for
+        // it, so the number program's code holds still names it.
+        match self.built_arrangements.iter().position(|built| *built == id) {
+            Some(place) if self.page.arrangements[place] == NO_STR => self.page.arrangements[place] = id,
+            _ => self.page.arrangements.push(id),
+        }
     }
 
     /// `any` / `base` / a state / an arrangement name.

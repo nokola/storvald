@@ -180,6 +180,135 @@ pub struct Event {
     pub action: Option<Action>,
 }
 
+/// Events one input call caused, in order (`Input::touch`, `key`,
+/// `wheel` and the rest return one).
+///
+/// Needed because a new `Vec` allocates for its first event: a call
+/// that caused an event cost one allocation, so every step of a slider
+/// drag did, and every tap.
+///
+/// A list that gets its first event takes the memory of the last list
+/// dropped on this thread (`SPARE_EVENTS`), and hands its own back when
+/// dropped. So a thread's first event allocates, and no later one does,
+/// for as long as one list is alive at a time. Two alive at once: the
+/// second allocates.
+///
+/// A list with no event is as small as an empty `Vec` and costs the
+/// same: most input calls return one (a finger move that causes no
+/// event).
+///
+/// Reads like a slice: `for event in &events`, `events.len()`,
+/// `events.is_empty()`, `events[0]`.
+#[derive(Clone)]
+pub struct EventList {
+    events: Vec<Event>,
+}
+
+thread_local! {
+    /// Memory of the last `EventList` dropped on this thread, with no
+    /// event in it, for the next list that gets an event.
+    static SPARE_EVENTS: std::cell::Cell<Vec<Event>> = const { std::cell::Cell::new(Vec::new()) };
+}
+
+impl EventList {
+    /// List with no event. Allocates nothing.
+    pub const fn new() -> EventList {
+        EventList { events: Vec::new() }
+    }
+
+    /// Adds `event` after the ones held.
+    pub fn push(&mut self, event: Event) {
+        if self.events.capacity() == 0 {
+            self.events = SPARE_EVENTS.with(|spare| spare.take());
+        }
+        self.events.push(event);
+    }
+
+    /// Events held, in the order they happened.
+    pub fn as_slice(&self) -> &[Event] {
+        &self.events
+    }
+}
+
+impl Drop for EventList {
+    /// Hands list's memory to the next list of this thread.
+    fn drop(&mut self) {
+        if self.events.capacity() != 0 {
+            self.events.clear();
+            // Thread that is ending has no place for it: memory is freed.
+            let _ = SPARE_EVENTS.try_with(|spare| spare.set(std::mem::take(&mut self.events)));
+        }
+    }
+}
+
+impl Default for EventList {
+    fn default() -> EventList {
+        EventList::new()
+    }
+}
+
+impl std::ops::Deref for EventList {
+    type Target = [Event];
+
+    fn deref(&self) -> &[Event] {
+        self.as_slice()
+    }
+}
+
+impl std::fmt::Debug for EventList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.as_slice()).finish()
+    }
+}
+
+impl PartialEq for EventList {
+    fn eq(&self, other: &EventList) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
+impl Extend<Event> for EventList {
+    fn extend<I: IntoIterator<Item = Event>>(&mut self, events: I) {
+        for event in events {
+            self.push(event);
+        }
+    }
+}
+
+impl<'a> IntoIterator for &'a EventList {
+    type Item = &'a Event;
+    type IntoIter = std::slice::Iter<'a, Event>;
+
+    fn into_iter(self) -> std::slice::Iter<'a, Event> {
+        self.as_slice().iter()
+    }
+}
+
+impl IntoIterator for EventList {
+    type Item = Event;
+    type IntoIter = EventListIntoIter;
+
+    fn into_iter(self) -> EventListIntoIter {
+        EventListIntoIter { list: self, next: 0 }
+    }
+}
+
+/// Events of an `EventList` by value, in order (`for event in events`).
+pub struct EventListIntoIter {
+    list: EventList,
+    next: usize,
+}
+
+impl Iterator for EventListIntoIter {
+    type Item = Event;
+
+    fn next(&mut self) -> Option<Event> {
+        let event: Option<Event> = self.list.as_slice().get(self.next).copied();
+        self.next += 1;
+        event
+    }
+}
+
 impl Event {
     /// A `Pointer` event's phase and position in `node`'s own epx space
     /// (`None` for any other event). Needed because a code-drawn control
@@ -1102,7 +1231,7 @@ impl Input {
     /// `$value` readers follow at the tick), `selected` derived
     /// when the contract declares it, and an `edit` when asked and the
     /// value moved. Returns the value shown now.
-    fn land_behavior_write(&self, page: &Page, rt: &mut Runtime, events: &mut Vec<Event>, b: &Behavior_, shown: f32, cx: &Cx, edit: bool) -> f32 {
+    fn land_behavior_write(&self, page: &Page, rt: &mut Runtime, events: &mut EventList, b: &Behavior_, shown: f32, cx: &Cx, edit: bool) -> f32 {
         let Some(v) = cx.out else { return shown };
         if v == shown {
             return shown;
@@ -1121,7 +1250,7 @@ impl Input {
     /// answers (`true`), a changed write commits `change` directly —
     /// no `edit` (a step and a programmatic write are one thing at the
     /// seam); one landing on the current value says nothing.
-    fn run_key_action(&mut self, page: &Page, rt: &mut Runtime, res: &Resolved, rects: &[Rect], b: &Behavior_, mi: u16, action: KeyAction, events: &mut Vec<Event>) -> bool {
+    fn run_key_action(&mut self, page: &Page, rt: &mut Runtime, res: &Resolved, rects: &[Rect], b: &Behavior_, mi: u16, action: KeyAction, events: &mut EventList) -> bool {
         let was = b_value_of(rt, res, page, b);
         let mut cx = Cx::new(rects, b, was);
         if !self.registry.get(mi).key(&mut cx, action) {
@@ -1146,7 +1275,7 @@ impl Input {
     /// code in the host: `go(x)` and `toggle(x)` flip the view's
     /// arrangement, `play(x)` starts the anim. `emit(X)` and a handler
     /// name are the host's to answer, from the event.
-    fn push_event(&self, page: &Page, rt: &mut Runtime, events: &mut Vec<Event>, node: NodeId, kind: EventKind, action: Option<Action>) {
+    fn push_event(&self, page: &Page, rt: &mut Runtime, events: &mut EventList, node: NodeId, kind: EventKind, action: Option<Action>) {
         match action {
             Some(Action::Go(a)) => rt.go_id(a),
             Some(Action::ToggleArrangement(a)) => rt.toggle_id(a),
@@ -1160,7 +1289,7 @@ impl Input {
     /// host always sees its stop: every end path (lift, cancel, scroll
     /// steal, disable/hide under the finger) comes through here, and the
     /// owed flag keeps it to exactly one per press.
-    fn release(&self, page: &Page, rt: &mut Runtime, events: &mut Vec<Event>, p: &mut Press) {
+    fn release(&self, page: &Page, rt: &mut Runtime, events: &mut EventList, p: &mut Press) {
         if !p.release_owed {
             return;
         }
@@ -1172,7 +1301,7 @@ impl Input {
 
     /// A gesture ends without a release: the press and any half-done value
     /// go back to where the finger found them.
-    fn restore_press(&mut self, page: &Page, rt: &mut Runtime, events: &mut Vec<Event>, p: &Press) {
+    fn restore_press(&mut self, page: &Page, rt: &mut Runtime, events: &mut EventList, p: &Press) {
         rt.set_state(p.node, HELD, false);
         // GP52/GP53: a reclaimed behavior drag restores the grabbed value
         // (the labels follow at the next tick; never leave a half-drag
@@ -1210,8 +1339,8 @@ impl Input {
     /// paint app's brush-options pane, user 2026-10-11). A page that
     /// merely leaves the screen needs neither this nor `reset` — see
     /// `reset` for that door.
-    pub fn cancel_press(&mut self, page: &Page, rt: &mut Runtime) -> Vec<Event> {
-        let mut events = Vec::new();
+    pub fn cancel_press(&mut self, page: &Page, rt: &mut Runtime) -> EventList {
+        let mut events: EventList = EventList::new();
         self.drag_handle = None;
         if let Some(mut p) = self.press.take() {
             self.release(page, rt, &mut events, &mut p);
@@ -1261,9 +1390,9 @@ impl Input {
     /// Input, characters edit at the caret and stream `edit`, Enter
     /// commits `change` once per genuine change (the shipped
     /// changed-means-CHANGED law), Home/End move the caret.
-    pub fn key(&mut self, page: &mut Page, rt: &mut Runtime, f: Frame<'_>, k: Key, mods: Mods) -> Vec<Event> {
+    pub fn key(&mut self, page: &mut Page, rt: &mut Runtime, f: Frame<'_>, k: Key, mods: Mods) -> EventList {
         let (res, rects): (&Resolved, &[Rect]) = (f.look(), f.rects());
-        let mut events = Vec::new();
+        let mut events: EventList = EventList::new();
         // D129 modality edge: ANY key press means keyboard driving — a
         // parked (ringless) owner gets its ring and its chain lights, in
         // place, even when the key itself does nothing.
@@ -1476,7 +1605,7 @@ impl Input {
 
     /// Focus leaves: the ring and caret go away; an Input commits once
     /// when its text CHANGED since focus (the focus-loss commit door).
-    fn blur(&mut self, page: &Page, rt: &mut Runtime, events: &mut Vec<Event>) {
+    fn blur(&mut self, page: &Page, rt: &mut Runtime, events: &mut EventList) {
         let Some(f) = self.focus.take() else { return };
         self.focus_visible = false;
         rt.set_state(f, FOCUSED, false);
@@ -1505,7 +1634,7 @@ impl Input {
     /// by the D129 visible-focus rule: a key grant always shows the
     /// ring, a tap shows it only on caret controls — a tapped Button
     /// parks focus with no ring residue.
-    fn grant(&mut self, page: &Page, rt: &mut Runtime, res: &Resolved, rects: &[Rect], node: Option<NodeId>, by_key: bool, events: &mut Vec<Event>) {
+    fn grant(&mut self, page: &Page, rt: &mut Runtime, res: &Resolved, rects: &[Rect], node: Option<NodeId>, by_key: bool, events: &mut EventList) {
         let moved = self.focus != node;
         if moved {
             self.blur(page, rt, events);
@@ -1581,7 +1710,7 @@ impl Input {
     /// `change` directly, no `edit` (a step and a programmatic write
     /// are indistinguishable at the seam); one landing on the current
     /// value reports nothing.
-    fn step_slider(&mut self, page: &Page, rt: &mut Runtime, res: &Resolved, f: NodeId, k: Key, events: &mut Vec<Event>) {
+    fn step_slider(&mut self, page: &Page, rt: &mut Runtime, res: &Resolved, f: NodeId, k: Key, events: &mut EventList) {
         let min = res.num(page, f, PropKey::Min).unwrap_or(0.0);
         let max = res.num(page, f, PropKey::Max).unwrap_or(100.0);
         let step = match res.num(page, f, PropKey::Step) {
@@ -1604,7 +1733,7 @@ impl Input {
     /// A Toggle's logical sides (the shipped toggle_behavior):
     /// increment/End = on, decrement/Home = off; `selected` follows
     /// live, `change(bool)` once per genuine transition.
-    fn set_toggle(&mut self, page: &Page, rt: &mut Runtime, res: &Resolved, f: NodeId, on: bool, events: &mut Vec<Event>) {
+    fn set_toggle(&mut self, page: &Page, rt: &mut Runtime, res: &Resolved, f: NodeId, on: bool, events: &mut EventList) {
         let was = toggle_on(rt, res, page, f);
         rt.set_prop(f, PropKey::Value, Value::VNum(if on { 1.0 } else { 0.0 }));
         rt.set_state(f, SELECTED, on);
@@ -1616,7 +1745,7 @@ impl Input {
     /// Enter/Space on the focused control — the completions a finished
     /// tap runs (`change` first, then `activate`, the toggling-surface
     /// order), so a key accept and a tap are one law.
-    fn activate_focused(&mut self, page: &Page, rt: &mut Runtime, res: &Resolved, f: NodeId, events: &mut Vec<Event>) {
+    fn activate_focused(&mut self, page: &Page, rt: &mut Runtime, res: &Resolved, f: NodeId, events: &mut EventList) {
         // `tap_pulse=true`: the press feedback plays on the completed tap
         // (the shipped `button.Pressed += Fx.TapPulse` hook — Godot's
         // `pressed` fires on release), a turnstile swing here
@@ -1679,9 +1808,9 @@ impl Input {
     /// POINTER (Slider, Toggle) — which also takes focus, parked like
     /// any pointer grant. Panning a Scroll by wheel is the desktop
     /// conveniences round (GP42), not this.
-    pub fn wheel(&mut self, page: &Page, rt: &mut Runtime, f: Frame<'_>, x: f32, y: f32, up: bool) -> Vec<Event> {
+    pub fn wheel(&mut self, page: &Page, rt: &mut Runtime, f: Frame<'_>, x: f32, y: f32, up: bool) -> EventList {
         let (res, rects): (&Resolved, &[Rect]) = (f.look(), f.rects());
-        let mut events = Vec::new();
+        let mut events: EventList = EventList::new();
         let mut n = hit(page, f, x, y, false);
         // GP52/GP53: a `behavior` instance is steppable anywhere on its
         // surface — found before the kind walk (its root wears a body
@@ -1742,8 +1871,8 @@ impl Input {
     /// paste is trimmed to fit); control characters are dropped (a
     /// single-line field). The clipboard itself is the shell's — gogo
     /// only takes text in.
-    pub fn paste(&mut self, page: &mut Page, rt: &mut Runtime, paste: &str) -> Vec<Event> {
-        let mut events = Vec::new();
+    pub fn paste(&mut self, page: &mut Page, rt: &mut Runtime, paste: &str) -> EventList {
+        let mut events: EventList = EventList::new();
         let Some(f) = self.focus.filter(|f| page.nodes[*f].kind == Kind::Input) else { return events };
         let mut text: Vec<char> = input_text(page, rt, f).chars().collect();
         self.caret = self.caret.min(text.len());
@@ -1769,8 +1898,8 @@ impl Input {
     /// Removes the selected span (the cut's second half — the shell
     /// copies first, then calls this). One `edit`; nothing selected =
     /// nothing happens.
-    pub fn delete_selection(&mut self, page: &mut Page, rt: &mut Runtime) -> Vec<Event> {
-        let mut events = Vec::new();
+    pub fn delete_selection(&mut self, page: &mut Page, rt: &mut Runtime) -> EventList {
+        let mut events: EventList = EventList::new();
         let Some(f) = self.focus.filter(|f| page.nodes[*f].kind == Kind::Input) else { return events };
         let Some((lo, hi)) = self.selection() else { return events };
         let mut text: Vec<char> = input_text(page, rt, f).chars().collect();
@@ -1801,9 +1930,9 @@ impl Input {
     /// back (`ReleaseFocus`). The field's caret lands at its end and the
     /// host's IME arm reads the runtime's caret as it would after a tap.
     /// Returns the events the hand-over raises (the old owner's commit).
-    pub fn focus_on(&mut self, page: &Page, rt: &mut Runtime, f: Frame<'_>, node: Option<NodeId>) -> Vec<Event> {
+    pub fn focus_on(&mut self, page: &Page, rt: &mut Runtime, f: Frame<'_>, node: Option<NodeId>) -> EventList {
         let (res, rects): (&Resolved, &[Rect]) = (f.look(), f.rects());
-        let mut events: Vec<Event> = Vec::new();
+        let mut events: EventList = EventList::new();
         self.grant(page, rt, res, rects, node, false, &mut events);
         if node.is_none() {
             rt.caret = None;
@@ -1829,8 +1958,8 @@ impl Input {
     /// `max_length` like typing, moves the caret, streams `edit` once
     /// per genuine change; the commit law is untouched (Enter and the
     /// focus-loss doors still commit once per genuine change).
-    pub fn ime_replace(&mut self, page: &mut Page, rt: &mut Runtime, text: &str, start: usize, end: usize) -> Vec<Event> {
-        let mut events = Vec::new();
+    pub fn ime_replace(&mut self, page: &mut Page, rt: &mut Runtime, text: &str, start: usize, end: usize) -> EventList {
+        let mut events: EventList = EventList::new();
         let Some(f) = self.focus.filter(|f| page.nodes[*f].kind == Kind::Input) else { return events };
         let cap: usize = max_length(page, rt, f);
         let new: String = text.chars().take(cap).collect();
@@ -1965,7 +2094,7 @@ impl Input {
     }
 
     /// Feeds one touch sample; returns the events it completed.
-    pub fn touch(&mut self, page: &Page, rt: &mut Runtime, f: Frame<'_>, measure: &dyn TextMeasure, t: Touch) -> Vec<Event> {
+    pub fn touch(&mut self, page: &Page, rt: &mut Runtime, f: Frame<'_>, measure: &dyn TextMeasure, t: Touch) -> EventList {
         let (res, rects): (&Resolved, &[Rect]) = (f.look(), f.rects());
         // The frame must be THIS page's layout: every arm below indexes
         // `rects` by node. A host that forgot the rects (a hidden child
@@ -1976,9 +2105,9 @@ impl Input {
         // a dev build: the host's routing is the bug.
         if rects.len() != page.nodes.len() {
             debug_assert!(false, "Input::touch on a frame of {} rects for a page of {} nodes — the host routed a finger to a page it forgot the layout of", rects.len(), page.nodes.len());
-            return if self.press.is_some_and(|p| p.id == t.id) { self.cancel_press(page, rt) } else { Vec::new() };
+            return if self.press.is_some_and(|p| p.id == t.id) { self.cancel_press(page, rt) } else { EventList::new() };
         }
-        let mut events = Vec::new();
+        let mut events: EventList = EventList::new();
         match t.phase {
             Phase::Down => {
                 if self.press.is_some() {
@@ -2640,6 +2769,41 @@ mod tests {
     use crate::layout::{FixedAdvance};
     use crate::runtime::{DISABLED, resolve};
 
+    /// `EventList` keeps events in the order pushed, for any count, read
+    /// as a slice, by reference and by value; a dropped list hands its
+    /// memory to the next list of the thread that gets an event.
+    ///
+    /// Needed because every input call returns one: an event out of
+    /// order or lost is a tap that does the wrong thing or nothing.
+    #[test]
+    fn an_event_list_keeps_order_and_hands_its_memory_on() {
+        let event = |n: u32| Event { node: NodeId::new(n), kind: EventKind::Activate, action: None };
+        let mut list: EventList = EventList::new();
+        assert!(list.is_empty());
+        assert_eq!(list, EventList::new());
+        for n in 0..5 {
+            list.push(event(n));
+        }
+        let numbers = |events: &[Event]| -> Vec<usize> { events.iter().map(|e| e.node.index()).collect() };
+        assert_eq!(numbers(&list), vec![0, 1, 2, 3, 4]);
+        assert_eq!((list.len(), list[4].node.index()), (5, 4));
+        assert_eq!((&list).into_iter().map(|e| e.node.index()).collect::<Vec<usize>>(), vec![0, 1, 2, 3, 4], "by reference");
+        assert_eq!(list.clone().into_iter().map(|e| e.node.index()).collect::<Vec<usize>>(), vec![0, 1, 2, 3, 4], "by value");
+        let mut more: EventList = EventList::new();
+        more.extend(list.clone());
+        more.push(event(5));
+        assert_eq!(numbers(&more), vec![0, 1, 2, 3, 4, 5]);
+        assert_ne!(more, list);
+        drop(more);
+
+        let memory: *const Event = list.as_slice().as_ptr();
+        drop(list);
+        let mut next: EventList = EventList::new();
+        next.push(event(9));
+        assert_eq!(next.as_slice().as_ptr(), memory, "the next list takes the dropped list's memory");
+        assert_eq!(numbers(&next), vec![9], "and none of its events");
+    }
+
     struct Fx {
         page: Page,
         rt: Runtime,
@@ -2656,10 +2820,10 @@ mod tests {
         fn lay(&self) -> KeptFrame {
             KeptFrame::fresh(&self.page, resolve(&self.page, &self.rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance)
         }
-        fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> Vec<Event> {
+        fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> EventList {
             self.touch_id(phase, x, y, t, 1)
         }
-        fn touch_id(&mut self, phase: Phase, x: f32, y: f32, t: f64, id: u64) -> Vec<Event> {
+        fn touch_id(&mut self, phase: Phase, x: f32, y: f32, t: f64, id: u64) -> EventList {
             let f = self.lay();
             self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase, x, y, t, id })
         }
@@ -3248,7 +3412,7 @@ mod tests {
         assert!(!fx.rt.has(s, HELD) && fx.input.press.is_none());
         assert!(fx.input.fling.is_some() && fx.input.focus == Some(s), "the glide and the focus stay");
         assert!(fx.touch(Phase::Move, 170.0, 16.0, 0.2).is_empty() && fx.touch(Phase::Up, 170.0, 16.0, 0.3).is_empty(), "the finger's later samples are nobody's");
-        assert_eq!(fx.input.cancel_press(&fx.page, &mut fx.rt), Vec::new(), "nothing to cancel twice");
+        assert_eq!(fx.input.cancel_press(&fx.page, &mut fx.rt), EventList::new(), "nothing to cancel twice");
     }
 
     /// A frame that is not this page's layout (a host that forgot the

@@ -14,7 +14,7 @@
 //! with no ring — except on an Input, whose caret always warrants one.
 use gogo_ui::draw::{Draw, draw};
 use gogo_ui::KeptFrame;
-use gogo_ui::input::{Event, EventKind, Input, Key, Mods, Phase, Touch};
+use gogo_ui::input::{EventKind, EventList, Input, Key, Mods, Phase, Touch};
 use gogo_ui::layout::{FixedAdvance, Rect};
 use gogo_ui::page::{BUTTON_FOCUS_RING, BUTTON_FOCUS_RING_EPX, NodeId, PropKey, Color_Straight_Srgb_4xU8_RGBA, Value};
 use gogo_ui::runtime::{DISABLED, FOCUS_WITHIN, FOCUSED, HOVERED, Runtime, SELECTED, resolve};
@@ -36,11 +36,11 @@ impl Fx {
         let rt = Runtime::new(&page);
         Fx { page, rt, input: Input::new(), now: 0.0 }
     }
-    fn key(&mut self, k: Key) -> Vec<Event> {
+    fn key(&mut self, k: Key) -> EventList {
         let f = KeptFrame::fresh(&self.page, resolve(&self.page, &self.rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
         self.input.key(&mut self.page, &mut self.rt, f.frame(), k, Mods::NONE)
     }
-    fn tap(&mut self, node: &str) -> Vec<Event> {
+    fn tap(&mut self, node: &str) -> EventList {
         let id = self.page.find(node).unwrap();
         let f = KeptFrame::fresh(&self.page, resolve(&self.page, &self.rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
         let rects = f.rects();

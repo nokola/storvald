@@ -4,7 +4,12 @@ uses "look.gogo"
 
 View homePage background=$back, padding=16 {
     Column spacing=10, width=fill, height=fill {
-        Label title text="Notes", font_size=24, font_color=$ink
+        Row spacing=8 {
+            // Picture from the program's own `assets` folder: the build
+            // puts the file into the program.
+            Image noteIcon source="res://assets/note.png", size=hug
+            Label title text="Notes", font_size=24, font_color=$ink
+        }
         List noteList spacing=2, width=fill, height=fill {
             empty { Label text="No notes yet", font_color=$dim }
             repeat notes as $note by $note.key {

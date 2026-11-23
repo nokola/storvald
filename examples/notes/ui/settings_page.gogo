@@ -4,8 +4,17 @@ uses "look.gogo"
 
 View settingsPage background=$back, padding=16 {
     Column spacing=10, width=fill, height=fill {
-        Label title text="Settings", font_size=24, font_color=$ink
+        Row spacing=8 {
+            // Same picture the home page shows at once. One line without
+            // `loading=lazy` makes a picture load at once everywhere, so
+            // the mark here changes nothing.
+            Image settingsIcon source="res://assets/note.png", size=hug, loading=lazy
+            Label title text="Settings", font_size=24, font_color=$ink
+        }
         Label noteCount text="", font_color=$dim
+        // `loading=lazy`: decoded on a thread of its own, shows a frame or
+        // more after the page does.
+        Image banner source="res://assets/banner.jpg", size=hug, loading=lazy
         Scroll body width=fill, height=fill {
             Label bodyText text="", wrap=true, width=fill, font_color=$ink
         }

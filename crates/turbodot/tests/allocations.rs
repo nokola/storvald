@@ -13,7 +13,7 @@
 #![cfg(feature = "ui")]
 
 use gogo_text::TextEngine;
-use gogo_ui::{Event, Images, MOUSE_ID, NodeId, Orientation, Phase, Rect, ScreenClass, compile, has_errors};
+use gogo_ui::{EventKind, EventList, Images, MOUSE_ID, NodeId, Orientation, Phase, Rect, ScreenClass, compile, has_errors};
 use turbodot::alloc_count::{self, CountingAlloc};
 use turbodot::pages::{PageUi, ImageTable, PageId, PagePlatform, PageStack, UiAssets};
 
@@ -73,7 +73,7 @@ impl Shown {
         self.stack.get(self.id)
     }
 
-    fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> Vec<Event> {
+    fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> EventList {
         self.stack.touch_to(self.id, phase, x, y, t, MOUSE_ID, EPX, &self.assets)
     }
 
@@ -82,19 +82,15 @@ impl Shown {
     }
 }
 
-/// Still page allocates nothing, and the page stack adds no allocation of
-/// its own to a touch, a mouse move or a frame.
+/// Still page allocates nothing, and neither does a touch, a mouse move
+/// or a frame of a moving one: a pan, a slider drag with an event per
+/// step.
 ///
 /// Needed because a page does these most of the time: an allocation in
 /// one repeats every frame or every finger move, and user sees stutter on
 /// a slow phone.
-///
-/// One thing allocates inside gogo today; check holds its count, so one
-/// more shows: a touch that causes an event, once. Event comes back in a
-/// new list (`gogo_ui::Input::touch`). Touch that causes none returns an
-/// empty list, which allocates nothing.
 #[test]
-fn a_still_page_and_a_moving_one_allocate_nothing_and_an_event_costs_one() {
+fn a_still_page_and_a_moving_one_allocate_nothing() {
     let mut shown: Shown = Shown::new();
     for _ in 0..3 {
         shown.frame();
@@ -133,7 +129,7 @@ fn a_still_page_and_a_moving_one_allocate_nothing_and_an_event_costs_one() {
     for step in 0..6 {
         t += FRAME_SECONDS as f64;
         let y: f32 = in_box.y + 60.0 - 8.0 * step as f32;
-        let mut events: Vec<Event> = Vec::new();
+        let mut events: EventList = EventList::new();
         let for_the_touch: u64 = allocations_of(|| events = shown.touch(Phase::Move, in_box.x + 20.0, y, t));
         let for_the_frame: u64 = allocations_of(|| shown.frame());
         assert!(events.is_empty(), "a pan causes no event: {events:?}");
@@ -154,12 +150,32 @@ fn a_still_page_and_a_moving_one_allocate_nothing_and_an_event_costs_one() {
     for step in 0..6 {
         t += FRAME_SECONDS as f64;
         let x: f32 = on_slider.x + 30.0 + 10.0 * step as f32;
-        let mut events: Vec<Event> = Vec::new();
+        let mut events: EventList = EventList::new();
         let for_the_touch: u64 = allocations_of(|| events = shown.touch(Phase::Move, x, on_slider.y + on_slider.h / 2.0, t));
         let for_the_frame: u64 = allocations_of(|| shown.frame());
         assert_eq!(events.len(), 1, "each step of the drag changes the value: {events:?}");
         if step >= 3 {
-            assert!(for_the_touch <= 1 && for_the_frame == 0, "step {step} of the drag: {for_the_touch} for the touch, {for_the_frame} for the frame after it");
+            assert!(for_the_touch == 0 && for_the_frame == 0, "step {step} of the drag: {for_the_touch} for the touch, {for_the_frame} for the frame after it");
+        }
+    }
+    shown.touch(Phase::Up, on_slider.x + 80.0, on_slider.y + on_slider.h / 2.0, t + 0.02);
+    for _ in 0..60 {
+        shown.frame();
+    }
+
+    // Finger taps the button: the tap comes back as an event.
+    let (x, y): (f32, f32) = (on_button.x + 10.0, on_button.y + 10.0);
+    for tap in 0..3 {
+        t += 1.0;
+        let for_the_down: u64 = allocations_of(|| { shown.touch(Phase::Down, x, y, t); });
+        let mut events: EventList = EventList::new();
+        let for_the_up: u64 = allocations_of(|| events = shown.touch(Phase::Up, x, y, t + 0.05));
+        assert!(events.iter().any(|event| event.kind == EventKind::Activate), "a tap activates the button: {events:?}");
+        if tap >= 1 {
+            assert!(for_the_down == 0 && for_the_up == 0, "tap {tap}: {for_the_down} for the finger down, {for_the_up} for the finger up");
+        }
+        for _ in 0..60 {
+            shown.frame();
         }
     }
 }
