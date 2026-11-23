@@ -2,7 +2,14 @@
 // pages.
 uses "look.gogo"
 
-View homePage background=$back, padding=16 {
+// Program's first page comes in over nothing, so it has no `on:show`.
+// It comes back from the left when a fullscreen page over it leaves.
+anim homeBack {
+    homePage.translate.x from=-30, to=0, duration=0.2, easing=cubic_out
+    and homePage.opacity from=0, to=1, duration=0.16
+}
+
+View homePage background=$back, padding=16, on:uncover=play(homeBack) {
     Column spacing=10, width=fill, height=fill {
         Row spacing=8 {
             // Picture from the program's own `assets` folder: the build

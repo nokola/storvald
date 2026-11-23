@@ -92,6 +92,29 @@ pub trait ThemeName: Copy {
     fn id(self) -> StrId;
 }
 
+/// Hook of a node: the anim its `on:show`, `on:hide` or `on:uncover`
+/// plays.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hook {
+    /// Node shows: `on:show`.
+    Show,
+    /// Node hides: `on:hide`.
+    Hide,
+    /// Page shows again from under what covered it: `on:uncover`.
+    Uncover,
+}
+
+impl Hook {
+    /// Word after `on:` in a page file.
+    fn event(self) -> &'static str {
+        match self {
+            Hook::Show => "show",
+            Hook::Hide => "hide",
+            Hook::Uncover => "uncover",
+        }
+    }
+}
+
 /// A page build's typed anim handle (`enum Anim` in the generated module,
 /// one variant per `anim` the file declares) — `Runtime::play` / `stop` /
 /// `is_playing` take one, so a misspelled anim is a rustc error and no
@@ -1162,6 +1185,71 @@ impl Runtime {
     /// on it or an ancestor — gets none: its anim would burn off-screen
     /// (GPAR56).
     pub fn play_entrances(&mut self, page: &Page) {
+        self.play_hook_on_drawn_nodes(page, Hook::Show);
+    }
+
+    /// Plays `on:uncover` of every node page draws. Host calls it when
+    /// what covered page leaves and page shows again.
+    ///
+    /// Needed because nothing inside a page changes when another page
+    /// stops covering it: only host knows, so `on:uncover` never plays
+    /// by itself.
+    pub fn play_uncovers(&mut self, page: &Page) {
+        self.play_hook_on_drawn_nodes(page, Hook::Uncover);
+    }
+
+    /// True while node's own `hook` anim plays.
+    ///
+    /// Needed by host that waits for a page's root: page is in place
+    /// once its `on:show` ended.
+    pub fn is_hook_playing(&self, page: &Page, node: NodeId, hook: Hook) -> bool {
+        let n = &page.nodes[node];
+        let event: StrId = page.intern_lookup(hook.event());
+        page.handlers[n.handlers.0 as usize..(n.handlers.0 + n.handlers.1) as usize].iter().any(|h| h.event == event && matches!(h.action, Action::Play(anim) if self.is_playing_id(anim)))
+    }
+
+    /// Plays node's own `hook` anim, with no change to whether node
+    /// shows.
+    ///
+    /// Needed by host that opens and closes pages: page's root plays
+    /// its `on:show` each time page opens and its `on:hide` when page
+    /// leaves, and stays laid out all the while.
+    ///
+    /// `Hook::Hide`: when the anim ends, what it moved goes back to
+    /// what the file says, as after a real hide. Host takes node off
+    /// screen in that same frame, or node shows in place again.
+    ///
+    /// `Hook::Show`: node's `on:hide`, if it still plays, stops first
+    /// and what it moved goes back. Needed for a page opened again
+    /// while it leaves: with no `on:show` it would go on leaving.
+    ///
+    /// Returns false for node with no such hook: nothing plays.
+    pub fn play_hook(&mut self, page: &Page, node: NodeId, hook: Hook) -> bool {
+        if hook == Hook::Show {
+            self.stop_hook(page, node, Hook::Hide);
+        }
+        let finish: Finish = if hook == Hook::Hide { Finish::PutBack } else { Finish::Nothing };
+        self.play_action(page, node, hook.event(), finish)
+    }
+
+    /// Stops node's own `hook` anim where it is and puts back what it
+    /// moved. Does nothing when it is not playing.
+    fn stop_hook(&mut self, page: &Page, node: NodeId, hook: Hook) {
+        let n = &page.nodes[node];
+        let event: StrId = page.intern_lookup(hook.event());
+        let anim: Option<StrId> = page.handlers[n.handlers.0 as usize..(n.handlers.0 + n.handlers.1) as usize].iter().find(|h| h.event == event).and_then(|h| match h.action {
+            Action::Play(anim) => Some(anim),
+            _ => None,
+        });
+        if let Some(anim) = anim {
+            self.stop_id(anim, true);
+        }
+    }
+
+    /// Plays `hook` of every node page draws. Node that is `gone`,
+    /// `space_only`/`hidden`, or under such a node, gets none: its anim
+    /// would play unseen.
+    fn play_hook_on_drawn_nodes(&mut self, page: &Page, hook: Hook) {
         let res = resolve(page, self);
         let unseen: Vec<bool> = (0..page.nodes.len()).map(|i| {
             matches!(res.ident(page, NodeId::from_index(i), PropKey::Visibility), Some("gone") | Some("hidden") | Some("space_only"))
@@ -1187,7 +1275,7 @@ impl Runtime {
             if hidden {
                 continue;
             }
-            self.play_action(page, NodeId::from_index(i), "show", Finish::Nothing);
+            self.play_action(page, NodeId::from_index(i), hook.event(), Finish::Nothing);
         }
     }
 
@@ -1959,15 +2047,17 @@ impl Runtime {
         self.players = players;
         for (f, owns, owns_props, anim) in finished {
             self.finished.push(anim);
-            if let Finish::Hide(node) | Finish::HideWhen(node) = f {
-                if let Finish::Hide(_) = f {
+            if f != Finish::Nothing {
+                if let Finish::Hide(node) = f {
                     // The code door hides by writing the prop; a `when`-
                     // driven hide (HideWhen) writes NOTHING — the `when`'s
                     // own gone takes over as `Resolved::hiding` lifts, and
                     // a code write here would outrank it forever (GPAR57).
                     self.set_visible(page, node, false);
                 }
-                self.motion[node] = Motion::IDENTITY;
+                if let Finish::Hide(node) | Finish::HideWhen(node) = f {
+                    self.motion[node] = Motion::IDENTITY;
+                }
                 // The hide anim may have moved DESCENDANTS too — every
                 // driven channel goes back to identity, or the re-show
                 // finds them displaced (GPAR110, gogo_visibility_fx.gd).

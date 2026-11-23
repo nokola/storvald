@@ -3,8 +3,8 @@
 //! TurboDot is in development (<https://github.com/nokola/storvald>).
 //!
 //! A program on TurboDot is pages. Each page is a `.gogo` file and a
-//! struct, and the engine does the rest: the window, the back stack, the
-//! slides between pages.
+//! struct, and the engine does the rest: the window, the back stack,
+//! pages that come and go as their files say.
 //!
 //! ```text
 //! // build.rs: compiles every page in ui/ when the program is built

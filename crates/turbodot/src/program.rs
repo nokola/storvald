@@ -1,5 +1,5 @@
-//! A program's pages with no window: back stack, page cache, slides
-//! between pages.
+//! A program's pages with no window: back stack, page cache, pages on
+//! their way in and out.
 
 use std::any::TypeId;
 use std::cell::RefCell;
@@ -8,23 +8,13 @@ use std::sync::Arc;
 
 use gogo_text::TextEngine;
 use gogo_ui::reload::{BuildTables, Reloader, Sources};
-use gogo_ui::{Draw, Event, EventList, ImageKey, Key, Locale, MOUSE_ID, Mods, NodeId, Orientation, Phase, PropKey, Rect, ScreenClass, Value};
+use gogo_ui::{Draw, Event, EventList, Hook, ImageKey, Key, Locale, MOUSE_ID, Mods, NodeId, Orientation, Phase, PropKey, Rect, ScreenClass, Value};
 
 use crate::page::{Back, Host, IntoPage, Nav, PageKind, PageObject, Request};
 use crate::pages::{PageUi, PageId, PagePlatform, PagePose, PageStack, UiAssets};
 
-/// Time an opened page takes to slide in.
-const OPEN_SLIDE_SEC: f32 = 0.3;
-/// Time a page takes to slide out on back, and page under it to slide
-/// back in.
-const BACK_SLIDE_SEC: f32 = 0.2;
-/// Distance to the right where an opened page starts and a leaving page
-/// ends.
-const OPEN_SLIDE_FROM_EPX: f32 = 60.0;
-/// Distance to the left where page under a leaving page starts.
-const REVEAL_SLIDE_FROM_EPX: f32 = -30.0;
-/// Part of a slide in over which page fades in.
-const FADE_IN_PART_OF_SLIDE: f32 = 0.8;
+/// Root of a page: first node of its file.
+const ROOT: NodeId = NodeId::new(0);
 
 /// What build wrote for a program: `ui::BUILT`, added to built pages by
 /// `turbodot::build::pages`.
@@ -42,52 +32,35 @@ pub struct Built {
     pub folder: &'static str,
 }
 
-/// Which way a page slides.
+/// What a page on its way does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum SlideKind {
-    /// Opened page comes in from right.
-    Open,
-    /// Page under a leaving page comes back in from left.
-    Reveal,
-    /// Page leaves to right.
-    Leave,
+enum Way {
+    /// Opened page comes in: its root's `on:show` plays.
+    ComesIn,
+    /// Page under a leaving fullscreen page comes back: its root's
+    /// `on:uncover` plays.
+    ComesBack,
+    /// Page leaves: its root's `on:hide` plays, then page is off screen.
+    Leaves,
 }
 
-/// One page on its way in or out.
+impl Way {
+    /// Hook of page's root that plays on this way.
+    fn hook(self) -> Hook {
+        match self {
+            Way::ComesIn => Hook::Show,
+            Way::ComesBack => Hook::Uncover,
+            Way::Leaves => Hook::Hide,
+        }
+    }
+}
+
+/// One page on its way in or out, for as long as its root's anim for
+/// that way plays.
 #[derive(Clone, Copy, Debug)]
-struct Slide {
+struct PageOnItsWay {
     page: PageId,
-    kind: SlideKind,
-    elapsed_sec: f32,
-}
-
-impl Slide {
-    fn duration_sec(&self) -> f32 {
-        match self.kind {
-            SlideKind::Open => OPEN_SLIDE_SEC,
-            SlideKind::Reveal | SlideKind::Leave => BACK_SLIDE_SEC,
-        }
-    }
-
-    fn has_ended(&self) -> bool {
-        self.elapsed_sec >= self.duration_sec()
-    }
-
-    /// Where page is drawn now. Page coming in slows down into place, page
-    /// leaving speeds up out of it.
-    fn pose(&self) -> PagePose {
-        let duration: f32 = self.duration_sec();
-        let part: f32 = (self.elapsed_sec / duration).clamp(0.0, 1.0);
-        let rest: f32 = 1.0 - part;
-        let slowing: f32 = 1.0 - rest * rest * rest;
-        let speeding: f32 = part * part * part;
-        let fade_in: f32 = (self.elapsed_sec / (duration * FADE_IN_PART_OF_SLIDE)).clamp(0.0, 1.0);
-        match self.kind {
-            SlideKind::Open => PagePose { offset_x: OPEN_SLIDE_FROM_EPX * (1.0 - slowing), offset_y: 0.0, alpha: fade_in },
-            SlideKind::Reveal => PagePose { offset_x: REVEAL_SLIDE_FROM_EPX * (1.0 - slowing), offset_y: 0.0, alpha: fade_in },
-            SlideKind::Leave => PagePose { offset_x: OPEN_SLIDE_FROM_EPX * speeding, offset_y: 0.0, alpha: rest },
-        }
-    }
+    way: Way,
 }
 
 /// A program's pages, run with no window and no GPU.
@@ -96,8 +69,8 @@ impl Slide {
 /// AI agent: touch goes in as numbers, what pages show is read back from
 /// `ui`.
 ///
-/// Holds program-wide state (`A`), back stack, cached pages, slides
-/// between pages. Positions and sizes in epx.
+/// Holds program-wide state (`A`), back stack, cached pages, pages on
+/// their way in or out. Positions and sizes in epx.
 pub struct Program<A = ()> {
     app: A,
     pub(crate) assets: UiAssets,
@@ -114,7 +87,12 @@ pub struct Program<A = ()> {
     /// id in `stack`.
     #[cfg_attr(not(debug_assertions), allow(dead_code))]
     is_kind_checked: Vec<bool>,
-    slides: Vec<Slide>,
+    /// True once page's nodes played their `on:show` for page's first
+    /// show, by page's id in `stack`. False for page made ahead of its
+    /// first open, until that open.
+    has_played_entrances: Vec<bool>,
+    /// Pages whose root plays its way in or out.
+    on_their_way: Vec<PageOnItsWay>,
     nav: Nav<A>,
     reload: Reloader,
     /// True once host said the screen's facts
@@ -136,7 +114,7 @@ pub struct Program<A = ()> {
     #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
     pictures_to_release: Vec<ImageKey>,
     /// Page on screen that got its `arrived` call. `None` from an open
-    /// or a back until no page slides.
+    /// or a back until no page is on its way.
     arrived: Option<PageId>,
     /// Layers above every page, in the order added (`Nav::add_layer`).
     layers: Vec<PageId>,
@@ -157,8 +135,10 @@ pub struct Program<A = ()> {
     /// the `release=unused` pictures no live page names.
     #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
     has_freed_a_page: bool,
-    /// Draw commands of a sliding page, moved to where it is now. Filled
-    /// and read within one `for_each_list` call.
+    /// Draw commands of what is drawn off its laid-out place (a page
+    /// placed in a node that moves, a page's own pictures under a root
+    /// that moves), moved to where they are now. Filled and read within
+    /// one `for_each_list` call.
     #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
     posed: RefCell<Vec<Draw>>,
 }
@@ -203,7 +183,7 @@ impl<A: 'static> Program<A> {
         let fonts: Vec<(&str, Vec<u8>)> = built.fonts.iter().map(|(key, bytes)| (*key, bytes.to_vec())).collect();
         let assets: UiAssets = UiAssets::new(TextEngine::new(&fonts), crate::pictures::image_table(built.tables, built.release_unused));
         let platform: PagePlatform = PagePlatform::new([0.0; 4], Orientation::from_view(1.0, 1.0), ScreenClass::from_view(1.0, 1.0), None);
-        let mut program: Program<A> = Program { app, assets, platform, stack: PageStack::new(), objects: Vec::new(), back_stack: Vec::new(), cached: Vec::new(), is_kind_checked: Vec::new(), slides: Vec::new(), nav: Nav::new(), reload, is_screen_from_host: false, epx: 1.0, size: (0.0, 0.0), layer_draws: Vec::new(), picture_keys: Vec::new(),
+        let mut program: Program<A> = Program { app, assets, platform, stack: PageStack::new(), objects: Vec::new(), back_stack: Vec::new(), cached: Vec::new(), is_kind_checked: Vec::new(), has_played_entrances: Vec::new(), on_their_way: Vec::new(), nav: Nav::new(), reload, is_screen_from_host: false, epx: 1.0, size: (0.0, 0.0), layer_draws: Vec::new(), picture_keys: Vec::new(),
             pictures_to_release: Vec::new(),
             code_pictures_to_release: Vec::new(),
             arrived: None,
@@ -215,7 +195,7 @@ impl<A: 'static> Program<A> {
             has_freed_a_page: false,
             posed: RefCell::new(Vec::new()),
         };
-        program.open(first.into_page_object().0, false);
+        program.open(first.into_page_object().0);
         program.carry_out_requests();
         Ok(program)
     }
@@ -310,7 +290,7 @@ impl<A: 'static> Program<A> {
     }
 
     /// True when a live page whose struct is a `P` is drawn this frame:
-    /// on screen, sliding, or under an overlay. False while a page above
+    /// on screen, on its way, or under an overlay. False while a page above
     /// it covers the screen, and for a cached page.
     ///
     /// Needed by a check that a covered page costs no drawing.
@@ -344,21 +324,22 @@ impl<A: 'static> Program<A> {
         self.cached.len()
     }
 
-    /// Count of pages drawn: page on screen, plus a sliding page or the
-    /// page a sliding page uncovers. Page placed in another counts with
-    /// it, not on its own. Layers do not count.
+    /// Count of pages drawn: page on screen, plus a page on its way out
+    /// or the page under one on its way. Page placed in another counts
+    /// with it, not on its own. Layers do not count.
     pub fn drawn_page_count(&self) -> usize {
         self.stack.order.iter().filter(|id| self.placed_in[id.index()].is_none() && !self.layers.contains(id)).count()
     }
 
-    /// True while a page is on its way in or out.
-    pub fn is_sliding(&self) -> bool {
-        !self.slides.is_empty()
+    /// True while a page is on its way in or out: its root plays its
+    /// `on:show`, `on:uncover` or `on:hide`.
+    pub fn is_page_arriving_or_leaving(&self) -> bool {
+        !self.on_their_way.is_empty()
     }
 
     /// True while a fullscreen page is in place: nothing under the
-    /// program's pages shows. False while that page slides: what is
-    /// under it shows through.
+    /// program's pages shows. False while that page is on its way in
+    /// or out: what is under it shows through.
     ///
     /// Needed by host that draws under the program (a painting): it
     /// skips that drawing while this says true.
@@ -425,8 +406,9 @@ impl<A: 'static> Program<A> {
         self.reload.on_change(wake);
     }
 
-    /// One frame, `dt` seconds after last: moves slides and page
-    /// animations, lays out every changed page for `width` x `height`.
+    /// One frame, `dt` seconds after last: moves page animations, lays
+    /// out every changed page for `width` x `height`, ends the way of
+    /// each page whose root's anim is over.
     ///
     /// Returns true while something still moves. Host may stop asking for
     /// frames on false.
@@ -458,15 +440,19 @@ impl<A: 'static> Program<A> {
             is_page_asking_for_frames |= self.call(id, |page, host| page.frame(host, dt));
         }
         self.carry_out_requests();
-        let is_sliding: bool = self.move_slides(dt);
-        // Slides that ended: `left`, then `arrived` of page on screen.
-        self.carry_out_requests();
         self.place_code_pictures();
         let size_px: (u32, u32) = (((width * self.epx).round() as u32).max(1), ((height * self.epx).round() as u32).max(1));
-        let is_moving: bool = self.frame_pages(dt, size_px);
+        let mut is_moving: bool = self.frame_pages(dt, size_px);
+        // Ways that ended in this frame: `left`, then `arrived` of page
+        // on screen. What those calls write is laid out in this frame.
+        if self.end_ways() {
+            self.carry_out_requests();
+            self.place_code_pictures();
+            is_moving |= self.frame_pages(0.0, size_px);
+        }
         #[cfg(debug_assertions)]
         self.check_page_kinds();
-        is_sliding | is_moving | is_page_asking_for_frames
+        is_moving | is_page_asking_for_frames
     }
 
     /// Screen's facts, from a host that knows them: what notch and
@@ -565,7 +551,7 @@ impl<A: 'static> Program<A> {
     fn is_leaving(&self, id: PageId) -> bool {
         let mut page: PageId = id;
         loop {
-            if self.slides.iter().any(|slide| slide.page == page && slide.kind == SlideKind::Leave) {
+            if self.on_their_way.iter().any(|moving| moving.page == page && moving.way == Way::Leaves) {
                 return true;
             }
             match self.placed_in[page.index()] {
@@ -577,8 +563,8 @@ impl<A: 'static> Program<A> {
 
     /// One frame of every live page. Page placed in another comes after
     /// it: it is laid out in its node's rectangle as that page has it
-    /// this frame, with what is left of the safe insets there, and
-    /// slides where that page slides.
+    /// this frame, with what is left of the safe insets there, and is
+    /// drawn where an anim has that node now, as see-through as it.
     ///
     /// Returns true while something still moves.
     fn frame_pages(&mut self, dt: f32, size_px: (u32, u32)) -> bool {
@@ -595,7 +581,7 @@ impl<A: 'static> Program<A> {
             let Some((parent, node)) = placed_in[id.index()] else { continue };
             let parent_ui: &PageUi = stack.get(parent);
             let rect: Rect = if parent_ui.kept.is_laid_out() { parent_ui.rect(node) } else { Rect::new(0.0, 0.0, 0.0, 0.0) };
-            let pose: Option<PagePose> = parent_ui.pose;
+            let pose: Option<PagePose> = PagePose::both(parent_ui.pose, parent_ui.drawn_pose(node));
             let page: &mut PageUi = stack.get_mut(id);
             page.viewport = Some(rect);
             page.pose = pose;
@@ -606,7 +592,7 @@ impl<A: 'static> Program<A> {
 
     /// Makes `page` a layer above every page.
     fn add_layer_object(&mut self, page: Box<dyn PageObject<A>>) {
-        let id: PageId = self.make(page);
+        let id: PageId = self.make(page, true);
         // A layer never keeps a touch beside its nodes: one that did
         // would leave every page under it dead.
         self.stack.get_mut(id).is_modal = false;
@@ -624,7 +610,7 @@ impl<A: 'static> Program<A> {
         if let Some(old) = self.placed_at(parent, node) {
             self.free(old);
         }
-        let id: PageId = self.make(page);
+        let id: PageId = self.make(page, true);
         self.placed_in[id.index()] = Some((parent, node));
         self.placed_order.push(id);
         if self.stack.is_ordered(parent) {
@@ -728,18 +714,35 @@ impl<A: 'static> Program<A> {
         }
     }
 
-    /// Mouse wheel turned by `notches` at (`x`, `y`) over page on screen.
-    /// Positive count: turn away from user.
+    /// Mouse wheel turned by `notches` at (`x`, `y`). Positive count:
+    /// turn away from user.
     ///
-    /// Returns false when no page is under the mouse: page on screen
-    /// got the turn all the same, and host with pages of its own under
-    /// the program's hands them the turn too.
+    /// Turn goes to topmost drawn page that has something for it under
+    /// the mouse: a control, a `Scroll`, a `List`. Page that takes
+    /// every touch (`Page::TAKES_EVERY_TOUCH`) keeps a turn it has
+    /// nothing for: pages under a dialog do not scroll.
+    ///
+    /// Returns false when no page took the turn, and then none moved:
+    /// host with something of its own under the program's pages hands
+    /// that the turn.
     pub fn wheel(&mut self, x: f32, y: f32, notches: f32) -> bool {
-        let taker: Option<PageId> = self.page_that_takes(x, y);
-        let under_mouse: PageId = taker.unwrap_or(self.top());
-        let events: EventList = self.stack.get_mut(under_mouse).wheel(x, y, notches);
-        self.hand_events(under_mouse, &events);
-        taker.is_some()
+        for i in (0..self.stack.order.len()).rev() {
+            let id: PageId = self.stack.order[i];
+            if self.is_leaving(id) || !self.stack.get(id).covers(x, y) {
+                continue;
+            }
+            let page_ui: &mut PageUi = self.stack.get_mut(id);
+            let is_modal: bool = page_ui.is_modal;
+            match page_ui.wheel(x, y, notches) {
+                Some(events) => {
+                    self.hand_events(id, &events);
+                    return true;
+                }
+                None if is_modal => return true,
+                None => {}
+            }
+        }
+        false
     }
 
     /// Opens `page` over page on screen, as `Nav::go` from a page does.
@@ -747,7 +750,7 @@ impl<A: 'static> Program<A> {
     /// Needed for what opens a page from outside a page: a host that got
     /// a file to show, a test.
     pub fn go<P: IntoPage<A, Kind>, Kind>(&mut self, page: P) {
-        self.open(page.into_page_object().0, false);
+        self.open(page.into_page_object().0);
         self.carry_out_requests();
     }
 
@@ -1013,13 +1016,13 @@ impl<A: 'static> Program<A> {
     }
 
     /// Calls `arrived` of page on screen (and of pages placed in it),
-    /// once per arrival: no page slides, and that page has not had the
-    /// call since it came on top.
+    /// once per arrival: no page is on its way, and that page has not
+    /// had the call since it came on top.
     ///
     /// Returns true when it made the call.
     fn tell_arrival(&mut self) -> bool {
         let top: PageId = self.top();
-        if !self.slides.is_empty() || self.arrived == Some(top) {
+        if !self.on_their_way.is_empty() || self.arrived == Some(top) {
             return false;
         }
         self.arrived = Some(top);
@@ -1031,7 +1034,7 @@ impl<A: 'static> Program<A> {
         while !self.nav.requests.is_empty() {
             for request in std::mem::take(&mut self.nav.requests) {
                 match request {
-                    Request::Go { page, is_instant } => self.open(page, is_instant),
+                    Request::Go(page) => self.open(page),
                     Request::Replace(page) => self.replace(page),
                     Request::Back => {
                         self.back_once();
@@ -1056,12 +1059,16 @@ impl<A: 'static> Program<A> {
     }
 
     /// Makes a page from its compiled file and calls its `loaded`. Page
-    /// lands on top of draw order.
-    fn make(&mut self, mut page: Box<dyn PageObject<A>>) -> PageId {
+    /// lands on top of draw order. `is_shown_now`: false for page made
+    /// ahead of its first open.
+    fn make(&mut self, mut page: Box<dyn PageObject<A>>, is_shown_now: bool) -> PageId {
         let mut page_ui: PageUi = PageUi::new(self.reload.open(page.built()));
         page.read_handler_names(&page_ui);
-        // Plays each visible node's `on:show` once.
-        page_ui.runtime.play_entrances(&page_ui.page);
+        // Plays each visible node's `on:show` once. Page nobody sees
+        // yet plays them at its first open: they would play unseen.
+        if is_shown_now {
+            page_ui.runtime.play_entrances(&page_ui.page);
+        }
         page_ui.is_modal = page.takes_every_touch();
         // Screen's facts and language, before page's `loaded`: what
         // page's code writes there is in that language.
@@ -1070,6 +1077,7 @@ impl<A: 'static> Program<A> {
         if self.objects.len() <= id.index() {
             self.objects.resize_with(id.index() + 1, || None);
             self.is_kind_checked.resize(id.index() + 1, false);
+            self.has_played_entrances.resize(id.index() + 1, false);
             self.layer_draws.resize_with(id.index() + 1, Vec::new);
             self.picture_keys.resize_with(id.index() + 1, Vec::new);
             self.placed_in.resize(id.index() + 1, None);
@@ -1077,6 +1085,7 @@ impl<A: 'static> Program<A> {
         self.placed_in[id.index()] = None;
         self.objects[id.index()] = Some(page);
         self.is_kind_checked[id.index()] = false;
+        self.has_played_entrances[id.index()] = is_shown_now;
         self.call(id, |page, host| page.loaded(host));
         id
     }
@@ -1089,7 +1098,7 @@ impl<A: 'static> Program<A> {
         }
         self.placed_order.retain(|other| *other != id);
         self.placed_in[id.index()] = None;
-        self.slides.retain(|slide| slide.page != id);
+        self.on_their_way.retain(|moving| moving.page != id);
         self.code_pictures_to_release.extend(self.stack.get(id).code_pictures.iter().filter_map(|picture| picture.key));
         self.stack.remove(id);
         self.objects[id.index()] = None;
@@ -1101,17 +1110,43 @@ impl<A: 'static> Program<A> {
     /// Page on screen leaves unasked, `fresh` opens in its place.
     fn replace(&mut self, fresh: Box<dyn PageObject<A>>) {
         let leaving: PageId = self.back_stack.pop().expect("a program has a first page");
-        if self.slides_in_and_out(leaving) {
-            self.slide(leaving, SlideKind::Leave);
-        } else {
-            self.end_leave(leaving);
-        }
-        self.open(fresh, false);
+        self.start_leave(leaving);
+        self.open(fresh);
     }
 
-    /// True for page that slides in and out (`Page::SLIDES`).
-    fn slides_in_and_out(&self, id: PageId) -> bool {
-        self.objects[id.index()].as_ref().is_some_and(|object| object.slides())
+    /// True while root of page `id` plays its anim for `way`.
+    fn is_way_playing(&self, id: PageId, way: Way) -> bool {
+        let page_ui: &PageUi = self.stack.get(id);
+        page_ui.runtime.is_hook_playing(&page_ui.page, ROOT, way.hook())
+    }
+
+    /// Notes page `id` as on `way`, when its root plays its anim for
+    /// it, in place of a way page was on. Page whose root plays none
+    /// stays as noted.
+    ///
+    /// Returns true when page is on `way` now.
+    fn note_way(&mut self, id: PageId, way: Way) -> bool {
+        if !self.is_way_playing(id, way) {
+            return false;
+        }
+        self.on_their_way.retain(|moving| moving.page != id);
+        self.on_their_way.push(PageOnItsWay { page: id, way });
+        true
+    }
+
+    /// Page `id` starts its way out: its root plays its `on:hide`. Page
+    /// whose root has none is off screen at once (`end_leave`).
+    ///
+    /// Returns true while page is on its way out.
+    fn start_leave(&mut self, id: PageId) -> bool {
+        let page_ui: &mut PageUi = self.stack.get_mut(id);
+        page_ui.runtime.play_hook(&page_ui.page, ROOT, Hook::Hide);
+        if self.note_way(id, Way::Leaves) {
+            return true;
+        }
+        self.on_their_way.retain(|moving| moving.page != id);
+        self.end_leave(id);
+        false
     }
 
     /// Page `id` is off screen for good: its `left`, then cached page
@@ -1128,12 +1163,12 @@ impl<A: 'static> Program<A> {
     }
 
     /// Opens `fresh` over page on screen. Cached page of that type, or one
-    /// still sliding out, shows again and takes `fresh` over.
-    /// `is_instant`: with no slide in.
-    fn open(&mut self, fresh: Box<dyn PageObject<A>>, is_instant: bool) {
+    /// still on its way out, shows again and takes `fresh` over. Its
+    /// root's `on:show` plays, as a new page's does.
+    fn open(&mut self, fresh: Box<dyn PageObject<A>>) {
         let cached: Option<PageId> = if fresh.is_cached_page() {
             let page_type: TypeId = fresh.page_type();
-            let leaving = self.slides.iter().filter(|slide| slide.kind == SlideKind::Leave).map(|slide| slide.page);
+            let leaving = self.on_their_way.iter().filter(|moving| moving.way == Way::Leaves).map(|moving| moving.page);
             self.cached.iter().copied().chain(leaving).find(|id| self.page_type(*id) == Some(page_type))
         } else {
             None
@@ -1141,31 +1176,38 @@ impl<A: 'static> Program<A> {
         let id: PageId = match cached {
             Some(id) => {
                 self.cached.retain(|other| *other != id);
-                self.slides.retain(|slide| slide.page != id);
+                self.on_their_way.retain(|moving| moving.page != id);
                 self.objects[id.index()].as_mut().expect("a live page has its struct").reopened(fresh.into_page());
+                let has_played_entrances: bool = std::mem::replace(&mut self.has_played_entrances[id.index()], true);
+                let page_ui: &mut PageUi = self.stack.get_mut(id);
+                // Page that was on its way out stops there, and comes
+                // in anew: gogo stops root's `on:hide` as it plays its
+                // `on:show`.
+                if has_played_entrances {
+                    page_ui.runtime.play_hook(&page_ui.page, ROOT, Hook::Show);
+                } else {
+                    page_ui.runtime.play_entrances(&page_ui.page);
+                }
                 id
             }
-            None => self.make(fresh),
+            None => self.make(fresh, true),
         };
-        let has_page_under: bool = !self.back_stack.is_empty();
         self.back_stack.push(id);
-        self.stack.get_mut(id).pose = None;
         self.arrived = None;
-        if has_page_under && !is_instant && self.slides_in_and_out(id) {
-            self.slide(id, SlideKind::Open);
-        }
+        self.note_way(id, Way::ComesIn);
         self.order_drawn_pages();
         self.call_with_placed(id, |page, host| page.show(host));
     }
 
-    /// Makes a cached page ahead of its first open.
+    /// Makes a cached page ahead of its first open. Its nodes play
+    /// their `on:show` at that open.
     fn preload(&mut self, page: Box<dyn PageObject<A>>) {
         let page_type: TypeId = page.page_type();
         let is_alive: bool = (0..self.objects.len()).any(|i| self.objects[i].as_ref().is_some_and(|object| object.page_type() == page_type));
         if !self.nav.is_page_cache_enabled || is_alive {
             return;
         }
-        let id: PageId = self.make(page);
+        let id: PageId = self.make(page, false);
         self.order_remove_with_placed(id);
         self.cached.push(id);
     }
@@ -1188,60 +1230,47 @@ impl<A: 'static> Program<A> {
         }
         let leaving: PageId = self.back_stack.pop().expect("two pages");
         let revealed: PageId = self.top();
-        let is_sliding_out: bool = self.slides_in_and_out(leaving);
-        let is_overlay: bool = self.objects[leaving.index()].as_ref().is_some_and(|object| object.kind() == PageKind::Overlay);
-        // Page under an overlay never left the screen: it stays as it is.
-        if is_sliding_out && !is_overlay {
-            self.slide(revealed, SlideKind::Reveal);
-        }
-        if is_sliding_out {
-            self.slide(leaving, SlideKind::Leave);
-        } else {
-            self.end_leave(leaving);
+        let is_fullscreen: bool = self.objects[leaving.index()].as_ref().is_some_and(|object| object.kind() == PageKind::Fullscreen);
+        let is_on_its_way_out: bool = self.start_leave(leaving);
+        // Page under a fullscreen page that takes time to leave comes
+        // back with it. Under an overlay it never left the screen, and
+        // under a page gone at once there is nothing to come back from.
+        if is_on_its_way_out && is_fullscreen {
+            let page_ui: &mut PageUi = self.stack.get_mut(revealed);
+            page_ui.runtime.play_uncovers(&page_ui.page);
+            self.note_way(revealed, Way::ComesBack);
         }
         self.order_drawn_pages();
         self.call_with_placed(revealed, |page, host| page.show(host));
         true
     }
 
-    /// Starts a slide of `page`, in place of one it is in.
-    fn slide(&mut self, page: PageId, kind: SlideKind) {
-        self.slides.retain(|slide| slide.page != page);
-        let slide: Slide = Slide { page, kind, elapsed_sec: 0.0 };
-        self.stack.get_mut(page).pose = Some(slide.pose());
-        self.slides.push(slide);
-    }
-
-    /// Moves every slide on by `dt` seconds, ends the ones that are over.
+    /// Ends the way of each page whose root's anim is over. Page that
+    /// was leaving hears `left`, then is cached or freed.
     ///
-    /// Returns true while a page still slides.
-    fn move_slides(&mut self, dt: f32) -> bool {
-        for i in 0..self.slides.len() {
-            self.slides[i].elapsed_sec += dt;
-            let slide: Slide = self.slides[i];
-            self.stack.get_mut(slide.page).pose = if slide.has_ended() { None } else { Some(slide.pose()) };
-        }
-        if !self.slides.iter().any(Slide::has_ended) {
-            return !self.slides.is_empty();
-        }
-        let ended: Vec<Slide> = self.slides.iter().copied().filter(Slide::has_ended).collect();
-        self.slides.retain(|slide| !slide.has_ended());
-        for slide in ended {
-            match slide.kind {
-                SlideKind::Open | SlideKind::Reveal => {}
-                SlideKind::Leave => self.end_leave(slide.page),
+    /// Returns true when a way ended.
+    fn end_ways(&mut self) -> bool {
+        let mut has_ended: bool = false;
+        while let Some(at) = (0..self.on_their_way.len()).find(|i| !self.is_way_playing(self.on_their_way[*i].page, self.on_their_way[*i].way)) {
+            let ended: PageOnItsWay = self.on_their_way.remove(at);
+            has_ended = true;
+            if ended.way == Way::Leaves {
+                self.end_leave(ended.page);
             }
         }
-        // A fullscreen page in place now covers what is under it.
-        self.order_drawn_pages();
-        !self.slides.is_empty()
+        if has_ended {
+            // A fullscreen page in place now covers what is under it.
+            self.order_drawn_pages();
+        }
+        has_ended
     }
 
     /// True when page `id` hides everything under it: fullscreen page, in
-    /// place. A page still sliding in fades in, so what is under it shows.
+    /// place. A page still on its way is moved or see-through, so what
+    /// is under it shows.
     fn page_covers_screen(&self, id: PageId) -> bool {
         let is_fullscreen: bool = self.objects[id.index()].as_ref().is_some_and(|object| object.kind() == PageKind::Fullscreen);
-        is_fullscreen && !self.slides.iter().any(|slide| slide.page == id)
+        is_fullscreen && !self.on_their_way.iter().any(|moving| moving.page == id)
     }
 
     /// Puts into draw order what shows: back stack pages from topmost
@@ -1259,9 +1288,9 @@ impl<A: 'static> Program<A> {
                 self.order_top_with_placed(id);
             }
         }
-        for i in 0..self.slides.len() {
-            if self.slides[i].kind == SlideKind::Leave {
-                let leaving: PageId = self.slides[i].page;
+        for i in 0..self.on_their_way.len() {
+            if self.on_their_way[i].way == Way::Leaves {
+                let leaving: PageId = self.on_their_way[i].page;
                 self.order_top_with_placed(leaving);
             }
         }
@@ -1304,14 +1333,19 @@ impl<A: 'static> Program<A> {
 }
 
 /// Pages as renderer draws them: bottom first, each page's own pictures
-/// under its nodes, a sliding page moved to where it is now.
+/// under its nodes and moved and faded with its root, a page placed in
+/// a node moved and faded with that node.
 #[cfg(feature = "gpu")]
 impl<A> gogo_wgpu::DrawLists for Program<A> {
     fn for_each_list<'a>(&'a self, f: &mut dyn FnMut(&[Draw], &'a gogo_ui::Page)) {
         for id in &self.stack.order {
             let page: &'a PageUi = self.stack.get(*id);
-            for draws in [self.layer_draws[id.index()].as_slice(), page.draws.as_slice()] {
-                match page.pose {
+            let pictures: &[Draw] = self.layer_draws[id.index()].as_slice();
+            // Page's own pictures lie under its nodes: where an anim
+            // has its root, they are too.
+            let pictures_pose: Option<PagePose> = if pictures.is_empty() { None } else { PagePose::both(page.pose, page.drawn_pose(ROOT)) };
+            for (draws, pose) in [(pictures, pictures_pose), (page.draws.as_slice(), page.pose)] {
+                match pose {
                     _ if draws.is_empty() => {}
                     None => f(draws, &page.page),
                     Some(pose) => {
@@ -1323,38 +1357,5 @@ impl<A> gogo_wgpu::DrawLists for Program<A> {
                 }
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn pose_at(kind: SlideKind, elapsed_sec: f32) -> PagePose {
-        slide_at(kind, elapsed_sec).pose()
-    }
-
-    fn slide_at(kind: SlideKind, elapsed_sec: f32) -> Slide {
-        Slide { page: PageStack::new().add(PageUi::new(gogo_ui::compile("View v", &|_| None).page)), kind, elapsed_sec }
-    }
-
-    /// Opened page starts 60 epx to the right and clear, ends in place and
-    /// solid. Leaving page does the reverse. Page it uncovers comes from
-    /// 30 epx to the left.
-    #[test]
-    fn a_slide_starts_and_ends_where_it_says() {
-        let open: PagePose = pose_at(SlideKind::Open, 0.0);
-        assert_eq!((open.offset_x, open.alpha), (OPEN_SLIDE_FROM_EPX, 0.0));
-        let open: PagePose = pose_at(SlideKind::Open, OPEN_SLIDE_SEC);
-        assert_eq!((open.offset_x, open.alpha), (0.0, 1.0));
-        // Fade is over before slide is.
-        assert_eq!(pose_at(SlideKind::Open, OPEN_SLIDE_SEC * 0.9).alpha, 1.0);
-        let reveal: PagePose = pose_at(SlideKind::Reveal, 0.0);
-        assert_eq!((reveal.offset_x, reveal.alpha), (REVEAL_SLIDE_FROM_EPX, 0.0));
-        let leave: PagePose = pose_at(SlideKind::Leave, 0.0);
-        assert_eq!((leave.offset_x, leave.alpha), (0.0, 1.0));
-        let leave: PagePose = pose_at(SlideKind::Leave, BACK_SLIDE_SEC);
-        assert_eq!((leave.offset_x, leave.alpha), (OPEN_SLIDE_FROM_EPX, 0.0));
-        assert!(slide_at(SlideKind::Leave, BACK_SLIDE_SEC).has_ended());
     }
 }

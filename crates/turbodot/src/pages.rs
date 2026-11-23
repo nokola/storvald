@@ -384,13 +384,26 @@ fn is_same_locale(a: &Option<Arc<Locale>>, b: &Option<Arc<Locale>>) -> bool {
     }
 }
 
-/// Where a page is drawn this frame while it slides in or out: moved by
-/// the offset, in epx, and faded to `alpha`.
+/// Where a page is drawn this frame against where it is laid out:
+/// moved by the offset, in epx, and faded to `alpha`. A host's own
+/// slide sets it, and a program does for a page placed in a node that
+/// an anim moves.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PagePose {
     pub offset_x: f32,
     pub offset_y: f32,
     pub alpha: f32,
+}
+
+impl PagePose {
+    /// Two poses as one: offsets added, alphas multiplied. `None`: in
+    /// place, not faded.
+    pub fn both(first: Option<PagePose>, second: Option<PagePose>) -> Option<PagePose> {
+        match (first, second) {
+            (Some(a), Some(b)) => Some(PagePose { offset_x: a.offset_x + b.offset_x, offset_y: a.offset_y + b.offset_y, alpha: a.alpha * b.alpha }),
+            (a, b) => a.or(b),
+        }
+    }
 }
 
 /// Where `PageUi::draw_to_texture` puts a node and its children on the
@@ -539,6 +552,20 @@ impl PageUi {
         // Asked after the layout: a glide that this frame's write
         // started there must keep the frames coming.
         is_moving | self.runtime.is_moving()
+    }
+
+    /// Where `node` is drawn this frame against where it is laid out:
+    /// what anims on it and on the nodes it sits under do together.
+    /// `None`: in place, not faded, or page has no frame yet.
+    ///
+    /// Needed for what is drawn in a node's rectangle and is not the
+    /// page's own node: a page placed there, a GPU picture.
+    pub fn drawn_pose(&self, node: NodeId) -> Option<PagePose> {
+        if !self.kept.is_laid_out() {
+            return None;
+        }
+        let shift: gogo_ui::DrawnShift = gogo_ui::drawn_shift(&self.page, self.kept.frame(), node);
+        if shift == gogo_ui::DrawnShift::NONE { None } else { Some(PagePose { offset_x: shift.offset_x, offset_y: shift.offset_y, alpha: shift.opacity }) }
     }
 
     /// Whether the page's root shows at all.

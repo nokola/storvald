@@ -1,8 +1,9 @@
 // Overlay page: asks before every note is dropped. Its root is see-through,
 // so home page stays in view under it.
 uses "look.gogo"
+uses "sliding_page.gogo"
 
-View clearPage background=black/0.6 {
+View clearPage .SlidingPage background=black/0.6 {
     Column box halign=center, valign=center, spacing=12, padding=16, background=$back, corner_radius=8 {
         Label question text="Drop every note?", font_color=$ink
         Row spacing=8 {

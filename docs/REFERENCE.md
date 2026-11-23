@@ -2701,6 +2701,17 @@ What `on:` takes:
   through the pair at once and `Runtime::set_visible` on the next frame;
   either way a hide waits for the node's `on:hide` anim, and a node with
   none hides at once.
+- **Uncover hook**: `on:uncover=play(comeBack)` plays when the host says
+  the page shows again after the page that covered it left
+  (`Runtime::play_uncovers`). It takes `play(…)` only, like the
+  visibility pair (G0084), and never plays by itself: nothing inside a
+  page changes when another page stops covering it. A host that opens
+  and closes pages (TurboDot does) plays a page root's hooks one by
+  one with `Runtime::play_hook`: `on:show` as the page opens,
+  `on:hide` as it leaves. The root stays shown and laid out, and when
+  that `on:hide` ends, what it moved goes back to what the file says.
+  The cookbook has the page that slides: "How do I slide a page in
+  and out?".
 
 How the host program reads the handler name off an event is in the
 cookbook: "How do I hear a button in my code?".
@@ -2828,6 +2839,9 @@ glide freezes mid-flight until the next input.
 | `rt.set_items` / `items` / `item_key`, `rt.set_selected` / `selected_keys` | A repeat's rows and a List's selection (see Repeat, List). |
 | `rt.set_scroll` / `scroll_of` / `scroll_into_view` | A Scroll's position. |
 | `rt.play_entrances(&page)` | Plays each visible node's `on:show` once, when the page first shows. |
+| `rt.play_uncovers(&page)` | Plays each visible node's `on:uncover`: the host calls it when the page that covered this one leaves. |
+| `rt.play_hook(&page, node, hook)`, `rt.is_hook_playing` | One node's `on:show`, `on:hide` or `on:uncover` anim (`Hook::Show`, `Hide`, `Uncover`): played and asked about by a host that opens and closes pages. The node stays shown; a played `on:hide` puts back what it moved when it ends, and a played `on:show` stops an `on:hide` that still plays. |
+| `gogo_ui::drawn_shift(&page, frame, node)` | How far anims moved a node together with the nodes it sits under, and how see-through they are together. For what a host draws in a node's rectangle: a picture, another page. |
 | `input.touch` / `key` / `wheel` / `hover` | Feed input; `touch`, `key` and `wheel` answer with the events they caused, `hover` only sets `hovered`. |
 | `input.register(behavior)`, `input.focused()`, `input.focus_on` | A host's own control behavior; who has keyboard focus; move it. |
 | `gogo_ui::hit(&page, frame, x, y, any)` | The node under a point of the last frame. |

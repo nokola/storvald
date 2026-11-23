@@ -106,8 +106,8 @@ impl Gpu {
     }
 
     /// Draws the pages of `program` as its last frame laid them out, to
-    /// a picture: every page that shows, bottom first, a sliding page
-    /// where it is.
+    /// a picture: every page that shows, bottom first, a page on its
+    /// way where it is.
     ///
     /// The same renderer and shader a window uses draw it, so the picture
     /// is what a user would see. Where no page paints, the picture is

@@ -1,8 +1,15 @@
 // Cached page: made once, later open shows same view, text scrolled to
 // same place.
 uses "look.gogo"
+uses "sliding_page.gogo"
 
-View settingsPage background=$back, padding=16 {
+// Plays once, when page first shows. Page is made ahead of its first
+// open (`preload`), so that is its first open, not when it was made.
+anim countIn {
+    noteCount.opacity from=0, to=1, duration=0.3
+}
+
+View settingsPage .SlidingPage background=$back, padding=16 {
     Column spacing=10, width=fill, height=fill {
         Row spacing=8 {
             // Same picture the home page shows at once. One line without
@@ -11,7 +18,7 @@ View settingsPage background=$back, padding=16 {
             Image settingsIcon source="res://assets/note.png", size=hug, loading=lazy
             Label title text="Settings", font_size=24, font_color=$ink
         }
-        Label noteCount text="", font_color=$dim
+        Label noteCount text="", font_color=$dim, on:show=play(countIn)
         // `loading=lazy`: decoded on a thread of its own, shows a frame or
         // more after the page does. `release=unused`: leaves the GPU once
         // no live page names it, and is decoded again at its next show.

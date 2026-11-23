@@ -396,10 +396,11 @@ These are ordinary nodes to the parser; the resolver gives them meaning:
 - **`uses "path.gogo"`** — import (relative to the current file).
 - **`on:<event>=HandlerName`** — wiring property. The events are a closed
   set of bare stems (D181): `activate`, `press`, `release`, `change`,
-  `edit`, `show`, `hide`, `pointer` (see Input vocabulary); any other word
-  after `on:` is refused (G0049). Also takes `play(animName)`, `go(name)`,
-  `toggle(name)`, `emit(Name)`; `on:show`/`on:hide` are the visibility
-  pair and take `play(animName)` only (G0084; see Animations).
+  `edit`, `show`, `hide`, `uncover`, `pointer` (see Input vocabulary); any
+  other word after `on:` is refused (G0049). Also takes `play(animName)`,
+  `go(name)`, `toggle(name)`, `emit(Name)`; `on:show`/`on:hide` are the
+  visibility pair and `on:uncover` is the hook a host plays, and the
+  three take `play(animName)` only (G0084; see Animations).
 - **Look properties**: `opacity` (the whole node's alpha),
   `font_size` (epx), `font_color` (a Button has no `icon=` word: a
   Button with a picture holds an `Image`),
@@ -1133,6 +1134,7 @@ pair already conformed):
 | `edit` | a live, UNCOMMITTED value moved — Slider per drag tick, Input per keystroke that changes the text; discrete controls have no edit | the live value |
 | `press` / `release` | the finger landed on a press surface, and that gesture ended — `release` fires exactly once however it ends (lift inside or out, cancel, a Scroll steal, disable/hide under the finger). A Slider brackets its drag with the same pair: `press` on down, `release` on up or cancel, one each. `activate` stays a press surface's completed tap; a Slider never fires it | — |
 | `show` / `hide` | visibility choreography (unchanged) | — |
+| `uncover` | the host says the page shows again after the page that covered it left (`Runtime::play_uncovers`); takes `play(anim)` | — |
 | `pointer` | every touch phase on a box the host draws itself (the node needs `interactive=true`, G0073) | the phase and the position inside the box, epx |
 
 Per control: **Slider** brackets its drag with `press`/`release`
@@ -1354,6 +1356,21 @@ anim entrance duration_each=0.2 {              // each: wearers + stagger
   through it on the next frame: any change of a node's visibility plays
   the pair (a code write, a `when`, a pose), and a hide waits for its
   `on:hide` anim. A node with no `on:hide` anim hides at once.
+- `on:uncover=play(comeBack)` is the third hook, and it is the host's:
+  it plays when the host says the page shows again after the page that
+  covered it left (`Runtime::play_uncovers`: every drawn node's
+  `on:uncover` at once). Nothing inside a page changes when another
+  page stops covering it, so this hook never plays by itself. A host
+  that opens and closes pages also plays one node's hook by itself
+  (`Runtime::play_hook`): the root's `on:show` each time its page opens
+  and its `on:hide` when its page leaves. The node stays shown and laid
+  out. When an `on:hide` played this way ends, what it moved goes back
+  to what the file says, and the host takes the page off the screen in
+  that same frame. Playing a node's `on:show` this way stops its
+  `on:hide` if that still plays, and puts back what it moved: a page
+  opened again while it leaves comes in anew.
+  `Runtime::is_hook_playing` says whether a node's hook anim still
+  plays.
 
 ## Grid (D82 — designed 2026-07-06, built 2026-07-10)
 

@@ -1,5 +1,5 @@
 //! What a file wires by itself and the anim rules around it: the anim a
-//! tap plays, the hooks `on:show` and `on:hide` take, the anim a
+//! tap plays, the hooks `on:show`, `on:hide` and `on:uncover` take, the anim a
 //! `transition … anim=` names, the order an `each` runs in, where a step
 //! starts, and the words an anim line takes.
 
@@ -9,7 +9,7 @@ use gogo_ui::compile;
 use gogo_ui::input::{EventList, Input, Phase, Touch};
 use gogo_ui::layout::{FixedAdvance, Rect};
 use gogo_ui::page::{ArrangementId, BASE, Kind, NodeId, Page, PropKey, StrId};
-use gogo_ui::runtime::{Resolved, Runtime, resolve, resolve_animated};
+use gogo_ui::runtime::{Hook, Resolved, Runtime, resolve, resolve_animated};
 
 const VIEW: Rect = Rect { x: 0.0, y: 0.0, w: 400.0, h: 800.0 };
 
@@ -114,16 +114,103 @@ fn press_and_release_play_their_anims() {
     assert!(fx.rt.is_playing_id(up), "the release plays its anim");
 }
 
-/// `on:show` and `on:hide` play an anim and do nothing else: every other
-/// action and a handler name are build errors, because nothing would
-/// ever carry them out.
+/// `on:show`, `on:hide` and `on:uncover` play an anim and do nothing
+/// else: every other action and a handler name are build errors,
+/// because nothing would ever carry them out.
 #[test]
-fn show_and_hide_hooks_take_play_only() {
-    for hook in ["on:show=go(edit)", "on:show=toggle(edit)", "on:show=emit(Shown)", "on:show=Shown", "on:hide=go(edit)", "on:hide=toggle(edit)", "on:hide=emit(Hidden)", "on:hide=Hidden"] {
+fn show_hide_and_uncover_hooks_take_play_only() {
+    for hook in ["on:show=go(edit)", "on:show=toggle(edit)", "on:show=emit(Shown)", "on:show=Shown", "on:hide=go(edit)", "on:hide=toggle(edit)", "on:hide=emit(Hidden)", "on:hide=Hidden", "on:uncover=go(edit)", "on:uncover=toggle(edit)", "on:uncover=emit(Back)", "on:uncover=Back"] {
         let src = format!("arrangement edit\nView v {{ Panel p {hook}, width=10, height=10 }}");
         assert!(codes(&src).contains(&"G0084".to_string()), "{hook}: {}", messages(&src));
     }
-    assert!(builds("anim a { p.opacity to=1, duration=1 }\nView v { Panel p on:show=play(a), on:hide=play(a), width=10, height=10 }"));
+    assert!(builds("anim a { p.opacity to=1, duration=1 }\nView v { Panel p on:show=play(a), on:hide=play(a), on:uncover=play(a), width=10, height=10 }"));
+}
+
+/// `on:uncover` plays when host says page is uncovered, and at no other
+/// time: not when page first shows, not when node shows. Node that is
+/// not drawn gets none.
+///
+/// Needed because nothing inside a page changes when another page
+/// stops covering it: only host knows.
+#[test]
+fn on_uncover_plays_when_host_says_page_is_uncovered() {
+    let mut fx = Fx::new("anim back { p.translate.x from=-30, to=0, duration=0.2 }\nanim other { q.opacity from=0, to=1, duration=0.2 }\nView v on:uncover=play(back) { Panel p width=10, height=10; Panel q width=10, height=10, visibility=gone, on:uncover=play(other) }");
+    let (back, other) = (fx.anim("back"), fx.anim("other"));
+    let (v, p, q) = (fx.node("v"), fx.node("p"), fx.node("q"));
+    fx.rt.play_entrances(&fx.page);
+    assert!(!fx.rt.is_playing_id(back), "first show of page is not an uncover");
+    fx.rt.show(&mut fx.page, q, true);
+    fx.rt.show(&mut fx.page, q, false);
+    assert!(!fx.rt.is_playing_id(other), "a show and a hide of node are not an uncover");
+
+    fx.rt.play_uncovers(&fx.page);
+    assert!(fx.rt.is_playing_id(back) && fx.rt.is_hook_playing(&fx.page, v, Hook::Uncover), "host said so: root's hook plays");
+    assert!(!fx.rt.is_hook_playing(&fx.page, v, Hook::Show) && !fx.rt.is_hook_playing(&fx.page, p, Hook::Uncover), "asked hook of asked node only");
+    assert!(!fx.rt.is_playing_id(other), "node that is gone plays none");
+    assert_eq!(fx.rt.motion[p].translate[0], -30.0, "anim starts at its first value");
+    fx.tick(0.25);
+    assert!(!fx.rt.is_hook_playing(&fx.page, v, Hook::Uncover) && fx.rt.motion[p].translate[0] == 0.0, "over: node in place");
+}
+
+/// Host plays one node's hook by itself: node stays shown and laid out
+/// while its `on:hide` plays and after, and what that anim moved goes
+/// back when it ends. What another anim left standing stays.
+///
+/// Needed by host that opens and closes pages: a page kept for a later
+/// open plays its root's `on:hide`, and must come back as it was
+/// before, with every standing value page's own anims left.
+#[test]
+fn a_host_plays_one_hook_and_a_hide_puts_back_what_it_moved() {
+    let mut fx = Fx::new("anim out { p.opacity to=0, duration=0.2\n and p.translate.x to=60, duration=0.2 }\nanim open { q.translate.y to=40, duration=0.1 }\nView v { Panel p width=10, height=10, on:hide=play(out); Panel q width=10, height=10 }");
+    let (p, q) = (fx.node("p"), fx.node("q"));
+    fx.look();
+    let open = fx.anim("open");
+    fx.rt.play_id(&fx.page, open, Finish::Nothing);
+    fx.tick(0.15);
+    assert_eq!(fx.look().motion[q.index()].translate[1], 40.0, "page's own anim left its last value standing");
+
+    assert!(!fx.rt.play_hook(&fx.page, q, Hook::Hide), "node with no such hook: nothing plays");
+    assert!(fx.rt.play_hook(&fx.page, p, Hook::Hide) && fx.rt.is_hook_playing(&fx.page, p, Hook::Hide));
+    fx.tick(0.1);
+    let look = fx.look();
+    assert!(fx.rt.is_hook_playing(&fx.page, p, Hook::Hide) && !look.gone(&fx.page, p), "half way: still shown");
+    assert!(look.motion[p.index()].translate[0] > 0.0 && look.num(&fx.page, p, PropKey::Opacity).unwrap_or(1.0) < 1.0, "moved and see-through");
+    fx.tick(0.15);
+    assert!(!fx.rt.is_hook_playing(&fx.page, p, Hook::Hide), "anim over");
+    let look = fx.look();
+    assert!(!look.gone(&fx.page, p), "node was not hidden: it is laid out as before");
+    assert_eq!((look.motion[p.index()].translate[0], look.num(&fx.page, p, PropKey::Opacity).unwrap_or(1.0)), (0.0, 1.0), "what the hide moved is back");
+    assert_eq!(look.motion[q.index()].translate[1], 40.0, "what another anim left stays");
+
+    // Shown again mid way: its way out stops, and with no `on:show` to
+    // play node is in place at once.
+    fx.rt.play_hook(&fx.page, p, Hook::Hide);
+    fx.tick(0.1);
+    assert!(!fx.rt.play_hook(&fx.page, p, Hook::Show), "node has no `on:show`");
+    let look = fx.look();
+    assert!(!fx.rt.is_hook_playing(&fx.page, p, Hook::Hide), "its way out stopped");
+    assert_eq!((look.motion[p.index()].translate[0], look.num(&fx.page, p, PropKey::Opacity).unwrap_or(1.0)), (0.0, 1.0), "as before the hide");
+}
+
+/// What host draws in a node's rectangle follows node: `drawn_shift`
+/// says how far an anim moved node and everything it sits under, and
+/// how see-through they are together.
+#[test]
+fn drawn_shift_adds_translate_and_multiplies_opacity_down_to_a_node() {
+    let mut fx = Fx::new("anim slide { v.translate.x from=60, to=0, duration=1\n and v.opacity from=0, to=1, duration=1\n and box.translate.y from=10, to=0, duration=1 }\nView v { Panel box width=100, height=100, opacity=0.5 { Panel inner width=10, height=10 }; Panel beside width=10, height=10 }");
+    let (inner, beside) = (fx.node("inner"), fx.node("beside"));
+    let mut kept: KeptFrame = KeptFrame::default();
+    let mut draws: Vec<gogo_ui::Draw> = Vec::new();
+    kept.frame_retained(&mut fx.rt, &fx.page, VIEW, &FixedAdvance, &mut draws, None);
+    assert_eq!(gogo_ui::drawn_shift(&fx.page, kept.frame(), beside), gogo_ui::DrawnShift::NONE, "nothing plays: in place, solid");
+    assert_eq!(gogo_ui::drawn_shift(&fx.page, kept.frame(), inner), gogo_ui::DrawnShift { offset_x: 0.0, offset_y: 0.0, opacity: 0.5 }, "declared opacity of what node sits under counts");
+
+    let slide = fx.anim("slide");
+    fx.rt.play_id(&fx.page, slide, Finish::Nothing);
+    fx.tick(0.5);
+    kept.frame_retained(&mut fx.rt, &fx.page, VIEW, &FixedAdvance, &mut draws, None);
+    assert_eq!(gogo_ui::drawn_shift(&fx.page, kept.frame(), beside), gogo_ui::DrawnShift { offset_x: 30.0, offset_y: 0.0, opacity: 0.5 }, "root's slide half way");
+    assert_eq!(gogo_ui::drawn_shift(&fx.page, kept.frame(), inner), gogo_ui::DrawnShift { offset_x: 30.0, offset_y: 5.0, opacity: 0.25 }, "root's and box's together");
 }
 
 /// An anim line on a size moves the box: the rect follows the lane, as it

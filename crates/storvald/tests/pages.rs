@@ -20,15 +20,15 @@ fn frame(program: &mut Program<AppState>, dt: f32) -> bool {
     program.frame(WINDOW_SIZE_EPX.0, WINDOW_SIZE_EPX.1, dt)
 }
 
-/// Frames until no page slides any more.
+/// Frames until no page is on its way in or out any more.
 fn let_the_slides_end(program: &mut Program<AppState>) {
     for _ in 0..60 {
         frame(program, 0.016);
-        if !program.is_sliding() {
+        if !program.is_page_arriving_or_leaving() {
             return;
         }
     }
-    panic!("a slide is still running after a second");
+    panic!("a page is still on its way after a second");
 }
 
 /// Program after its first frame.
@@ -164,7 +164,7 @@ fn about_opens_over_the_skills_and_back_returns_to_them_as_they_were_left() {
     assert_eq!(program.depth(), 2);
     assert!(program.page::<AboutPage>().is_some(), "the about page is on screen");
     assert_eq!(program.ui().text_of(ABOUT.about_version), Some(program.app().carried_line().as_str()));
-    assert!(program.is_sliding(), "the about page slides in");
+    assert!(program.is_page_arriving_or_leaving(), "the about page slides in");
     assert_eq!(program.drawn_page_count(), 2, "the skills page shows under the page that slides in");
     let_the_slides_end(&mut program);
     assert_eq!(program.drawn_page_count(), 1, "the about page covers the screen: the skills page is drawn no more");

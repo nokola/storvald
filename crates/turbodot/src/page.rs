@@ -25,8 +25,8 @@ pub enum Back {
 /// How much of the screen a page covers. Page says it with `const KIND`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PageKind {
-    /// Page covers whole screen. Once it slid in, pages under it are not
-    /// drawn.
+    /// Page covers whole screen. Once it is in place, pages under it
+    /// are not drawn.
     Fullscreen,
     /// Page lets page under it show: a dialog, a translucent sheet. Pages
     /// under it stay drawn.
@@ -162,15 +162,6 @@ pub trait Page<A = ()>: Sized + 'static {
     /// painting): host hands that surface the fingers no button took.
     /// Any other page keeps a tap beside its buttons to itself.
     const TAKES_EVERY_TOUCH: bool = true;
-    /// False for page that comes and goes at once: in place on its
-    /// first frame, off screen the moment it leaves, and page under it
-    /// does not slide back in.
-    ///
-    /// Needed for a dialog whose file plays its own entrance
-    /// (`on:show`): with engine's slide on top, dialog moves twice.
-    ///
-    /// Its `left` is called before page under it hears `show`.
-    const SLIDES: bool = true;
 
     /// Writes program's data into page: texts, rows, selection.
     ///
@@ -205,20 +196,23 @@ pub trait Page<A = ()>: Sized + 'static {
         false
     }
 
-    /// Called once page is on screen, in place, with no page sliding:
-    /// when its slide in ended (at once for `Nav::go_instantly` and for
-    /// program's first page), and when page above it finished sliding
-    /// out.
+    /// Called once page is on screen, in place, with no page on its
+    /// way: when its root's `on:show` ended (at once for root with
+    /// none), and when page above it is off screen.
     ///
-    /// Needed for what must wait for the slide: a native view (an ad
-    /// banner) shown at open is on screen a moment before the page it
-    /// belongs to.
+    /// Needed for what must wait for page to be in place: a native
+    /// view (an ad banner) shown at open is on screen a moment before
+    /// the page it belongs to.
     fn arrived(&mut self, host: &mut Host<'_, A>) {
         let _ = host;
     }
 
-    /// Called once page's slide out ended: page is off screen. Cached
-    /// page is cached after this call, any other page is freed.
+    /// Called once page is off screen: its root's `on:hide` ended, or
+    /// root has none. Cached page is cached after this call, any other
+    /// page is freed.
+    ///
+    /// Page with no `on:hide` hears it before page under it hears
+    /// `show`.
     ///
     /// Needed as page's last call with `host`: what page took for
     /// itself in program's state goes back here. `Drop` has no `host`.
@@ -280,8 +274,6 @@ pub trait CachedPage<A = ()>: Sized + 'static {
     /// painting): host hands that surface the fingers no button took.
     /// Any other page keeps a tap beside its buttons to itself.
     const TAKES_EVERY_TOUCH: bool = true;
-    /// As `Page::SLIDES`.
-    const SLIDES: bool = true;
 
     /// As `Page::show`.
     fn show(&mut self, host: &mut Host<'_, A>) {
@@ -358,8 +350,6 @@ pub(crate) trait PageObject<A> {
     fn kind(&self) -> PageKind;
     /// True for page that takes a touch on none of its nodes.
     fn takes_every_touch(&self) -> bool;
-    /// True for page that slides in and out.
-    fn slides(&self) -> bool;
     /// Read by debug build's check of page's kind alone.
     #[cfg_attr(not(debug_assertions), allow(dead_code))]
     fn draws_gpu_picture(&self) -> bool;
@@ -456,9 +446,6 @@ impl<A: 'static, P: Page<A>> PageObject<A> for Plain<P, P::Handler> {
     fn takes_every_touch(&self) -> bool {
         P::TAKES_EVERY_TOUCH
     }
-    fn slides(&self) -> bool {
-        P::SLIDES
-    }
     fn draws_gpu_picture(&self) -> bool {
         P::DRAWS_GPU_PICTURE
     }
@@ -523,9 +510,6 @@ impl<A: 'static, P: CachedPage<A>> PageObject<A> for Cached<P, P::Handler> {
     }
     fn takes_every_touch(&self) -> bool {
         P::TAKES_EVERY_TOUCH
-    }
-    fn slides(&self) -> bool {
-        P::SLIDES
     }
     fn draws_gpu_picture(&self) -> bool {
         P::DRAWS_GPU_PICTURE
@@ -613,8 +597,8 @@ impl<A: 'static, P: CachedPage<A>> IntoPage<A, AsCachedPage> for P {
 /// What a page asked for during a call. Program carries it out when call
 /// returns.
 pub(crate) enum Request<A> {
-    /// Page to open over page on screen. `is_instant`: with no slide.
-    Go { page: Box<dyn PageObject<A>>, is_instant: bool },
+    /// Page to open over page on screen.
+    Go(Box<dyn PageObject<A>>),
     /// Page to open in place of page on screen.
     Replace(Box<dyn PageObject<A>>),
     Back,
@@ -646,23 +630,18 @@ impl<A: 'static> Nav<A> {
 
     /// Opens `page` over page on screen. Back returns to page that asked.
     ///
+    /// `page` is in place at once, unless its file says how it comes:
+    /// its root's `on:show` plays as it opens, its `on:hide` as it
+    /// leaves, its `on:uncover` when a fullscreen page over it leaves.
+    ///
     /// Cached `CachedPage` shows again same view, and takes `page` over in
     /// its `reopened`.
     pub fn go<P: IntoPage<A, Kind>, Kind>(&mut self, page: P) {
-        self.requests.push(Request::Go { page: page.into_page_object().0, is_instant: false });
+        self.requests.push(Request::Go(page.into_page_object().0));
     }
 
-    /// As `go`, with no slide in: `page` is in place on its first frame.
-    /// Back from it slides it out as any page.
-    ///
-    /// Needed where a slide would look like a second step: page that
-    /// takes the place of a "Loading" line.
-    pub fn go_instantly<P: IntoPage<A, Kind>, Kind>(&mut self, page: P) {
-        self.requests.push(Request::Go { page: page.into_page_object().0, is_instant: true });
-    }
-
-    /// Opens `page` in place of page on screen: that page slides out,
-    /// `page` slides in. Back from `page` returns to page under both.
+    /// Opens `page` in place of page on screen: that page leaves,
+    /// `page` comes in. Back from `page` returns to page under both.
     ///
     /// Needed for a dialog that leads to another: user then closes one
     /// dialog, not a pile of them.
@@ -695,7 +674,7 @@ impl<A: 'static> Nav<A> {
     ///
     /// Placed page lives until the asking page is freed, or until
     /// another page is placed in same node. It shows and hides with the
-    /// asking page, and slides with it.
+    /// asking page, and moves and fades with the node it is placed in.
     ///
     /// WARNING: panics when no page's function is running: only a page
     /// places a page.

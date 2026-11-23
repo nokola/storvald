@@ -1,5 +1,6 @@
 // Overlay page: says every note is dropped. The clear page opens it in
-// its own place, so back from here shows the home page.
+// its own place, so back from here shows the home page. Its root names
+// no anim: page is in place at once and gone at once.
 uses "look.gogo"
 
 View droppedPage background=black/0.6 {

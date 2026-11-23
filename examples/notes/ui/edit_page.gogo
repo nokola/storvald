@@ -1,7 +1,8 @@
 // A new note. Save keeps it. Back asks once before it drops it.
 uses "look.gogo"
+uses "sliding_page.gogo"
 
-View editPage background=$back, padding=16 {
+View editPage .SlidingPage background=$back, padding=16 {
     Column spacing=10, width=fill {
         Label title text="", font_size=24, font_color=$ink
         Label hint text="Save keeps this note. Back drops it.", font_color=$dim

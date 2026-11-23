@@ -63,7 +63,7 @@ impl CachedPage<AppState> for SettingsPage {
         host.app.page_log.push("settings arrived");
     }
 
-    /// Cached page gets this call too, each time it slid out.
+    /// Cached page gets this call too, each time it is off screen.
     fn left(&mut self, host: &mut Host<AppState>) {
         host.app.page_log.push("settings left");
     }

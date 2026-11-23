@@ -130,7 +130,7 @@ pub const REGISTRY: &[(&str, &str)] = &[
     ("G0081", "`live()` and `bind()` are gone — a `$value` follows the control's value by itself"),
     ("G0082", "the `behavior` line's rules — machine name, wiring, one owner per key group"),
     ("G0083", "a `when` response reads the control's `$value` — it cannot follow it"),
-    ("G0084", "`on:show` and `on:hide` take `play(…)` only"),
+    ("G0084", "`on:show`, `on:hide` and `on:uncover` take `play(…)` only"),
     ("G0085", "a call gogo does not have, or a size call (`fill(n)`, `hug(n)`) where no size is written"),
     ("G1002", "grid track bookkeeping — arity, spans and the skip they owe"),
     ("G1003", "areas-form rules — rectangles, one name per child, tracks per line"),

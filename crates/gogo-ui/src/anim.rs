@@ -485,6 +485,10 @@ pub enum Finish {
     /// because a code write would outrank the `when` forever (GPAR57); the
     /// `when`'s own `gone` takes over the moment the override lifts.
     HideWhen(NodeId),
+    /// A hide hook a host plays by itself (`Runtime::play_hook`): the
+    /// finish puts back every lane the anim moved and writes no
+    /// visibility. Host takes the node off screen at that moment.
+    PutBack,
 }
 
 #[derive(Clone, Debug)]

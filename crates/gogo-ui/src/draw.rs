@@ -629,14 +629,7 @@ fn walk(page: &Page, res: &Resolved, rects: &[Rect], id: NodeId, opacity: f32, s
     // `when disabled opacity=` replaces the dim, a plain `opacity=` does
     // not — and an anim that owns the channel on top of everything. The
     // ancestors' product multiplies down the tree; nothing else does.
-    let own: f32 = if res.anim_owns(id, crate::anim::Channel::Opacity) {
-        res.num(page, id, PropKey::Opacity).unwrap_or(1.0)
-    } else if state & DISABLED != 0 && !authored_disabled_opacity(page, id) {
-        page.disabled_opacity()
-    } else {
-        res.num(page, id, PropKey::Opacity).unwrap_or(1.0)
-    };
-    let opacity = opacity * own.clamp(0.0, 1.0);
+    let opacity = opacity * own_opacity(page, res, id);
     let color = |key: PropKey| res.color(page, id, key).map(|c| mul_alpha(c, opacity));
     let corner = res.num(page, id, PropKey::CornerRadius).unwrap_or(0.0);
     // Per-corner radii: the file-order walk decides — the uniform
@@ -1253,6 +1246,61 @@ fn pivot_frac(page: &Page, res: &Resolved, id: NodeId) -> (f32, f32) {
         Some(Value::VSize(Some(x), Some(y))) => (x, y),
         _ => (0.5, 0.5),
     }
+}
+
+/// Node's own opacity, 0 to 1: what the draw walk multiplies down the
+/// tree. One rule for the walk and for `drawn_shift`.
+fn own_opacity(page: &Page, res: &Resolved, id: NodeId) -> f32 {
+    let state: u8 = res.states.get(id.index()).copied().unwrap_or(0);
+    let own: f32 = if res.anim_owns(id, crate::anim::Channel::Opacity) {
+        res.num(page, id, PropKey::Opacity).unwrap_or(1.0)
+    } else if state & DISABLED != 0 && !authored_disabled_opacity(page, id) {
+        page.disabled_opacity()
+    } else {
+        res.num(page, id, PropKey::Opacity).unwrap_or(1.0)
+    };
+    own.clamp(0.0, 1.0)
+}
+
+/// Where a node draws against its laid-out rectangle, and how solid.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DrawnShift {
+    /// Epx to the right of the laid-out rectangle.
+    pub offset_x: f32,
+    /// Epx below the laid-out rectangle.
+    pub offset_y: f32,
+    /// 0 clear, 1 solid.
+    pub opacity: f32,
+}
+
+impl DrawnShift {
+    /// Node draws in its laid-out rectangle, solid.
+    pub const NONE: DrawnShift = DrawnShift { offset_x: 0.0, offset_y: 0.0, opacity: 1.0 };
+}
+
+/// Where `node` draws on frame `f` against its laid-out rectangle: its
+/// own `translate` and that of every node it sits under, summed, and
+/// their opacity multiplied.
+///
+/// Needed by host that draws something of its own in a node's
+/// rectangle (a GPU picture, another page): that must move and fade
+/// with the node while an anim plays on the node or above it.
+///
+/// `scale`, `rotate` and `swing` are not counted: what host draws
+/// keeps its size and stays upright.
+pub fn drawn_shift(page: &Page, f: Frame<'_>, node: NodeId) -> DrawnShift {
+    let res: &Resolved = f.look();
+    let mut shift: DrawnShift = DrawnShift::NONE;
+    let mut at: NodeId = node;
+    while at != NO_NODE && at.index() < page.nodes.len() {
+        if let Some(motion) = res.motion.get(at.index()) {
+            shift.offset_x += motion.translate[0];
+            shift.offset_y += motion.translate[1];
+        }
+        shift.opacity *= own_opacity(page, res, at);
+        at = res.placed_parent(page, at);
+    }
+    shift
 }
 
 /// The top-most node under (x, y) that takes input — walking the paint

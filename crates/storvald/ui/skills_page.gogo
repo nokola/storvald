@@ -7,7 +7,14 @@ style SkillRow padding=10, corner_radius=6 {
     when selected background=$pick
 }
 
-View skillsPage background=$back {
+// First page comes in over nothing, so it has no `on:show`. It comes
+// back from the left when the about page over it leaves.
+anim skillsBack {
+    skillsPage.translate.x from=-30, to=0, duration=0.2, easing=cubic_out
+    and skillsPage.opacity from=0, to=1, duration=0.16
+}
+
+View skillsPage background=$back, on:uncover=play(skillsBack) {
     Row width=fill, height=fill {
         Panel side width=260, height=fill, background=$side, padding=12 {
             Column spacing=10, width=fill, height=fill {

@@ -464,7 +464,9 @@ itself, with no code in the host: `go(x)`, `toggle(x)` and `play(x)`; a
 tap on `Button on:activate=play(pulse)` plays the anim. `on:show` and
 `on:hide` are hooks with one job, `play(…)`: a node shows and hides
 inside the runtime, where no event leaves for a host, so any other
-action there is refused (G0084). An anim line on a size, a margin or a
+action there is refused (G0084). `on:uncover` (decided 2026-11-23) is a
+third hook of that kind: a host plays it when a page shows again after
+the page that covered it left. An anim line on a size, a margin or a
 padding moves the box, as a `transition` on it does (one list of words,
 two doors); the box is laid out again on every frame of the play, and
 `scale` and `translate` are the words that need no layout. A

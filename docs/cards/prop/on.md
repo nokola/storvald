@@ -6,11 +6,12 @@ now different — once per genuine change a finger or key makes; a write
 from code raises no event), `edit`
 (the live uncommitted stream: Slider drag ticks, Input keystrokes that change the text), the
 visibility pair `show`/`hide` (show also plays when a control lands
-visible; hide plays first, then hides), and `pointer` (every touch phase
-with its position, for a box the host draws itself). Any other word after
-`on:` is build error G0049.
+visible; hide plays first, then hides), `uncover` (plays when the host
+says the page shows again after the page that covered it left), and
+`pointer` (every touch phase with its position, for a box the host draws
+itself). Any other word after `on:` is build error G0049.
 
-The value is a handler name (`on:activate=SaveBrush`), or a call (`on:show` and `on:hide` take `play(anim)` only, G0084):
+The value is a handler name (`on:activate=SaveBrush`), or a call (`on:show`, `on:hide` and `on:uncover` take `play(anim)` only, G0084):
 `play(anim)` runs a flourish, `go(arrangement)` flips the view's pose,
 `toggle(arrangement)` flips between the pose and base (press expands,
 press again collapses), `emit(Name)` reports the event under a name you

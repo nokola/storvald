@@ -1,7 +1,8 @@
 // What this version of Storvald is. Opened from first page; Back and Esc return to it.
 uses "look.gogo"
+uses "sliding_page.gogo"
 
-View aboutPage background=$back {
+View aboutPage .SlidingPage background=$back {
     Column spacing=12, padding=24, width=fill, height=fill {
         Button backButton .QuietButton text="Back", width=hug, on:activate=GoBack
         Label aboutTitle text="Storvald", font_size=26, font_color=$ink

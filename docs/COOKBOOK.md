@@ -1153,6 +1153,73 @@ Button backButton     text="Back",     on:activate=go(base)
 
 ---
 
+## How do I slide a page in and out?
+
+A page says in its own file how it comes and goes, with three hooks on
+its root:
+
+- `on:show` plays as the page opens.
+- `on:hide` plays as the page leaves.
+- `on:uncover` plays when the page that covered this one leaves.
+
+A root with none of them is in place at once and gone at once. TurboDot
+plays the hooks when a page opens and when Back takes it away; a host
+of your own plays them with `Runtime::play_hook` and
+`Runtime::play_uncovers`.
+
+Write the slide once, as a style that carries the three hooks, and let
+the page's root wear it:
+
+```kdl
+style SlidingPage on:show=play(pageIn), on:hide=play(pageOut), on:uncover=play(pageBack)
+
+// In from the right, slowing down. Solid a little before it is in place.
+anim pageIn {
+    each .SlidingPage {
+        translate.x from=60, to=0, duration=0.3, easing=cubic_out
+        and opacity from=0, to=1, duration=0.24
+    }
+}
+
+// Out to the right, speeding up.
+anim pageOut {
+    each .SlidingPage {
+        translate.x to=60, duration=0.2, easing=cubic_in
+        and opacity to=0, duration=0.2
+    }
+}
+
+// Back in from the left, half as far.
+anim pageBack {
+    each .SlidingPage {
+        translate.x from=-30, to=0, duration=0.2, easing=cubic_out
+        and opacity from=0, to=1, duration=0.16
+    }
+}
+
+View settingsPage .SlidingPage background=#17181C {
+    Label title text="Settings"
+}
+```
+
+- In a program the style and the three anims sit in a file of their own
+  (`sliding_page.gogo`). A page that slides says
+  `uses "sliding_page.gogo"` and puts `.SlidingPage` on its root: two
+  lines, and every page slides the same way.
+- A page that imports the file and forgets `.SlidingPage` does not
+  build: `each .SlidingPage` finds no node that wears the style
+  (G0060). So half a slide cannot slip through.
+- `translate` and `opacity` move the picture only. The page is laid out
+  once, however long the slide is.
+- A program's first page comes in over nothing. Give it `on:uncover`
+  alone, with an anim that names its root:
+  `homePage.translate.x from=-30, to=0, duration=0.2`.
+- What the host draws in the page with its own code (a GPU picture, a
+  page placed in a node) moves and fades with the root: TurboDot asks
+  `gogo_ui::drawn_shift` where the root is drawn now.
+
+---
+
 ## How do I stop an animation and put things back?
 
 `Runtime::stop` ends the anim without playing it out and, called with

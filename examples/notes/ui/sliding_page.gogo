@@ -1,0 +1,31 @@
+// How a page of the example comes and goes. A page that slides says
+// `uses "sliding_page.gogo"` and wears `.SlidingPage` on its root.
+// A page that says neither is in place at once and gone at once.
+//
+// TurboDot plays root's `on:show` as page opens, its `on:hide` as page
+// leaves, and its `on:uncover` when a fullscreen page over it leaves.
+style SlidingPage on:show=play(pageIn), on:hide=play(pageOut), on:uncover=play(pageBack)
+
+// In from the right, slowing down. Solid a little before it is in place.
+anim pageIn {
+    each .SlidingPage {
+        translate.x from=60, to=0, duration=0.3, easing=cubic_out
+        and opacity from=0, to=1, duration=0.24
+    }
+}
+
+// Out to the right, speeding up.
+anim pageOut {
+    each .SlidingPage {
+        translate.x to=60, duration=0.2, easing=cubic_in
+        and opacity to=0, duration=0.2
+    }
+}
+
+// Back in from the left, half as far.
+anim pageBack {
+    each .SlidingPage {
+        translate.x from=-30, to=0, duration=0.2, easing=cubic_out
+        and opacity from=0, to=1, duration=0.16
+    }
+}

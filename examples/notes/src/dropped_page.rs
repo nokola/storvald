@@ -19,4 +19,8 @@ impl Page<AppState> for DroppedPage {
             Handler::GotIt => host.nav.back(),
         }
     }
+
+    fn left(&mut self, host: &mut Host<AppState>) {
+        host.app.page_log.push("dropped left");
+    }
 }

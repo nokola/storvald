@@ -82,15 +82,15 @@ mod tests {
         program.frame(SIZE_EPX.0, SIZE_EPX.1, dt);
     }
 
-    /// Frames until no page slides any more.
+    /// Frames until no page is on its way in or out any more.
     fn let_the_slides_end(program: &mut Program<AppState>) {
         for _ in 0..60 {
             frame(program, 0.016);
-            if !program.is_sliding() {
+            if !program.is_page_arriving_or_leaving() {
                 return;
             }
         }
-        panic!("a slide is still running after a second");
+        panic!("a page is still on its way after a second");
     }
 
     /// Program after its first frame.
@@ -105,6 +105,33 @@ mod tests {
         program.tap(HOME.open_settings, t);
         assert!(program.page::<SettingsPage>().is_some(), "the settings page is on screen");
         let_the_slides_end(program);
+    }
+
+    /// Page made ahead of its first open plays its nodes' `on:show` at
+    /// that open, once: not while it waits unseen, and not at a later
+    /// open, which shows same view.
+    ///
+    /// Needed because an entrance played when page was made is over
+    /// before anyone sees page.
+    #[test]
+    fn a_page_made_ahead_plays_its_entrances_at_its_first_open() {
+        use turbodot::gogo::Hook;
+        let is_count_coming_in = |program: &Program<AppState>| -> bool { program.ui().runtime.is_hook_playing(&program.ui().page, SETTINGS.note_count, Hook::Show) };
+        let mut program: Program<AppState> = started(AppState::default());
+        assert_eq!(program.cached_page_count(), 1, "the settings page is made ahead");
+        frame(&mut program, 0.016);
+        assert!(!program.frame(SIZE_EPX.0, SIZE_EPX.1, 0.016), "nothing plays while it waits");
+
+        program.tap(HOME.open_settings, 1.0);
+        frame(&mut program, 0.016);
+        assert!(is_count_coming_in(&program), "its first open: the count comes in");
+        let_the_slides_end(&mut program);
+        assert!(program.back());
+        let_the_slides_end(&mut program);
+
+        program.tap(HOME.open_settings, 2.0);
+        frame(&mut program, 0.016);
+        assert!(program.is_page_arriving_or_leaving() && !is_count_coming_in(&program), "a later open: page slides in, the count is as it was");
     }
 
     #[test]
@@ -224,7 +251,7 @@ mod tests {
 
         assert!(program.back());
         frame(&mut program, 0.016);
-        assert!(program.is_sliding(), "the settings page is on its way out");
+        assert!(program.is_page_arriving_or_leaving(), "the settings page is on its way out");
         program.tap(HOME.open_settings, 2.0);
         assert_eq!((program.depth(), program.cached_page_count()), (2, 0));
         let_the_slides_end(&mut program);
@@ -271,7 +298,7 @@ mod tests {
         program.tap(CLEAR.clear_all, 2.0);
         assert!(program.page::<DroppedPage>().is_some(), "the new page is on screen");
         assert_eq!(program.depth(), 2, "in the clear page's place, not over it");
-        assert!(program.is_sliding() && program.is_drawn::<ClearPage>(), "the clear page slides out");
+        assert!(program.is_page_arriving_or_leaving() && program.is_drawn::<ClearPage>(), "the clear page slides out");
         let_the_slides_end(&mut program);
         assert!(!program.is_drawn::<ClearPage>());
         assert_eq!(program.live_page_count(), live_at_home + 1, "the clear page is freed");
@@ -326,35 +353,6 @@ mod tests {
         assert_eq!(program.cached_page_count(), 1);
     }
 
-    /// Page opened instantly is in place at once: no slide in. Back
-    /// slides it out as any page.
-    ///
-    /// Needed where a slide would look like a second step: page that
-    /// takes the place of a "Loading" line.
-    #[test]
-    fn a_page_opened_instantly_does_not_slide_in() {
-        /// `clear_page.gogo` as a first page: "Drop all" opens the clear
-        /// page with no slide.
-        struct FlipPage;
-        impl Page<AppState> for FlipPage {
-            const PAGE: &'static BuiltPage = &clear_page::PAGE;
-            type Handler = clear_page::Handler;
-            fn handle(&mut self, host: &mut Host<AppState>, event: PageEvent<clear_page::Handler>) {
-                match event.handler {
-                    clear_page::Handler::ClearAll => host.nav.go_instantly(ClearPage),
-                    clear_page::Handler::KeepNotes => {}
-                }
-            }
-        }
-        let mut program: Program<AppState> = Program::new(&crate::ui::BUILT, AppState::default(), FlipPage).expect("the pages can be shown");
-        frame(&mut program, 0.0);
-        program.tap(CLEAR.clear_all, 1.0);
-        assert!(program.page::<ClearPage>().is_some());
-        assert!(!program.is_sliding(), "in place at once");
-        assert!(program.back());
-        assert!(program.is_sliding(), "back slides it out");
-    }
-
     /// Program follows its pages' files in a folder its host names: a
     /// save there shows in the open page.
     ///
@@ -386,72 +384,165 @@ mod tests {
         panic!("the save did not show within five seconds: the title reads {:?}", program.ui().text_of(HOME.title));
     }
 
-    /// `clear_page.gogo` as a dialog that does not slide. "Drop all"
-    /// opens the dropped page in its place.
-    struct QuickPage;
-    impl Page<AppState> for QuickPage {
-        const PAGE: &'static BuiltPage = &clear_page::PAGE;
-        type Handler = clear_page::Handler;
-        const KIND: PageKind = PageKind::Overlay;
-        const SLIDES: bool = false;
-        fn handle(&mut self, host: &mut Host<AppState>, event: PageEvent<clear_page::Handler>) {
-            match event.handler {
-                clear_page::Handler::ClearAll => host.nav.replace(DroppedPage),
-                clear_page::Handler::KeepNotes => host.nav.back(),
+    /// Page whose file names no anim for its root is in place at once
+    /// and gone at once, on back and when another page takes its place.
+    /// Page under it does not move.
+    ///
+    /// Needed because how a page comes and goes is its file's to say:
+    /// engine adds no motion of its own.
+    #[test]
+    fn a_page_whose_file_names_no_anim_comes_and_goes_at_once() {
+        /// `dropped_page.gogo` as a dialog that leads to the clear page.
+        struct SwapPage;
+        impl Page<AppState> for SwapPage {
+            const PAGE: &'static BuiltPage = &dropped_page::PAGE;
+            type Handler = dropped_page::Handler;
+            const KIND: PageKind = PageKind::Overlay;
+            fn handle(&mut self, host: &mut Host<AppState>, event: PageEvent<dropped_page::Handler>) {
+                match event.handler {
+                    dropped_page::Handler::GotIt => host.nav.replace(ClearPage),
+                }
             }
         }
-        fn left(&mut self, host: &mut Host<AppState>) {
-            host.app.page_log.push("quick left");
+        /// `home_page.gogo` as a fullscreen page over the home page: its
+        /// root has no `on:show` and no `on:hide`.
+        struct PlainPage;
+        impl Page<AppState> for PlainPage {
+            const PAGE: &'static BuiltPage = &home_page::PAGE;
+            type Handler = home_page::Handler;
+            fn handle(&mut self, _host: &mut Host<AppState>, _event: PageEvent<home_page::Handler>) {}
         }
-    }
-
-    /// Page that says it does not slide is in place at once and gone at
-    /// once, on back and when another page takes its place.
-    ///
-    /// Needed for a dialog whose file plays its own entrance: with
-    /// engine's slide on top, dialog moves twice.
-    #[test]
-    fn a_page_that_does_not_slide_comes_and_goes_at_once() {
         let mut program: Program<AppState> = started(AppState::default());
         let live_at_home: usize = program.live_page_count();
-        program.go(QuickPage);
-        assert!(program.page::<QuickPage>().is_some());
-        assert!(!program.is_sliding(), "in place at once");
+        program.go(DroppedPage);
+        assert!(program.page::<DroppedPage>().is_some());
+        assert!(!program.is_page_arriving_or_leaving(), "in place at once");
         frame(&mut program, 0.016);
+        assert_eq!(program.ui().drawn_pose(DROPPED.dropped_page), None, "where its file has it, solid");
 
-        program.tap(CLEAR.keep_notes, 1.0);
+        program.tap(DROPPED.got_it, 1.0);
         assert!(program.page::<HomePage>().is_some());
-        assert!(!program.is_sliding(), "gone at once, and the page under it does not move");
+        assert!(!program.is_page_arriving_or_leaving(), "gone at once, and the page under it does not move");
         assert_eq!(program.live_page_count(), live_at_home, "freed at once");
-        assert!(program.app().page_log.contains(&"quick left"), "its `left` ran");
+        assert!(program.app().page_log.contains(&"dropped left"), "its `left` ran");
 
-        program.go(QuickPage);
+        // Fullscreen page gone at once: the home page under it has
+        // nothing to come back from, so its `on:uncover` does not play.
+        program.go(PlainPage);
         frame(&mut program, 0.016);
-        program.tap(CLEAR.clear_all, 2.0);
-        assert!(program.page::<DroppedPage>().is_some(), "the dropped page takes its place");
-        assert_eq!(program.live_page_count(), live_at_home + 1, "the quick page is freed at once");
-        assert!(program.is_sliding(), "the dropped page slides in as any page");
+        assert!(!program.is_page_arriving_or_leaving() && program.drawn_page_count() == 1, "in place at once, over the home page");
+        assert!(program.back());
+        frame(&mut program, 0.016);
+        assert!(!program.is_page_arriving_or_leaving() && program.ui().drawn_pose(HOME.home_page).is_none(), "the home page is there at once, in place");
+
+        program.go(SwapPage);
+        frame(&mut program, 0.016);
+        program.tap(DROPPED.got_it, 2.0);
+        assert!(program.page::<ClearPage>().is_some(), "the clear page takes its place");
+        assert_eq!(program.live_page_count(), live_at_home + 1, "the page with no anim is freed at once");
+        assert!(program.is_page_arriving_or_leaving(), "the clear page comes in as its file says");
+    }
+
+    /// Page comes and goes as its file says: root's `on:show` plays as
+    /// page opens, its `on:hide` as it leaves, and page under a leaving
+    /// fullscreen page plays its `on:uncover`. Page under stays drawn
+    /// for as long as the page over it is on its way.
+    #[test]
+    fn a_page_comes_and_goes_as_its_file_says() {
+        let mut program: Program<AppState> = started(AppState::default());
+        program.tap(HOME.open_settings, 1.0);
+        frame(&mut program, 0.016);
+        let coming: turbodot::pages::PagePose = program.ui().drawn_pose(SETTINGS.settings_page).expect("the settings page is on its way in");
+        assert!(coming.offset_x > 40.0 && coming.offset_x < 60.0 && coming.alpha > 0.0 && coming.alpha < 0.2, "from the right, still clear: {coming:?}");
+        assert_eq!(program.drawn_page_count(), 2, "the home page shows under it");
+        let_the_slides_end(&mut program);
+        assert_eq!(program.ui().drawn_pose(SETTINGS.settings_page), None, "in place, solid");
+        assert_eq!(program.drawn_page_count(), 1, "and covers the home page");
+
+        assert!(program.back());
+        frame(&mut program, 0.1);
+        assert!(program.is_drawn::<SettingsPage>() && program.is_page_arriving_or_leaving(), "the settings page is on its way out");
+        let back: turbodot::pages::PagePose = program.ui().drawn_pose(HOME.home_page).expect("the home page comes back");
+        assert!(back.offset_x < 0.0 && back.offset_x > -30.0 && back.alpha > 0.0, "from the left: {back:?}");
+        let_the_slides_end(&mut program);
+        assert_eq!(program.ui().drawn_pose(HOME.home_page), None);
+        assert_eq!((program.drawn_page_count(), program.cached_page_count()), (1, 1), "the settings page is cached");
+
+        // Cached page comes in again the same way: what its way out
+        // moved is not left standing.
+        program.tap(HOME.open_settings, 2.0);
+        frame(&mut program, 0.016);
+        let again: turbodot::pages::PagePose = program.ui().drawn_pose(SETTINGS.settings_page).expect("on its way in again");
+        assert!((again.offset_x - coming.offset_x).abs() < 0.01 && (again.alpha - coming.alpha).abs() < 0.01, "{again:?} against {coming:?}");
+        let_the_slides_end(&mut program);
+        assert_eq!(program.ui().drawn_pose(SETTINGS.settings_page), None);
+    }
+
+    /// What a page writes when it is told it arrived is laid out in that
+    /// same frame.
+    ///
+    /// Needed because the frame in which a page's way ends may be the
+    /// last one a still program asks for: a write laid out a frame
+    /// later would show only at next touch.
+    #[test]
+    fn what_a_page_writes_when_it_arrives_is_laid_out_in_that_frame() {
+        /// `settings_page.gogo` as a page that writes a longer title once it is
+        /// in place.
+        struct ArrivingPage;
+        impl Page<AppState> for ArrivingPage {
+            const PAGE: &'static BuiltPage = &settings_page::PAGE;
+            type Handler = settings_page::Handler;
+            fn handle(&mut self, _host: &mut Host<AppState>, _event: PageEvent<settings_page::Handler>) {}
+            fn arrived(&mut self, host: &mut Host<AppState>) {
+                host.ui.set_text(SETTINGS.title, "Settings, in place now");
+            }
+        }
+        let mut program: Program<AppState> = started(AppState::default());
+        program.go(ArrivingPage);
+        frame(&mut program, 0.016);
+        let short: f32 = program.ui().rect(SETTINGS.title).w;
+        let_the_slides_end(&mut program);
+        let long: f32 = program.ui().rect(SETTINGS.title).w;
+        assert!(long > short * 2.0, "the frame its way ended laid the longer title out: {short} then {long}");
+    }
+
+    /// Page placed in a node is drawn where an anim has that node now,
+    /// as see-through as it: it comes in with the page it is placed in.
+    #[test]
+    fn a_placed_page_moves_and_fades_with_the_node_it_is_placed_in() {
+        let mut program: Program<AppState> = started(AppState::default());
+        assert_eq!(program.placed_ui(HOME.footer).expect("the home page's footer").pose, None, "in place while nothing moves");
+        program.tap(HOME.add_note, 1.0);
+        frame(&mut program, 0.016);
+        frame(&mut program, 0.016);
+        let page: turbodot::pages::PagePose = program.ui().drawn_pose(EDIT.edit_page).expect("the edit page is on its way in");
+        assert_eq!(program.placed_ui(EDIT.footer).expect("the edit page's footer").pose, Some(page), "the footer is where its page is");
+        let_the_slides_end(&mut program);
+        frame(&mut program, 0.016);
+        assert_eq!(program.placed_ui(EDIT.footer).expect("the edit page's footer").pose, None, "and in place with it");
     }
 
     /// Page under a leaving overlay stays where it is: it never left the
-    /// screen. Page under a leaving fullscreen page slides back in.
+    /// screen. Page under a leaving fullscreen page comes back.
     #[test]
-    fn the_page_under_a_leaving_overlay_does_not_slide() {
+    fn the_page_under_a_leaving_overlay_does_not_move() {
         let mut program: Program<AppState> = started(AppState { notes: vec!["Note 1".to_string()], ..AppState::default() });
         program.tap(HOME.clear_notes, 1.0);
         let_the_slides_end(&mut program);
         program.tap(CLEAR.keep_notes, 2.0);
-        assert!(program.is_sliding(), "the overlay slides out");
-        assert!(program.page::<HomePage>().is_some() && program.ui().pose.is_none(), "the home page under it stays in place");
+        frame(&mut program, 0.016);
+        assert!(program.is_page_arriving_or_leaving(), "the overlay is on its way out");
+        assert!(program.page::<HomePage>().is_some() && program.ui().drawn_pose(HOME.home_page).is_none(), "the home page under it stays in place");
         let_the_slides_end(&mut program);
 
         open_settings(&mut program, 3.0);
         assert!(program.back());
-        assert!(program.page::<HomePage>().is_some() && program.ui().pose.is_some(), "under a fullscreen page it slides back in");
+        frame(&mut program, 0.016);
+        assert!(program.page::<HomePage>().is_some() && program.ui().drawn_pose(HOME.home_page).is_some(), "under a fullscreen page it comes back");
     }
 
-    /// Mouse move and wheel turn say whether a page is under the mouse,
-    /// as a touch does.
+    /// Mouse move and wheel turn say whether a page took them, as a
+    /// touch does.
     ///
     /// Needed by host with pages of its own under the program's: on
     /// false it hands them the move.
@@ -471,6 +562,53 @@ mod tests {
         let (x, y): (f32, f32) = middle(program.ui().rect(crate::ui::paper_page::NAMES.go_back));
         assert!(program.hover(x, y), "over the page's button it is the page's");
         assert!(program.wheel(x, y, 1.0));
+    }
+
+    /// Wheel turn goes to the page that has something for it under the
+    /// mouse, and says so. Page that lets touches through takes a turn
+    /// over its `Scroll`, plain text in it included, and no turn beside
+    /// it: nothing moves then, and host hears false.
+    ///
+    /// Needed by host with something of its own under the program's
+    /// pages: a turn that scrolled a list must not zoom a painting
+    /// too.
+    #[test]
+    fn a_wheel_turn_moves_one_thing_and_says_whether_a_page_took_it() {
+        /// `settings_page.gogo` as a first page that lets touches
+        /// beside its nodes through.
+        struct GlassSettingsPage;
+        impl Page<AppState> for GlassSettingsPage {
+            const PAGE: &'static BuiltPage = &settings_page::PAGE;
+            type Handler = settings_page::Handler;
+            const TAKES_EVERY_TOUCH: bool = false;
+            fn loaded(&mut self, host: &mut Host<AppState>) {
+                let body: String = (1..=80).map(|line| format!("Line {line} of a long text.\n")).collect();
+                host.ui.set_text(SETTINGS.body_text, &body);
+            }
+            fn handle(&mut self, _host: &mut Host<AppState>, _event: PageEvent<settings_page::Handler>) {}
+        }
+        let middle = |rect: Rect| -> (f32, f32) { (rect.x + rect.w / 2.0, rect.y + rect.h / 2.0) };
+        let mut program: Program<AppState> = Program::new(&crate::ui::BUILT, AppState::default(), GlassSettingsPage).expect("the pages can be shown");
+        frame(&mut program, 0.0);
+        frame(&mut program, 0.016);
+        let (x, y): (f32, f32) = middle(program.ui().rect(SETTINGS.body));
+        assert!(program.wheel(x, y, -2.0), "the turn over the text is the page's: its Scroll moves");
+        frame(&mut program, 0.016);
+        let scrolled: f32 = program.ui().scroll_of(SETTINGS.body)[1];
+        assert!(scrolled > 0.0, "the text moved");
+
+        let (x, y): (f32, f32) = middle(program.ui().rect(SETTINGS.title));
+        assert!(!program.wheel(x, y, -2.0), "over a label beside the Scroll the page has nothing for the turn");
+        frame(&mut program, 0.016);
+        assert_eq!(program.ui().scroll_of(SETTINGS.body)[1], scrolled, "and nothing moved");
+
+        // Page that takes every touch keeps a turn it has nothing for.
+        let mut program: Program<AppState> = started(AppState::default());
+        open_settings(&mut program, 1.0);
+        let (x, y): (f32, f32) = middle(program.ui().rect(SETTINGS.title));
+        assert!(program.wheel(x, y, -2.0), "a turn over a dialog is the dialog's");
+        frame(&mut program, 0.016);
+        assert_eq!(program.ui().scroll_of(SETTINGS.body)[1], 0.0, "with nothing under the mouse to turn, nothing moves");
     }
 
     /// Program says when a fullscreen page is in place: nothing under
@@ -651,6 +789,29 @@ mod tests {
         frame(&mut program, 0.016);
         assert_eq!((program.depth(), program.drawn_page_count()), (2, 1));
         assert_eq!(program.app().paper_frames_drawn, 0, "no GPU, no GPU drawing");
+    }
+
+    /// Page's own GPU picture comes in with its nodes: where an anim
+    /// has page's root, and as see-through.
+    ///
+    /// Needed because the picture is not a node: with no word from the
+    /// engine it would sit in place, solid, while its page slides in
+    /// over it.
+    ///
+    /// Ignored unless asked for: needs a GPU adapter.
+    #[test]
+    #[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
+    fn a_pages_own_gpu_picture_moves_and_fades_with_its_root() {
+        let mut program: Program<AppState> = started(AppState::default());
+        let gpu: turbodot::Gpu = turbodot::Gpu::new().expect("this test needs a GPU adapter");
+        program.go(PaperPage::default());
+        frame(&mut program, 0.016);
+        let pose: turbodot::pages::PagePose = program.ui().drawn_pose(crate::ui::paper_page::NAMES.paper_page).expect("the paper page is on its way in");
+        assert!(pose.alpha < 0.2, "nearly clear on its first frame: {pose:?}");
+        let picture: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
+        let row_px: u32 = picture.height / PAPER_SIDE_TEXELS;
+        let between_lines: [u8; 4] = picture.at(picture.width - 10, (LINE_EVERY_TEXELS - 6) * row_px + row_px / 2);
+        assert!((0..3).all(|c| between_lines[c].abs_diff(PAPER[c]) > 60), "the home page shows through the paper: {between_lines:?}");
     }
 
     /// Page's own picture shows under its nodes, and engine calls page's

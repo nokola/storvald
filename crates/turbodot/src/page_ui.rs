@@ -181,29 +181,30 @@ impl PageUi {
     /// the node under mouse moves up or down. gogo holds the far end on
     /// next frame.
     ///
-    /// Returns events of a control that took the wheel.
-    pub fn wheel(&mut self, x: f32, y: f32, notches: f32) -> EventList {
+    /// Returns events of a control that took the wheel: none when a
+    /// `Scroll` or a `List` moved, or when mouse is over a node that
+    /// takes input and has nothing to turn. `None`: page has nothing
+    /// for the wheel there, and nothing moved.
+    pub fn wheel(&mut self, x: f32, y: f32, notches: f32) -> Option<EventList> {
         if !self.kept.is_laid_out() || notches == 0.0 {
-            return EventList::new();
+            return None;
         }
         let events: EventList = self.input.wheel(&self.page, &mut self.runtime, self.kept.frame(), x, y, notches > 0.0);
         if !events.is_empty() {
-            return events;
+            return Some(events);
         }
         let look: &Resolved = self.kept.look();
-        let mut node: NodeId = match gogo_ui::hit(&self.page, self.kept.frame(), x, y, true) {
-            Some(node) => node,
-            None => return events,
-        };
+        let mut node: NodeId = gogo_ui::hit(&self.page, self.kept.frame(), x, y, true)?;
         while node != NO_NODE {
             if matches!(self.page.nodes[node.index()].kind, Kind::Scroll | Kind::List) {
                 let [left, top]: [f32; 2] = self.runtime.scroll_of(node);
                 self.runtime.set_scroll(node, [left, (top - notches * WHEEL_NOTCH_EPX).max(0.0)]);
-                break;
+                return Some(events);
             }
             node = look.placed_parent(&self.page, node);
         }
-        events
+        // A press here would be this page's: so is the turn.
+        self.hit(x, y).map(|_| events)
     }
 }
 

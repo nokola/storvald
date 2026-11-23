@@ -75,7 +75,10 @@ pub struct CompileOptions<'a> {
 /// `pointer` hands the host the raw pointer (down/move/up/cancel with
 /// positions in the node's own epx space) — a code-drawn control's input.
 /// A mouse is one pointer: the shell feeds it as one fixed finger.
-const EVENTS: &[&str] = &["activate", "press", "release", "change", "edit", "show", "hide", "pointer"];
+/// `show`, `hide` and `uncover` are hooks: each plays an anim and sends
+/// no event. `uncover` plays when host says page shows again from under
+/// what covered it (`Runtime::play_uncovers`).
+const EVENTS: &[&str] = &["activate", "press", "release", "change", "edit", "show", "hide", "uncover", "pointer"];
 
 /// The extensions the build embeds (`build_pages` collects every literal
 /// carrying one) — a literal naming one must write the `res://` scheme
@@ -6708,12 +6711,15 @@ impl<'a> Compiler<'a> {
                 return None;
             }
         };
-        // `on:show` and `on:hide` play an anim and nothing else. A node
-        // shows or hides inside the runtime (a `when`, `Runtime::show`),
-        // where no event leaves for a host and nothing flips an
-        // arrangement, so any other action would sit there and never run.
-        if matches!(event, "show" | "hide") && !matches!(action, Action::Play(_)) {
-            self.error("G0084", p.line, format!("`on:{event}` takes `play(<anim>)` only — a node that shows or hides sends no event, so `{}` would never run", spell(&p.value)));
+        // `on:show`, `on:hide` and `on:uncover` play an anim and nothing
+        // else. A node shows or hides inside the runtime (a `when`,
+        // `Runtime::show`), and host says when a page is uncovered
+        // (`Runtime::play_uncovers`): no event leaves for a host and
+        // nothing flips an arrangement, so any other action would sit
+        // there and never run.
+        if matches!(event, "show" | "hide" | "uncover") && !matches!(action, Action::Play(_)) {
+            let why: &str = if event == "uncover" { "a page that is uncovered sends no event" } else { "a node that shows or hides sends no event" };
+            self.error("G0084", p.line, format!("`on:{event}` takes `play(<anim>)` only — {why}, so `{}` would never run", spell(&p.value)));
             return None;
         }
         let event_id = self.intern(event);

@@ -60,13 +60,13 @@ fn still_pages_a_mouse_move_and_a_slide_allocate_nothing() {
     assert_eq!((onto_another_row, frame_after), (0, 0), "a move of the mouse onto another row, and the frame after it");
     assert_eq!(allocations_of(|| frame(&mut program)), 0, "the next frame");
 
-    // About page slides in: slide frames lay nothing out again, only move the page.
+    // About page slides in, as its file says: its root's anim moves and fades it.
     program.tap(skills_page::NAMES.about_button, 1.0);
     frame(&mut program);
     frame(&mut program);
-    assert!(program.is_sliding());
+    assert!(program.is_page_arriving_or_leaving());
     assert_eq!(allocations_of(|| frame(&mut program)), 0, "a frame while a page slides in");
-    while program.is_sliding() {
+    while program.is_page_arriving_or_leaving() {
         frame(&mut program);
     }
     assert_eq!(allocations_of(|| frame(&mut program)), 0, "a frame of the page that slid in");

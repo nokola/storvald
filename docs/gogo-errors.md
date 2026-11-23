@@ -612,10 +612,12 @@ control Dimmer $value=0.5, $min=0, $max=1 {
 View v { Dimmer d }
 ```
 
-## G0084 — `on:show` and `on:hide` take `play(…)` only
+## G0084 — `on:show`, `on:hide` and `on:uncover` take `play(…)` only
 
 `on:show` and `on:hide` are hooks, not events: when a node shows or
-hides, gogo plays the anim the hook names, and that is all it does. No
+hides, gogo plays the anim the hook names, and that is all it does.
+`on:uncover` is a hook too: it plays when the host says the page shows
+again after the page that covered it left. No
 event leaves for the host and no arrangement flips. So
 `on:show=go(edit)`, `on:show=toggle(edit)`, `on:show=emit(Shown)` and a
 handler name (`on:show=Shown`) would sit on the line and never run, and
