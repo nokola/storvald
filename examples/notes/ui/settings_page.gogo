@@ -13,8 +13,9 @@ View settingsPage background=$back, padding=16 {
         }
         Label noteCount text="", font_color=$dim
         // `loading=lazy`: decoded on a thread of its own, shows a frame or
-        // more after the page does.
-        Image banner source="res://assets/banner.jpg", size=hug, loading=lazy
+        // more after the page does. `release=unused`: leaves the GPU once
+        // no live page names it, and is decoded again at its next show.
+        Image banner source="res://assets/banner.jpg", size=hug, loading=lazy, release=unused
         // No file behind this one: page's code makes its pixels
         // (`set_picture` in `settings_page.rs`).
         Image madeInCode size=hug

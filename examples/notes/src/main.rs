@@ -823,6 +823,92 @@ mod tests {
         assert_eq!(picture.at(x, y), MADE_PICTURE_COLOR, "the page made again shows its own picture");
     }
 
+    /// Host tells a live page something from outside the pages, and
+    /// hears when no such page is alive.
+    #[test]
+    fn a_host_tells_a_page_something() {
+        let mut program: Program<AppState> = started(AppState::default());
+        assert!(program.tell::<ToastPage>(|toast, host| toast.say(host, "From the host")));
+        frame(&mut program, 0.016);
+        assert_eq!(program.layer_ui::<ToastPage>().expect("the toast layer").text_of(TOAST.message), Some("From the host"));
+        assert!(!program.tell::<EditPage>(|_, _| panic!("no edit page is alive")), "no such page: the host hears it");
+    }
+
+    /// Host with a page of its own beside a program's pages, drawn by
+    /// one renderer: the program's picture loader uploads what the
+    /// host's page draws, keeps a `release=unused` picture that page
+    /// names while a page of the program is freed, and frees it once
+    /// the host says its page is gone. In a picture the host's page
+    /// shows above the program's.
+    ///
+    /// Ignored unless asked for: needs a GPU adapter.
+    #[test]
+    #[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
+    fn a_hosts_own_page_gets_its_pictures_and_shows_above_the_programs() {
+        use std::time::{Duration, Instant};
+        use turbodot::gogo::{Orientation, ScreenClass};
+        use turbodot::pages::{PageId, PagePlatform, PageStack};
+
+        const BACK: [u8; 4] = [0x17, 0x18, 0x1C, 0xFF];
+        /// `clear_page.gogo` as a first page: names no picture.
+        struct PlainPage;
+        impl Page<AppState> for PlainPage {
+            const PAGE: &'static BuiltPage = &clear_page::PAGE;
+            type Handler = clear_page::Handler;
+            fn handle(&mut self, _host: &mut Host<AppState>, _event: PageEvent<clear_page::Handler>) {}
+        }
+        let mut program: Program<AppState> = Program::new(&crate::ui::BUILT, AppState::default(), PlainPage).expect("the pages can be shown");
+        frame(&mut program, 0.0);
+        let gpu: turbodot::Gpu = turbodot::Gpu::new().expect("this test needs a GPU adapter");
+        let banner = program.assets().images.get("res://assets/banner.jpg").expect("the jpeg");
+
+        // Host's own page: the settings page's file, laid out with the
+        // program's text engine and picture table.
+        let mut host_pages: PageStack = PageStack::new();
+        let settings: PageId = host_pages.add(PageUi::from_static(&settings_page::PAGE));
+        let platform: PagePlatform = PagePlatform::new([0.0; 4], Orientation::from_view(SIZE_EPX.0, SIZE_EPX.1), ScreenClass::from_view(SIZE_EPX.0, SIZE_EPX.1), None);
+        host_pages.frame(0.0, (SIZE_EPX.0 as u32, SIZE_EPX.1 as u32), 1.0, &platform, program.assets());
+        let place: Rect = host_pages.get(settings).rect(SETTINGS.banner);
+        let (x, y): (u32, u32) = ((place.x + place.w / 2.0) as u32, (place.y + place.h / 2.0) as u32);
+
+        // In a picture: the host's page above the program's, with its
+        // picture.
+        let alone: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
+        assert_ne!(alone.at(2, 2), BACK, "the program's own page is see-through at its corner");
+        let both: turbodot::Picture = gpu.draw_program_with_host_pages(&mut program, &host_pages).expect("the pages are drawn");
+        assert_eq!(both.at(2, 2), BACK, "the host's page covers the program's");
+        assert_ne!(both.at(x, y), BACK, "the host's page shows its picture");
+
+        // Frame by frame, with a renderer of the host's own.
+        let mut renderer: gogo_wgpu::UiRenderer = gogo_wgpu::UiRenderer::new(&gpu.device, turbodot::wgpu::TextureFormat::Rgba8Unorm);
+        program.assets_mut().images.forget_uploads();
+        program.gpu_draw(&mut renderer, &gpu);
+        assert!(!program.is_loading_pictures() && program.assets().images.pending_bytes(banner).is_some(), "the program alone asks for no picture of the host's page");
+        let deadline: Instant = Instant::now() + Duration::from_secs(5);
+        while program.assets().images.pending_bytes(banner).is_some() {
+            program.gpu_draw_beside(&mut renderer, &gpu, &host_pages);
+            assert!(Instant::now() < deadline, "the host's picture was never uploaded");
+            std::thread::yield_now();
+        }
+
+        // A page of the program is freed: the host's live page still
+        // names the picture.
+        program.go(ClearPage);
+        let_the_slides_end(&mut program);
+        program.back();
+        let_the_slides_end(&mut program);
+        program.gpu_draw_beside(&mut renderer, &gpu, &host_pages);
+        assert!(program.assets().images.pending_bytes(banner).is_none(), "kept: a live page of the host names it");
+
+        // The host's page is gone, and the host says so.
+        host_pages.remove(settings);
+        program.gpu_draw_beside(&mut renderer, &gpu, &host_pages);
+        assert!(program.assets().images.pending_bytes(banner).is_none(), "nothing is freed until the host says a page is gone");
+        program.host_freed_a_page();
+        program.gpu_draw_beside(&mut renderer, &gpu, &host_pages);
+        assert!(program.assets().images.pending_bytes(banner).is_some(), "freed: no live page names it");
+    }
+
     /// Host reaches the text engine and the picture table the program's
     /// pages use, and adds a picture's key of its own there.
     ///

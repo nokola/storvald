@@ -246,6 +246,25 @@ impl<A: 'static> Program<A> {
         self.stack.get_mut(top)
     }
 
+    /// Calls `call` now with the live page whose struct is a `P`, as
+    /// `Nav::tell` from a page does. Allocates nothing.
+    ///
+    /// Needed for what comes from outside the pages: a host that got a
+    /// file tells a layer to say so.
+    ///
+    /// Returns false when no such page is alive: `call` did not run.
+    pub fn tell<P: 'static>(&mut self, call: impl FnOnce(&mut P, &mut Host<'_, A>)) -> bool {
+        let told: Option<PageId> = self.stack.iter().map(|(id, _)| id).find(|id| self.page_type(*id) == Some(TypeId::of::<P>()));
+        let Some(id) = told else { return false };
+        self.call(id, |page, host| {
+            if let Some(page) = page.page_mut().downcast_mut::<P>() {
+                call(page, host);
+            }
+        });
+        self.carry_out_requests();
+        true
+    }
+
     /// Adds `page` as a layer above every page, as `Nav::add_layer` from
     /// a page does.
     pub fn add_layer<P: IntoPage<A, Kind>, Kind>(&mut self, page: P) {
@@ -807,7 +826,27 @@ impl<A: 'static> Program<A> {
     /// later frame (`is_loading_pictures`).
     #[cfg(feature = "gpu")]
     pub fn gpu_draw(&mut self, renderer: &mut gogo_wgpu::UiRenderer, gpu: &crate::gpu::Gpu) {
-        self.gpu_draw_as(renderer, gpu, crate::pictures::LazyPictures::OnThread);
+        self.gpu_draw_as(renderer, gpu, crate::pictures::LazyPictures::OnThread, None);
+    }
+
+    /// `gpu_draw` for a host that lays out pages of its own beside the
+    /// program's (`turbodot::pages`), drawn by the same renderer.
+    ///
+    /// Needed because the program's picture loader is the one loader of
+    /// that renderer: it uploads the pictures `host_pages` draw too, and
+    /// does not free a `release=unused` picture a live page of the host
+    /// names. With plain `gpu_draw` a host's page shows an empty place
+    /// where its picture belongs.
+    #[cfg(feature = "gpu")]
+    pub fn gpu_draw_beside(&mut self, renderer: &mut gogo_wgpu::UiRenderer, gpu: &crate::gpu::Gpu, host_pages: &dyn crate::pages::HostPages) {
+        self.gpu_draw_as(renderer, gpu, crate::pictures::LazyPictures::OnThread, Some(host_pages));
+    }
+
+    /// Says a page of the host's own was freed. Next GPU frame then
+    /// frees the `release=unused` pictures no live page names, as it
+    /// does after a page of the program was freed.
+    pub fn host_freed_a_page(&mut self) {
+        self.has_freed_a_page = true;
     }
 
     /// True while pictures marked `loading=lazy` are being decoded.
@@ -835,16 +874,26 @@ impl<A: 'static> Program<A> {
     }
 
     /// `gpu_draw`, with what this frame does with a `loading=lazy`
-    /// picture.
+    /// picture, and with a host's own pages when it has some.
     #[cfg(feature = "gpu")]
-    pub(crate) fn gpu_draw_as(&mut self, renderer: &mut gogo_wgpu::UiRenderer, gpu: &crate::gpu::Gpu, lazy: crate::pictures::LazyPictures) {
+    pub(crate) fn gpu_draw_as(&mut self, renderer: &mut gogo_wgpu::UiRenderer, gpu: &crate::gpu::Gpu, lazy: crate::pictures::LazyPictures, host_pages: Option<&dyn crate::pages::HostPages>) {
         if self.has_freed_a_page {
             self.has_freed_a_page = false;
             let stack: &PageStack = &self.stack;
-            self.pictures.release_unshown(&mut self.assets.images, renderer, &gpu.device, |live| stack.mark_pictures(live));
+            self.pictures.release_unshown(&mut self.assets.images, renderer, &gpu.device, |live| {
+                stack.mark_pictures(live);
+                if let Some(host_pages) = host_pages {
+                    host_pages.mark_pictures(live);
+                }
+            });
         }
         let stack: &PageStack = &self.stack;
-        self.pictures.upload_for_draws(&mut self.assets.images, renderer, &gpu.device, &gpu.queue, lazy, |wanted| stack.wanted_images(wanted));
+        self.pictures.upload_for_draws(&mut self.assets.images, renderer, &gpu.device, &gpu.queue, lazy, |wanted| {
+            stack.wanted_images(wanted);
+            if let Some(host_pages) = host_pages {
+                host_pages.wanted_images(wanted);
+            }
+        });
         for i in 0..self.code_pictures_to_release.len() {
             renderer.release_image(&gpu.device, self.code_pictures_to_release[i]);
         }

@@ -18,5 +18,8 @@ turbodot = { path = "../../crates/turbodot", features = ["hot-reload"] }
 turbodot = { path = "../../crates/turbodot", default-features = false }
 
 [dev-dependencies]
+# A renderer of the test's own, for the test of a host that draws pages
+# of its own beside the program's.
+gogo-wgpu = { path = "../../crates/gogo-wgpu" }
 # Reads a saved picture back, to check the file against the pixels.
 png = "0.18.1"

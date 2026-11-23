@@ -696,6 +696,33 @@ pub struct PageStack {
     was_page_removed: bool,
 }
 
+/// Pages a host lays out and draws itself, beside a program's pages.
+///
+/// Needed because one renderer and one picture table serve both: a
+/// program's picture loader uploads what the host's pages draw, and
+/// keeps a `release=unused` picture a live page of the host names
+/// (`Program::gpu_draw_beside`).
+///
+/// `PageStack` is one. A host with several stacks writes its own.
+pub trait HostPages {
+    /// Adds to `wanted` key of every picture the host's drawn pages show
+    /// this frame.
+    fn wanted_images(&self, wanted: &mut Vec<ImageKey>);
+    /// Marks in `live`, by key index, every picture a live page of the
+    /// host can show.
+    fn mark_pictures(&self, live: &mut [bool]);
+}
+
+impl HostPages for PageStack {
+    fn wanted_images(&self, wanted: &mut Vec<ImageKey>) {
+        PageStack::wanted_images(self, wanted);
+    }
+
+    fn mark_pictures(&self, live: &mut [bool]) {
+        PageStack::mark_pictures(self, live);
+    }
+}
+
 impl Default for PageStack {
     fn default() -> PageStack {
         PageStack::new()

@@ -62,6 +62,21 @@ impl Picture {
     }
 }
 
+/// A program's draw lists, then a host's own pages' above them.
+struct ProgramUnderHostPages<'p, A> {
+    program: &'p Program<A>,
+    host_pages: Option<&'p crate::pages::PageStack>,
+}
+
+impl<A> gogo_wgpu::DrawLists for ProgramUnderHostPages<'_, A> {
+    fn for_each_list<'a>(&'a self, f: &mut dyn FnMut(&[gogo_ui::Draw], &'a gogo_ui::Page)) {
+        gogo_wgpu::DrawLists::for_each_list(self.program, f);
+        if let Some(host_pages) = self.host_pages {
+            host_pages.for_each_draws(&mut |draws, page, _pose| f(draws, page));
+        }
+    }
+}
+
 /// A GPU device that belongs to no window.
 ///
 /// Needed for work that draws with nobody watching: a test that checks a
@@ -106,6 +121,22 @@ impl Gpu {
     /// Returns why the GPU did not hand the pixels back, or that
     /// `program` has had no frame yet.
     pub fn draw_program<A: 'static>(&self, program: &mut Program<A>) -> Result<Picture, String> {
+        self.draw_program_and(program, None)
+    }
+
+    /// `draw_program`, with the pages of `host_pages` drawn above the
+    /// program's, each where its own last layout put it.
+    ///
+    /// Needed by a host that lays out pages of its own beside a
+    /// program's (`turbodot::pages`): its picture shows both, as its
+    /// window does. A sliding page of `host_pages` is drawn in place.
+    ///
+    /// Returns what `draw_program` returns.
+    pub fn draw_program_with_host_pages<A: 'static>(&self, program: &mut Program<A>, host_pages: &crate::pages::PageStack) -> Result<Picture, String> {
+        self.draw_program_and(program, Some(host_pages))
+    }
+
+    fn draw_program_and<A: 'static>(&self, program: &mut Program<A>, host_pages: Option<&crate::pages::PageStack>) -> Result<Picture, String> {
         if program.size() == (0.0, 0.0) {
             return Err("the program has had no frame yet: call `Program::frame` first".to_string());
         }
@@ -118,8 +149,9 @@ impl Gpu {
         // Renderer is new: it has no picture yet. And a picture of the
         // pages shows the lazy ones too.
         program.forget_uploads();
-        program.gpu_draw_as(&mut renderer, self, crate::pictures::LazyPictures::Now);
-        renderer.prepare_pages(&self.device, &self.queue, &*program, epx, size, &mut program.assets.text.borrow_mut(), None);
+        program.gpu_draw_as(&mut renderer, self, crate::pictures::LazyPictures::Now, host_pages.map(|pages| pages as &dyn crate::pages::HostPages));
+        let lists: ProgramUnderHostPages<'_, A> = ProgramUnderHostPages { program: &*program, host_pages };
+        renderer.prepare_pages(&self.device, &self.queue, &lists, epx, size, &mut program.assets.text.borrow_mut(), None);
         let texture: wgpu::Texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("a program's picture"),
             size: wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 },
