@@ -1167,8 +1167,8 @@ plays the hooks when a page opens and when Back takes it away; a host
 of your own plays them with `Runtime::play_hook` and
 `Runtime::play_uncovers`.
 
-Write the slide once, as a style that carries the three hooks, and let
-the page's root wear it:
+Write the slide once, as a style that holds the three hooks, and put
+the style's name on the page's root:
 
 ```kdl
 style SlidingPage on:show=play(pageIn), on:hide=play(pageOut), on:uncover=play(pageBack)
@@ -1206,9 +1206,10 @@ View settingsPage .SlidingPage background=#17181C {
   (`sliding_page.gogo`). A page that slides says
   `uses "sliding_page.gogo"` and puts `.SlidingPage` on its root: two
   lines, and every page slides the same way.
-- A page that imports the file and forgets `.SlidingPage` does not
-  build: `each .SlidingPage` finds no node that wears the style
-  (G0060). So half a slide cannot slip through.
+- A page that says `uses "sliding_page.gogo"` and has `.SlidingPage`
+  on no node does not build: the three anims move the nodes named
+  `.SlidingPage`, and the build refuses an anim that would move
+  nothing (G0060). So a page cannot end up with half a slide.
 - `translate` and `opacity` move the picture only. The page is laid out
   once, however long the slide is. TurboDot goes one step further for
   a page's root: it moves and fades the page's finished picture, so no

@@ -1,6 +1,7 @@
-// How a page of Storvald comes and goes. A page that slides says
-// `uses "sliding_page.gogo"` and wears `.SlidingPage` on its root.
-// A page that says neither is in place at once and gone at once.
+// How a page of Storvald comes and goes. A page that slides has two
+// lines for it: `uses "sliding_page.gogo"`, and `.SlidingPage` on its
+// root (`View settingsPage .SlidingPage`). A page with neither is in
+// place at once and gone at once.
 //
 // TurboDot plays root's `on:show` as page opens, its `on:hide` as page
 // leaves, and its `on:uncover` when a fullscreen page over it leaves.
