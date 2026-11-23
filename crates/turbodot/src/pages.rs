@@ -93,6 +93,23 @@ impl ImageTable {
         key
     }
 
+    /// Writes the size of a picture whose pixels come later, for layout.
+    ///
+    /// Needed for a picture code makes: the page lays out at its size in
+    /// the frame it was made, before a GPU frame uploads it, and with no
+    /// GPU at all.
+    ///
+    /// WARNING: panics for a key that is not of this table.
+    ///
+    /// Returns true when the size changed: page that shows it is laid
+    /// out again.
+    pub fn set_size(&mut self, key: ImageKey, width: u32, height: u32) -> bool {
+        let row: &mut Option<(u32, u32)> = &mut self.sizes[key.index()];
+        let has_changed: bool = *row != Some((width, height));
+        *row = Some((width, height));
+        has_changed
+    }
+
     /// The key `name` already has. Never makes one.
     pub fn get(&self, name: &str) -> Option<ImageKey> {
         self.keys.get(name)
@@ -433,12 +450,33 @@ pub struct PageUi {
     /// The rectangle the page lays out in, in epx; `None` = the whole
     /// window.
     pub viewport: Option<Rect>,
+    /// Pictures page's code made (`set_picture`), one per Image node.
+    pub(crate) code_pictures: Vec<CodePicture>,
+}
+
+/// Picture a page's code made for one Image node: its pixels, kept until
+/// a GPU frame uploads them, and after, so a renderer made new gets them
+/// again.
+pub(crate) struct CodePicture {
+    pub(crate) node: NodeId,
+    /// Key the Image shows it under. `None` until program's next frame.
+    pub(crate) key: Option<ImageKey>,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    /// Straight alpha, sRGB, four bytes a pixel (R, G, B, A), row by row.
+    pub(crate) rgba: Vec<u8>,
+    /// True from `set_picture` until program's next frame, which hands
+    /// layout the size.
+    pub(crate) is_size_new: bool,
+    /// True once a GPU frame uploaded these pixels.
+    #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
+    pub(crate) is_uploaded: bool,
 }
 
 impl PageUi {
     pub fn new(page: Page) -> PageUi {
         let runtime: Runtime = Runtime::new(&page);
-        PageUi { page, runtime, input: Input::new(), kept: KeptFrame::default(), draws: Vec::new(), above_children: None, top_draws: Vec::new(), laid_out_for: ((0, 0), 0.0, None), is_modal: false, pose: None, viewport: None }
+        PageUi { page, runtime, input: Input::new(), kept: KeptFrame::default(), draws: Vec::new(), above_children: None, top_draws: Vec::new(), laid_out_for: ((0, 0), 0.0, None), is_modal: false, pose: None, viewport: None, code_pictures: Vec::new() }
     }
 
     /// A page from what `gogo_ui::build_pages` wrote when the program was

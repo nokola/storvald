@@ -117,7 +117,7 @@ impl Gpu {
         let mut renderer: UiRenderer = UiRenderer::new(&self.device, format);
         // Renderer is new: it has no picture yet. And a picture of the
         // pages shows the lazy ones too.
-        program.assets.images.forget_uploads();
+        program.forget_uploads();
         program.gpu_draw_as(&mut renderer, self, crate::pictures::LazyPictures::Now);
         renderer.prepare_pages(&self.device, &self.queue, &*program, epx, size, &mut program.assets.text.borrow_mut(), None);
         let texture: wgpu::Texture = self.device.create_texture(&wgpu::TextureDescriptor {

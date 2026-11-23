@@ -15,6 +15,9 @@ View settingsPage background=$back, padding=16 {
         // `loading=lazy`: decoded on a thread of its own, shows a frame or
         // more after the page does.
         Image banner source="res://assets/banner.jpg", size=hug, loading=lazy
+        // No file behind this one: page's code makes its pixels
+        // (`set_picture` in `settings_page.rs`).
+        Image madeInCode size=hug
         Scroll body width=fill, height=fill {
             Label bodyText text="", wrap=true, width=fill, font_color=$ink
         }

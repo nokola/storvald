@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 use gogo_ui::runtime::{Item, ItemKey, Resolved};
 use gogo_ui::{EventList, Kind, NO_NODE, NO_STR, NodeId, Rect};
 
-use crate::pages::PageUi;
+use crate::pages::{CodePicture, PageUi};
 
 /// Distance one notch of a mouse wheel moves a scrolling box, in epx.
 const WHEEL_NOTCH_EPX: f32 = 48.0;
@@ -28,6 +28,43 @@ impl PageUi {
     /// Text `node` shows: last `set_text`, else `text=` from its file.
     pub fn text_of(&self, node: NodeId) -> Option<&str> {
         self.runtime.text_of(&self.page, node)
+    }
+
+    /// Shows a picture made in code in Image `node`. `rgba`: `width` x
+    /// `height` pixels, four bytes each (R, G, B, A; straight alpha,
+    /// sRGB), row by row from the top.
+    ///
+    /// Needed for what no file holds: a thumbnail of user's work, a
+    /// preview. Callable anywhere: `loaded`, `show`, a handler. It needs
+    /// no GPU, so a page that calls it runs in a test.
+    ///
+    /// Layout has the size from program's next frame. Pixels reach the
+    /// screen at the next frame drawn on a GPU; with no GPU only the
+    /// size shows.
+    ///
+    /// Page keeps a copy of the bytes for this node: next picture of the
+    /// same size for the same node allocates nothing. Picture that
+    /// changes every frame: draw it on the GPU instead
+    /// (`Page::gpu_draw_screen`), which copies nothing.
+    ///
+    /// WARNING: panics when `rgba` is not `width * height * 4` bytes long.
+    pub fn set_picture(&mut self, node: NodeId, width: u32, height: u32, rgba: &[u8]) {
+        let byte_count: usize = width as usize * height as usize * 4;
+        assert_eq!(rgba.len(), byte_count, "set_picture: {width} x {height} pixels are {byte_count} bytes (4 a pixel, R G B A), and `rgba` holds {}", rgba.len());
+        let at: usize = match self.code_pictures.iter().position(|picture| picture.node == node) {
+            Some(at) => at,
+            None => {
+                self.code_pictures.push(CodePicture { node, key: None, width: 0, height: 0, rgba: Vec::new(), is_size_new: true, is_uploaded: false });
+                self.code_pictures.len() - 1
+            }
+        };
+        let picture: &mut CodePicture = &mut self.code_pictures[at];
+        picture.width = width;
+        picture.height = height;
+        picture.rgba.clear();
+        picture.rgba.extend_from_slice(rgba);
+        picture.is_size_new = true;
+        picture.is_uploaded = false;
     }
 
     /// Shows or hides `node`. Hidden node takes no space and no touch.
@@ -164,5 +201,44 @@ impl PageUi {
             node = look.placed_parent(&self.page, node);
         }
         events
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn page_with_an_image() -> (PageUi, NodeId) {
+        let compiled = gogo_ui::compile("View root { Image made size=hug }", &|_| None);
+        assert!(!gogo_ui::has_errors(&compiled.diags), "{:?}", compiled.diags);
+        let ui: PageUi = PageUi::new(compiled.page);
+        let node: NodeId = ui.node("made");
+        (ui, node)
+    }
+
+    /// Second picture of same size for same node goes into memory page
+    /// already holds: no allocation. Other node gets its own.
+    #[test]
+    fn a_second_picture_for_a_node_takes_no_new_memory() {
+        let (mut ui, node) = page_with_an_image();
+        ui.set_picture(node, 2, 1, &[1, 2, 3, 4, 5, 6, 7, 8]);
+        let memory: *const u8 = ui.code_pictures[0].rgba.as_ptr();
+        ui.code_pictures[0].is_size_new = false;
+        ui.code_pictures[0].is_uploaded = true;
+        ui.set_picture(node, 1, 2, &[9, 9, 9, 9, 8, 8, 8, 8]);
+        assert_eq!(ui.code_pictures.len(), 1, "one picture per node");
+        let picture: &CodePicture = &ui.code_pictures[0];
+        assert_eq!(picture.rgba.as_ptr(), memory, "same memory");
+        assert_eq!((picture.width, picture.height, &picture.rgba[..]), (1, 2, &[9, 9, 9, 9, 8, 8, 8, 8][..]));
+        assert!(picture.is_size_new && !picture.is_uploaded, "to place and to upload again");
+    }
+
+    /// Bytes that do not make `width` x `height` pixels stop program with
+    /// the counts, where the call is: a picture drawn skewed says nothing.
+    #[test]
+    #[should_panic(expected = "set_picture: 2 x 2 pixels are 16 bytes")]
+    fn a_picture_with_the_wrong_count_of_bytes_is_refused() {
+        let (mut ui, node) = page_with_an_image();
+        ui.set_picture(node, 2, 2, &[0; 12]);
     }
 }

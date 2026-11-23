@@ -27,6 +27,9 @@ impl Page<AppState> for PaperPage {
     type Handler = Handler;
     /// Root is see-through, and page's own picture covers the screen.
     const DRAWS_GPU_PICTURE: bool = true;
+    /// Touch on the paper, beside the button, goes on to the host: a
+    /// painting program would draw there with it.
+    const TAKES_EVERY_TOUCH: bool = false;
 
     fn handle(&mut self, host: &mut Host<AppState>, event: PageEvent<Handler>) {
         match event.handler {

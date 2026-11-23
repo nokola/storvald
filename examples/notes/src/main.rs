@@ -51,7 +51,7 @@ mod tests {
     use crate::clear_page::ClearPage;
     use crate::edit_page::EditPage;
     use crate::paper_page::{LINE, LINE_EVERY_TEXELS, PAPER, PAPER_SIDE_TEXELS, PaperPage};
-    use crate::settings_page::SettingsPage;
+    use crate::settings_page::{MADE_PICTURE_COLOR, MADE_PICTURE_SIDE_PX, SettingsPage};
     use crate::ui::{clear_page, edit_page, home_page, settings_page};
 
     const HOME: home_page::Names = home_page::NAMES;
@@ -355,6 +355,124 @@ mod tests {
         open_settings(&mut program, 1.0);
         let banner: Rect = program.ui().rect(SETTINGS.banner);
         assert_eq!((banner.w, banner.h), (64.0, 16.0), "the jpeg's size");
+    }
+
+    /// Touch says whether a page took it. Page takes one on its empty
+    /// space, unless it says otherwise: the paper page lets it go on to
+    /// the host, and still takes one on its button. Finger keeps its id
+    /// from down to up.
+    ///
+    /// Needed for a painting under the pages: host hands it the fingers
+    /// no page took.
+    #[test]
+    fn a_touch_says_whether_a_page_took_it() {
+        let middle = |rect: Rect| -> (f32, f32) { (rect.x + rect.w / 2.0, rect.y + rect.h / 2.0) };
+        let mut program: Program<AppState> = started(AppState::default());
+        let (x, y): (f32, f32) = middle(program.ui().rect(HOME.title));
+        assert!(program.touch_finger(Phase::Down, x, y, 1.0, 7), "a page takes a touch beside its buttons");
+        assert!(program.touch_finger(Phase::Up, x, y, 1.05, 7));
+        assert!(!program.touch_finger(Phase::Up, x, y, 1.1, 9), "a finger that never came down belongs to no page");
+
+        program.tap(HOME.open_paper, 2.0);
+        let_the_slides_end(&mut program);
+        assert!(program.page::<PaperPage>().is_some());
+        let (x, y): (f32, f32) = middle(program.ui().rect(crate::ui::paper_page::NAMES.hint));
+        assert!(!program.touch_finger(Phase::Down, x, y, 3.0, 7), "a touch on the paper goes on to the host");
+        assert!(!program.touch_finger(Phase::Up, x, y, 3.05, 7));
+        let (x, y): (f32, f32) = middle(program.ui().rect(crate::ui::paper_page::NAMES.go_back));
+        assert!(program.touch_finger(Phase::Down, x, y, 4.0, 3), "its button takes a finger");
+        assert!(program.touch_finger(Phase::Up, x, y, 4.05, 3));
+        let_the_slides_end(&mut program);
+        assert!(program.page::<PaperPage>().is_none(), "and the button did its work");
+    }
+
+    /// Screen's facts and language a host hands a program reach every
+    /// page, also one opened later, and stay: frame of another size does
+    /// not put program's own guess back.
+    ///
+    /// Needed on a phone: with insets lost at a turn of the screen, page
+    /// draws under the notch.
+    #[test]
+    fn the_hosts_screen_facts_and_language_reach_every_page_and_stay() {
+        use std::sync::Arc;
+        use turbodot::gogo::{Locale, Orientation, ScreenClass};
+        const SAFE: [f32; 4] = [0.0, 32.0, 0.0, 16.0];
+
+        let mut program: Program<AppState> = started(AppState::default());
+        assert_eq!(program.ui().runtime.safe, [0.0; 4], "no insets until a host says some");
+        assert!(program.ui().runtime.locale.is_none());
+        program.set_screen_and_insets(SAFE, Orientation::Landscape, ScreenClass::LandscapeSmall);
+        program.set_locale(Some(Arc::new(Locale::english(crate::ui::KEYS))), "bg");
+        frame(&mut program, 0.016);
+        assert_eq!(program.ui().runtime.safe, SAFE);
+        assert!(program.ui().runtime.locale.is_some());
+
+        // Tall frame: program's own guess would be an upright screen
+        // with no insets.
+        program.frame(300.0, 900.0, 0.016);
+        assert_eq!(program.ui().runtime.safe, SAFE, "host's insets stay");
+
+        program.tap(HOME.add_note, 1.0);
+        assert!(program.page::<EditPage>().is_some());
+        program.frame(300.0, 900.0, 0.016);
+        assert_eq!(program.ui().runtime.safe, SAFE, "page opened later");
+        assert!(program.ui().runtime.locale.is_some(), "page opened later");
+    }
+
+    /// Picture page's code makes has its size in the frame after it was
+    /// made, with no GPU; a second one of another size moves the page
+    /// again.
+    ///
+    /// Needed because such a page runs in a test like any other: its
+    /// layout is checked with no GPU.
+    #[test]
+    fn a_picture_made_in_code_has_its_size_with_no_gpu() {
+        let mut program: Program<AppState> = started(AppState::default());
+        open_settings(&mut program, 1.0);
+        let side: f32 = MADE_PICTURE_SIDE_PX as f32;
+        let made: Rect = program.ui().rect(SETTINGS.made_in_code);
+        assert_eq!((made.w, made.h), (side, side), "the size the page's code said");
+        program.ui_mut().set_picture(SETTINGS.made_in_code, 20, 6, &[0xFF; 20 * 6 * 4]);
+        frame(&mut program, 0.016);
+        let made: Rect = program.ui().rect(SETTINGS.made_in_code);
+        assert_eq!((made.w, made.h), (20.0, 6.0), "the second picture's size");
+    }
+
+    /// Picture page's code makes shows its pixels where its Image sits,
+    /// in every picture of the page; a second one takes its place; page
+    /// freed, then made again, shows it again.
+    ///
+    /// Ignored unless asked for: needs a GPU adapter.
+    #[test]
+    #[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
+    fn a_picture_made_in_code_shows_its_pixels() {
+        const RED: [u8; 4] = [0xE0, 0x20, 0x20, 0xFF];
+        let center = |rect: Rect| -> (u32, u32) { ((rect.x + rect.w / 2.0) as u32, (rect.y + rect.h / 2.0) as u32) };
+
+        let mut program: Program<AppState> = started(AppState::default());
+        let gpu: turbodot::Gpu = turbodot::Gpu::new().expect("this test needs a GPU adapter");
+        open_settings(&mut program, 1.0);
+        let (x, y): (u32, u32) = center(program.ui().rect(SETTINGS.made_in_code));
+        for round in 0..2 {
+            let picture: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
+            assert_eq!(picture.at(x, y), MADE_PICTURE_COLOR, "the pixels the page made, picture {round} of the page");
+        }
+
+        let red: Vec<u8> = RED.repeat((MADE_PICTURE_SIDE_PX * MADE_PICTURE_SIDE_PX) as usize);
+        program.ui_mut().set_picture(SETTINGS.made_in_code, MADE_PICTURE_SIDE_PX, MADE_PICTURE_SIDE_PX, &red);
+        frame(&mut program, 0.016);
+        let picture: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
+        assert_eq!(picture.at(x, y), RED, "the second picture in the first one's place");
+
+        // Page freed: its picture leaves the GPU. Made again: shows again.
+        program.back();
+        let_the_slides_end(&mut program);
+        program.free_cached_pages();
+        gpu.draw_program(&mut program).expect("the pages are drawn");
+        open_settings(&mut program, 5.0);
+        let (x, y): (u32, u32) = center(program.ui().rect(SETTINGS.made_in_code));
+        let picture: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
+        assert_eq!(picture.at(x, y), MADE_PICTURE_COLOR, "the page made again shows its own picture");
     }
 
     /// Picture loads late only when every line that names it says

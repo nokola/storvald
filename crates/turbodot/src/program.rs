@@ -4,10 +4,11 @@
 use std::any::TypeId;
 use std::cell::RefCell;
 use std::path::Path;
+use std::sync::Arc;
 
 use gogo_text::TextEngine;
 use gogo_ui::reload::{BuildTables, Reloader, Sources};
-use gogo_ui::{Draw, Event, EventList, ImageKey, Key, MOUSE_ID, Mods, NodeId, Orientation, Phase, Rect, ScreenClass};
+use gogo_ui::{Draw, Event, EventList, ImageKey, Key, Locale, MOUSE_ID, Mods, NodeId, Orientation, Phase, PropKey, Rect, ScreenClass, Value};
 
 use crate::page::{Back, Host, IntoPage, Nav, PageKind, PageObject, Request};
 use crate::pages::{PageUi, PageId, PagePlatform, PagePose, PageStack, UiAssets};
@@ -116,6 +117,9 @@ pub struct Program<A = ()> {
     slides: Vec<Slide>,
     nav: Nav<A>,
     reload: Reloader,
+    /// True once host said the screen's facts
+    /// (`set_screen_and_insets`): `frame` then leaves them alone.
+    is_screen_from_host: bool,
     /// Device pixels per epx.
     epx: f32,
     /// Width and height of last frame, in epx.
@@ -131,6 +135,10 @@ pub struct Program<A = ()> {
     /// next GPU frame.
     #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
     pictures_to_release: Vec<ImageKey>,
+    /// Keys of freed pages' code-made pictures: renderer lets go of
+    /// their textures at next GPU frame.
+    #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
+    code_pictures_to_release: Vec<ImageKey>,
     /// Decodes and uploads pictures the drawn pages name.
     #[cfg(feature = "gpu")]
     pictures: crate::pictures::PictureLoader,
@@ -174,8 +182,9 @@ impl<A: 'static> Program<A> {
         let fonts: Vec<(&str, Vec<u8>)> = built.fonts.iter().map(|(key, bytes)| (*key, bytes.to_vec())).collect();
         let assets: UiAssets = UiAssets::new(TextEngine::new(&fonts), crate::pictures::image_table(built.tables, built.release_unused));
         let platform: PagePlatform = PagePlatform::new([0.0; 4], Orientation::from_view(1.0, 1.0), ScreenClass::from_view(1.0, 1.0), None);
-        let mut program: Program<A> = Program { app, assets, platform, stack: PageStack::new(), objects: Vec::new(), back_stack: Vec::new(), cached: Vec::new(), is_kind_checked: Vec::new(), slides: Vec::new(), nav: Nav::new(), reload, epx: 1.0, size: (0.0, 0.0), layer_draws: Vec::new(), picture_keys: Vec::new(),
+        let mut program: Program<A> = Program { app, assets, platform, stack: PageStack::new(), objects: Vec::new(), back_stack: Vec::new(), cached: Vec::new(), is_kind_checked: Vec::new(), slides: Vec::new(), nav: Nav::new(), reload, is_screen_from_host: false, epx: 1.0, size: (0.0, 0.0), layer_draws: Vec::new(), picture_keys: Vec::new(),
             pictures_to_release: Vec::new(),
+            code_pictures_to_release: Vec::new(),
             #[cfg(feature = "gpu")]
             pictures: crate::pictures::PictureLoader::default(),
             has_freed_a_page: false,
@@ -299,7 +308,9 @@ impl<A: 'static> Program<A> {
     pub fn frame(&mut self, width: f32, height: f32, dt: f32) -> bool {
         if (width, height) != self.size {
             self.size = (width, height);
-            self.platform.set_screen_and_insets([0.0; 4], Orientation::from_view(width, height), ScreenClass::from_view(width, height));
+            if !self.is_screen_from_host {
+                self.platform.set_screen_and_insets([0.0; 4], Orientation::from_view(width, height), ScreenClass::from_view(width, height));
+            }
         }
         for (id, page_ui) in self.stack.iter_mut() {
             match page_ui.refresh(&mut self.reload) {
@@ -314,6 +325,7 @@ impl<A: 'static> Program<A> {
                 Err(why) => eprintln!("the saved page cannot be shown, keeping the last one:\n{why}"),
             }
         }
+        self.place_code_pictures();
         let is_sliding: bool = self.move_slides(dt);
         let size_px: (u32, u32) = (((width * self.epx).round() as u32).max(1), ((height * self.epx).round() as u32).max(1));
         let is_moving: bool = self.stack.frame(dt, size_px, self.epx, &self.platform, &self.assets);
@@ -322,17 +334,107 @@ impl<A: 'static> Program<A> {
         is_sliding | is_moving
     }
 
-    /// Hands one touch or mouse press to page on screen. `t`: time in
-    /// seconds, from any start.
+    /// Screen's facts, from a host that knows them: what notch and
+    /// on-screen keyboard cover at each edge (epx: left, top, right,
+    /// bottom), orientation, size class. Pages read them as
+    /// `padding_top=safe` and `when screen.landscape`.
     ///
-    /// Before first frame there is nothing to touch.
-    pub fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) {
-        let top: PageId = self.top();
-        if !self.stack.get(top).kept.is_laid_out() {
-            return;
+    /// Needed on a phone: its size alone says nothing of a notch, and
+    /// its size class counts the screen, not the window. With no call a
+    /// program has no insets and reads orientation and class off its
+    /// frame's size, which is right for a window on a PC.
+    ///
+    /// From first call on, `frame` leaves the three alone: host calls
+    /// again when one changes. Every page has them from next frame.
+    pub fn set_screen_and_insets(&mut self, safe: [f32; 4], orientation: Orientation, class: ScreenClass) {
+        self.is_screen_from_host = true;
+        self.platform.set_screen_and_insets(safe, orientation, class);
+    }
+
+    /// Language of every page. `locale`: translated texts (`text=/key`),
+    /// `None` for texts as the files have them. `bcp47`: language's tag
+    /// (`bg`, `ja`), which text is shaped and broken into lines by.
+    ///
+    /// Every page has it from next frame.
+    pub fn set_locale(&mut self, locale: Option<Arc<Locale>>, bcp47: &str) {
+        self.assets.set_locale(locale.clone(), bcp47);
+        self.platform.locale = locale;
+    }
+
+    /// Gives each picture a page made in code (`PageUi::set_picture`) its
+    /// key and hands layout its size. Its Image names the key from then
+    /// on.
+    ///
+    /// Needed before the pages are laid out: page then sits at its new
+    /// picture's size in the same frame, with no GPU.
+    fn place_code_pictures(&mut self) {
+        let Program { stack, assets, .. } = self;
+        for (id, page_ui) in stack.iter_mut() {
+            for i in 0..page_ui.code_pictures.len() {
+                if !page_ui.code_pictures[i].is_size_new {
+                    continue;
+                }
+                page_ui.code_pictures[i].is_size_new = false;
+                let (node, width, height): (NodeId, u32, u32) = (page_ui.code_pictures[i].node, page_ui.code_pictures[i].width, page_ui.code_pictures[i].height);
+                let key: ImageKey = match page_ui.code_pictures[i].key {
+                    Some(key) => key,
+                    None => {
+                        // Named by page and node: next page in this place
+                        // takes the key over, so none is made per open.
+                        let key: ImageKey = assets.images.intern(&format!("turbodot://page/{}/node/{}", id.index(), node.index()));
+                        page_ui.code_pictures[i].key = Some(key);
+                        page_ui.runtime.set_prop(node, PropKey::Source, Value::VImage(key));
+                        key
+                    }
+                };
+                if assets.images.set_size(key, width, height) {
+                    page_ui.runtime.dirty = true;
+                }
+            }
         }
-        let events: EventList = self.stack.touch_to(top, phase, x, y, t, MOUSE_ID, self.epx, &self.assets);
-        self.hand_events(top, &events);
+    }
+
+    /// Hands one touch of one finger to the page it belongs to. `finger`:
+    /// id that stays the same from a finger's down to its up (`MOUSE_ID`
+    /// for a mouse). `t`: time in seconds, from any start.
+    ///
+    /// Finger that comes down goes to topmost drawn page that takes it:
+    /// one with a node under the finger that takes input, or one that
+    /// takes every touch (`Page::TAKES_EVERY_TOUCH`, the default). Its
+    /// moves and its lift go to that same page.
+    ///
+    /// Page on its way out takes no finger: user touched what shows
+    /// under it.
+    ///
+    /// Returns false when no page took the touch: host hands it to what
+    /// is under the pages. Before first frame there is nothing to touch.
+    pub fn touch_finger(&mut self, phase: Phase, x: f32, y: f32, t: f64, finger: u64) -> bool {
+        if !self.stack.get(self.top()).kept.is_laid_out() {
+            return false;
+        }
+        // A press no page takes still goes to page whose field holds the
+        // text caret, so the field ends its edit.
+        let taker: Option<PageId> = if phase == Phase::Down { self.page_that_takes(x, y).or_else(|| self.stack.caret_holder().map(|(id, _)| id)) } else { self.stack.touched_by(finger) };
+        let Some(id) = taker else { return false };
+        let events: EventList = self.stack.touch_to(id, phase, x, y, t, finger, self.epx, &self.assets);
+        self.hand_events(id, &events);
+        true
+    }
+
+    /// `touch_finger` for a mouse, or for a test with one finger.
+    pub fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> bool {
+        self.touch_finger(phase, x, y, t, MOUSE_ID)
+    }
+
+    /// Topmost drawn page that takes a press at (`x`, `y`), in epx.
+    fn page_that_takes(&self, x: f32, y: f32) -> Option<PageId> {
+        self.stack.order.iter().rev().copied().find(|id| {
+            if self.slides.iter().any(|slide| slide.page == *id && slide.kind == SlideKind::Leave) {
+                return false;
+            }
+            let page: &PageUi = self.stack.get(*id);
+            page.covers(x, y) && (page.hit(x, y).is_some() || page.is_modal)
+        })
     }
 
     /// Press and lift at middle of `node` of page on screen, 0.05 s apart.
@@ -413,6 +515,21 @@ impl<A: 'static> Program<A> {
         self.pictures.is_decoding()
     }
 
+    /// Marks every picture as not on the GPU: ones from files, ones
+    /// pages made in code.
+    ///
+    /// Needed for a renderer that was made new: it has none of them, and
+    /// page would show an empty place where each belongs.
+    #[cfg(feature = "gpu")]
+    pub(crate) fn forget_uploads(&mut self) {
+        self.assets.images.forget_uploads();
+        for (_, page_ui) in self.stack.iter_mut() {
+            for picture in page_ui.code_pictures.iter_mut() {
+                picture.is_uploaded = false;
+            }
+        }
+    }
+
     /// `gpu_draw`, with what this frame does with a `loading=lazy`
     /// picture.
     #[cfg(feature = "gpu")]
@@ -424,6 +541,21 @@ impl<A: 'static> Program<A> {
         }
         let stack: &PageStack = &self.stack;
         self.pictures.upload_for_draws(&mut self.assets.images, renderer, &gpu.device, &gpu.queue, lazy, |wanted| stack.wanted_images(wanted));
+        for i in 0..self.code_pictures_to_release.len() {
+            renderer.release_image(&gpu.device, self.code_pictures_to_release[i]);
+        }
+        self.code_pictures_to_release.clear();
+        // Pixels pages made in code since last GPU frame.
+        let Program { stack, assets, .. } = self;
+        for (_, page_ui) in stack.iter_mut() {
+            for picture in page_ui.code_pictures.iter_mut() {
+                let Some(key) = picture.key else { continue };
+                if !picture.is_uploaded {
+                    assets.images.upload_image(renderer, &gpu.device, &gpu.queue, key, &picture.rgba, picture.width, picture.height);
+                    picture.is_uploaded = true;
+                }
+            }
+        }
         for i in 0..self.pictures_to_release.len() {
             let external: gogo_wgpu::ExternalImage = renderer.external_image(self.pictures_to_release[i]);
             renderer.release_external_image(&gpu.device, external);
@@ -504,6 +636,7 @@ impl<A: 'static> Program<A> {
         page.read_handler_names(&page_ui);
         // Plays each visible node's `on:show` once.
         page_ui.runtime.play_entrances(&page_ui.page);
+        page_ui.is_modal = page.takes_every_touch();
         let id: PageId = self.stack.add(page_ui);
         if self.objects.len() <= id.index() {
             self.objects.resize_with(id.index() + 1, || None);
@@ -520,6 +653,7 @@ impl<A: 'static> Program<A> {
     /// Frees a page for good.
     fn free(&mut self, id: PageId) {
         self.slides.retain(|slide| slide.page != id);
+        self.code_pictures_to_release.extend(self.stack.get(id).code_pictures.iter().filter_map(|picture| picture.key));
         self.stack.remove(id);
         self.objects[id.index()] = None;
         self.layer_draws[id.index()].clear();

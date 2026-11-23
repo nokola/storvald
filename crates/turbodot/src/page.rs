@@ -154,6 +154,14 @@ pub trait Page<A = ()>: Sized + 'static {
     /// Needed because debug check of `KIND` reads root's background, and
     /// such a page has none. Matters only for page opened over another.
     const DRAWS_GPU_PICTURE: bool = false;
+    /// False for page that lets a touch on none of its nodes go on: to
+    /// page drawn under it, else to the host (`Program::touch_finger`
+    /// returns false).
+    ///
+    /// Needed for page with a surface of its own under its nodes (a
+    /// painting): host hands that surface the fingers no button took.
+    /// Any other page keeps a tap beside its buttons to itself.
+    const TAKES_EVERY_TOUCH: bool = true;
 
     /// Writes program's data into page: texts, rows, selection.
     ///
@@ -220,6 +228,14 @@ pub trait CachedPage<A = ()>: Sized + 'static {
     const KIND: PageKind = PageKind::Fullscreen;
     /// As `Page::DRAWS_GPU_PICTURE`.
     const DRAWS_GPU_PICTURE: bool = false;
+    /// False for page that lets a touch on none of its nodes go on: to
+    /// page drawn under it, else to the host (`Program::touch_finger`
+    /// returns false).
+    ///
+    /// Needed for page with a surface of its own under its nodes (a
+    /// painting): host hands that surface the fingers no button took.
+    /// Any other page keeps a tap beside its buttons to itself.
+    const TAKES_EVERY_TOUCH: bool = true;
 
     /// As `Page::show`.
     fn show(&mut self, host: &mut Host<'_, A>) {
@@ -270,6 +286,8 @@ pub(crate) trait PageObject<A> {
     /// True when page cached on back (`CachedPage`).
     fn is_cached_page(&self) -> bool;
     fn kind(&self) -> PageKind;
+    /// True for page that takes a touch on none of its nodes.
+    fn takes_every_touch(&self) -> bool;
     /// Read by debug build's check of page's kind alone.
     #[cfg_attr(not(debug_assertions), allow(dead_code))]
     fn draws_gpu_picture(&self) -> bool;
@@ -358,6 +376,9 @@ impl<A: 'static, P: Page<A>> PageObject<A> for Plain<P, P::Handler> {
     fn kind(&self) -> PageKind {
         P::KIND
     }
+    fn takes_every_touch(&self) -> bool {
+        P::TAKES_EVERY_TOUCH
+    }
     fn draws_gpu_picture(&self) -> bool {
         P::DRAWS_GPU_PICTURE
     }
@@ -407,6 +428,9 @@ impl<A: 'static, P: CachedPage<A>> PageObject<A> for Cached<P, P::Handler> {
     }
     fn kind(&self) -> PageKind {
         P::KIND
+    }
+    fn takes_every_touch(&self) -> bool {
+        P::TAKES_EVERY_TOUCH
     }
     fn draws_gpu_picture(&self) -> bool {
         P::DRAWS_GPU_PICTURE
