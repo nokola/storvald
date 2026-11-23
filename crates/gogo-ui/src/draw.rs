@@ -1354,39 +1354,52 @@ pub fn hit(page: &Page, f: Frame<'_>, x: f32, y: f32, any: bool) -> Option<NodeI
     // the top), so nearest-wins here IS the picture. Clip and wedge
     // checks keep the raw screen point: scissors and wedge masks cut in
     // screen space, rotation or not. Zero cost while nothing rotates.
-    let pts: Option<Vec<(f32, f32)>> = if res.motion.iter().any(|m| m.rotate != 0.0) {
-        // The turned point per ROTATING node first; then every node reads
-        // its nearest rotating PLACED ancestor-or-self. Two passes, not
-        // one index-ordered copy from the parent: a seated node's host
-        // can sit at a higher index than the node (B25).
-        let mut turned: Vec<Option<(f32, f32)>> = vec![None; page.nodes.len()];
-        for i in 0..page.nodes.len().min(rects.len()) {
+    if !res.motion.iter().any(|m| m.rotate != 0.0) {
+        return hit_laid_at(page, res, rects, x, y, any, None);
+    }
+    TURNED_POINTS.with(|kept| {
+        let mut pts = kept.borrow_mut();
+        // Point each node's containment test reads: node's own turned
+        // point when it rotates, else point of its PLACED parent. One
+        // pass in paint order, which has parents before children. Index
+        // order has not: a seated node's host can sit at a higher index
+        // than the node (B25).
+        pts.clear();
+        pts.resize(page.nodes.len(), (x, y));
+        for &id in res.tree.paint_order() {
+            let i: usize = id.index();
             let m = &res.motion[i];
-            if m.rotate != 0.0 {
+            if m.rotate != 0.0 && i < rects.len() {
                 let r = rects[i];
-                let pv = pivot_frac(page, res, NodeId::from_index(i));
+                let pv = pivot_frac(page, res, id);
                 let (cx, cy) = (r.x + r.w * pv.0, r.y + r.h * pv.1);
                 let (s, c) = (-m.rotate).to_radians().sin_cos();
                 let (dx, dy) = (x - cx, y - cy);
-                turned[i] = Some((cx + dx * c - dy * s, cy + dx * s + dy * c));
-            }
-        }
-        let mut pts = vec![(x, y); page.nodes.len()];
-        for i in 0..page.nodes.len() {
-            let mut a = NodeId::from_index(i);
-            while a != NO_NODE {
-                if let Some(p) = turned[a.index()] {
-                    pts[i] = p;
-                    break;
+                pts[i] = (cx + dx * c - dy * s, cy + dx * s + dy * c);
+            } else {
+                let parent: NodeId = res.tree.parent(id);
+                if parent != NO_NODE {
+                    pts[i] = pts[parent.index()];
                 }
-                a = res.placed_parent(page, a);
             }
         }
-        Some(pts)
-    } else {
-        None
-    };
-    hit_laid_at(page, res, rects, x, y, any, pts.as_deref())
+        hit_laid_at(page, res, rects, x, y, any, Some(&pts))
+    })
+}
+
+thread_local! {
+    /// Per-node list `hit` fills on a page with a rotating node: screen
+    /// point each node's containment test reads.
+    ///
+    /// Needed because `hit` runs at every move of mouse or finger: a new
+    /// list per call is an allocation per move, for as long as page has a
+    /// turned node.
+    ///
+    /// Carries no fact from one call to next: `hit` writes every entry
+    /// before it reads one. Kept per thread, since `hit` takes a frame it
+    /// cannot write to. Holds 8 bytes per node of largest page hit on
+    /// that thread.
+    static TURNED_POINTS: std::cell::RefCell<Vec<(f32, f32)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// `pts` = the per-node un-rotated screen point (see `hit`); `None` when

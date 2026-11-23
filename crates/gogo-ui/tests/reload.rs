@@ -9,7 +9,7 @@ mod reload_kit;
 
 use gogo_ui::reload::{BuiltShape, ShapeChange, Why, same_shape, swap};
 use gogo_ui::runtime::{Item, ItemKey, ItemValue, Runtime, SELECTED, resolve};
-use gogo_ui::{ArrangementId, ImageKey, Kind, NodeId, Page, PropKey, Value};
+use gogo_ui::{AnimName, ArrangementId, ImageKey, Kind, NodeId, Page, PropKey, StrId, ThemeName, Value};
 use reload_kit::{Kit, build, png};
 
 const THEME: &str = "$accent = #FF0000FF\n";
@@ -408,4 +408,98 @@ fn a_build_writes_down_what_a_reload_needs() {
     let same: u64 = same.finish();
     assert_ne!(changed.finish(), same);
     assert_ne!(gone.finish(), same);
+}
+
+// ----- numbers the build wrote into code ------------------------------------
+
+/// Page with one anim and one theme value of its own: build writes
+/// `enum Anim { Appear = <number> }` and `enum Theme { Accent = <number>,
+/// Own = <number> }` for it.
+const ANIM_PAGE: &str = r#"uses "theme.gogo"
+$own = #0000FFFF
+anim appear { title.opacity to=1, duration=1 }
+View root {
+    Column col {
+        Label title text="Icon Size"/iconSize, font_color=$accent
+    }
+}
+"#;
+
+/// `Anim` variant as build emits it: number fixed when program was built.
+#[derive(Clone, Copy)]
+struct BuiltAnim(StrId);
+
+impl AnimName for BuiltAnim {
+    fn id(self) -> StrId {
+        self.0
+    }
+}
+
+/// `Theme` variant as build emits it: number fixed when program was built.
+#[derive(Clone, Copy)]
+struct BuiltTheme(StrId);
+
+impl ThemeName for BuiltTheme {
+    fn id(self) -> StrId {
+        self.0
+    }
+}
+
+/// Saved file with one more name ahead of an anim and a theme value still
+/// plays that anim and reads that value through numbers build wrote.
+///
+/// Needed because program's code holds those numbers (`Anim::Appear`,
+/// `Theme::Accent`) and is not built again by a reload: without it, after
+/// such a save `Runtime::play(page, Anim::Appear, ..)` plays nothing or
+/// another anim, and `Runtime::theme_color(page, Theme::Accent)` returns
+/// another value's color, until next build.
+#[test]
+#[ignore = "fails: reload gives strings new numbers, code keeps numbers build wrote into Anim and Theme; fix not decided"]
+fn the_builds_anim_and_theme_numbers_name_the_same_things_after_a_reload() {
+    let kit = build(&[("page.gogo", ANIM_PAGE)], &[("theme.gogo", THEME)], &[]);
+    let mut page: Page = kit.page("page.gogo");
+    let mut runtime = Runtime::new(&page);
+    let name_number = |page: &Page, name: &str| -> StrId { StrId::from_index(page.strings.iter().position(|s| s == name).unwrap_or_else(|| panic!("no string `{name}`"))) };
+    let (appear, accent, own) = (name_number(&page, "appear"), name_number(&page, "accent"), name_number(&page, "own"));
+    assert!(page.anim_heads.iter().any(|head| head.anim == appear), "build's `Anim::Appear` holds this number");
+    let red = gogo_ui::Color_Straight_Srgb_4xU8_RGBA([255, 0, 0, 255]);
+    let blue = gogo_ui::Color_Straight_Srgb_4xU8_RGBA([0, 0, 255, 255]);
+    assert_eq!(runtime.theme_color(&page, BuiltTheme(accent)), Some(red));
+    assert_eq!(runtime.theme_color(&page, BuiltTheme(own)), Some(blue));
+
+    // Same node list, new names ahead of old ones: a theme value in page's
+    // own file and one more anim.
+    kit.edit("page.gogo", "$own = #0000FFFF", "$warm = #FF8800FF\nanim first { title.scale to=2, duration=1 }\n$own = #0000FFFF");
+    let fresh: Page = kit.recompile("page.gogo").unwrap();
+    swap(&mut page, &mut runtime, fresh).unwrap();
+
+    assert_eq!(page.str(appear), "appear", "number in build's `Anim::Appear` names another string after reload");
+    assert!(page.anim_heads.iter().any(|head| head.anim == appear), "`Runtime::play(page, Anim::Appear, ..)` finds no anim after reload");
+    assert!(!runtime.is_playing(BuiltAnim(appear)));
+    assert_eq!(page.str(accent), "accent", "number in build's `Theme::Accent` names another string after reload");
+    assert_eq!(runtime.theme_color(&page, BuiltTheme(accent)), Some(red), "`theme_color(page, Theme::Accent)` after reload");
+    assert_eq!(runtime.theme_color(&page, BuiltTheme(own)), Some(blue), "`theme_color(page, Theme::Own)` after reload");
+}
+
+/// Saved file with one more arrangement ahead of the built one still
+/// goes to the built one through the number build wrote.
+///
+/// Needed because program's code holds that number (`Arrangement::Names`
+/// is 0 for `PAGE`) and is not built again by a reload: without it, after
+/// such a save `Runtime::go(Arrangement::Names)` shows the page in the
+/// new arrangement, until next build.
+#[test]
+#[ignore = "fails: reload gives arrangements new numbers, code keeps number build wrote into Arrangement; fix not decided"]
+fn the_builds_arrangement_number_names_the_same_arrangement_after_a_reload() {
+    let kit = plain();
+    let mut page: Page = kit.page("page.gogo");
+    let mut runtime = Runtime::new(&page);
+    let names = ArrangementId::new(0);
+    assert_eq!(page.str(page.arrangements[0]), "names", "build's `Arrangement::Names` holds 0");
+
+    kit.edit("page.gogo", "arrangement names", "arrangement wide\narrangement names");
+    let fresh: Page = kit.recompile("page.gogo").unwrap();
+    swap(&mut page, &mut runtime, fresh).unwrap();
+
+    assert_eq!(page.str(page.arrangements[names.index()]), "names", "number in build's `Arrangement::Names` names another arrangement after reload");
 }

@@ -26,6 +26,7 @@ View page background=#202020 {
         Label title text="Volume", font_size=20, font_color=#FFFFFF
         Button tapButton text="Tap me", width=200, height=50
         Slider volume width=200, value=20
+        Button turned text="Turned", width=120, height=40, rotate=15
         Scroll box width=200, height=80 {
             Label long text="one two three four five six seven eight nine ten one two three four five six seven eight nine ten one two three four five six seven eight nine ten one two three four five six seven eight nine ten one two three four five six seven eight nine ten one two three four five six seven eight nine ten one two three four five six seven eight nine ten one two three four five six seven eight nine ten", wrap=true, width=fill, font_color=#FFFFFF
         }
@@ -109,6 +110,19 @@ fn a_still_page_and_a_moving_one_allocate_nothing_and_an_event_costs_one() {
     shown.frame();
     shown.frame();
     assert_eq!(allocations_of(|| shown.hover(on_button.x + 20.0, on_button.y + 12.0)), 0, "the mouse moves on the node it is over");
+    assert_eq!(allocations_of(|| shown.frame()), 0, "the frame after that move");
+    shown.stack.unhover();
+
+    // Mouse moves on the turned button. Page with a turned node finds
+    // node under mouse through point turned back, for every move.
+    let turned: NodeId = shown.page().node("turned");
+    let on_turned: Rect = shown.page().rect(turned);
+    let (x, y): (f32, f32) = (on_turned.x + on_turned.w / 2.0, on_turned.y + on_turned.h / 2.0);
+    shown.hover(x, y);
+    shown.frame();
+    shown.frame();
+    assert_eq!(gogo_ui::hit(&shown.page().page, shown.page().kept.frame(), x, y, false), Some(turned), "the mouse is over the turned button");
+    assert_eq!(allocations_of(|| shown.hover(x + 3.0, y + 1.0)), 0, "the mouse moves on a turned node");
     assert_eq!(allocations_of(|| shown.frame()), 0, "the frame after that move");
     shown.stack.unhover();
 

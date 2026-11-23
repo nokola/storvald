@@ -11,6 +11,7 @@ use gogo_ui::draw::{Draw, draw, hit};
 use gogo_ui::layout::{FixedAdvance, Rect};
 use gogo_ui::page::{Color_Straight_Srgb_4xU8_RGBA, PropKey, Value};
 use gogo_ui::runtime::{Runtime, resolve};
+use gogo_ui::{ArrangementId, NodeId, Page};
 
 fn fails(src: &str) -> bool {
     gogo_ui::has_errors(&compile(src, &|_| None).diags)
@@ -125,6 +126,62 @@ fn hit_follows_rotation() {
     let f = KeptFrame::fresh(&page, resolve(&page, &rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
     assert_eq!(hit(&page, f.frame(), -25.0, 50.0, false), Some(b), "swung across the hinge");
     assert_eq!(hit(&page, f.frame(), 60.0, 25.0, false), None, "the old footprint is empty");
+}
+
+/// Screen point where a quarter turn of `turned` (90 degrees about its
+/// center) draws the point 9/10 along and half way down `node`'s
+/// laid-out rectangle. Panics when that screen point is inside `node`'s
+/// laid-out rectangle too: a hit test that forgot the turn would pass.
+fn drawn_point_after_quarter_turn(f: &KeptFrame, node: NodeId, turned: NodeId) -> (f32, f32) {
+    let (own, about): (Rect, Rect) = (f.frame().rects()[node], f.frame().rects()[turned]);
+    let (cx, cy): (f32, f32) = (about.x + about.w / 2.0, about.y + about.h / 2.0);
+    let (lx, ly): (f32, f32) = (own.x + own.w * 0.9, own.y + own.h / 2.0);
+    let point: (f32, f32) = (cx - (ly - cy), cy + (lx - cx));
+    assert!(!own.contains(point.0, point.1), "{point:?} is inside the laid-out {own:?}");
+    point
+}
+
+/// Button inside a turned Panel takes a tap where the turned picture
+/// shows it, and none in the laid-out corner the picture left.
+///
+/// Needed because renderer turns a node's whole subtree with it: without
+/// it, user taps the button they see and nothing happens.
+#[test]
+fn a_node_inside_a_turned_node_takes_the_tap_where_it_is_drawn() {
+    let c = compile("View v { Panel p width=100, height=50, halign=left, valign=top { Button b text=\"x\", width=100, height=50 } }", &|_| None);
+    assert!(!gogo_ui::has_errors(&c.diags), "{:#?}", c.diags);
+    let page: Page = c.page;
+    let (p, b): (NodeId, NodeId) = (page.find("p").unwrap(), page.find("b").unwrap());
+    let mut rt = Runtime::new(&page);
+    rt.set_prop(p, PropKey::Rotate, Value::VNum(90.0));
+    let f = KeptFrame::fresh(&page, resolve(&page, &rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
+    let (x, y): (f32, f32) = drawn_point_after_quarter_turn(&f, b, p);
+    assert_eq!(hit(&page, f.frame(), x, y, false), Some(b), "inside the turned picture of the button");
+    assert_eq!(hit(&page, f.frame(), 95.0, 45.0, false), None, "the laid-out corner the turned picture left");
+}
+
+/// Button seated under a turned Panel takes a tap where the turned
+/// picture shows it. Button is written BEFORE the Panel, so its number
+/// is lower than its seat's.
+///
+/// Needed because a seated node turns with the node it sits in, not with
+/// the one that wrote it, and a hit test that goes by node numbers reads
+/// the seat's point before working it out: without it, user taps the
+/// seated button they see and nothing happens.
+#[test]
+fn a_node_seated_under_a_turned_node_takes_the_tap_where_it_is_drawn() {
+    let c = compile("arrangement moved\nwhen moved { b.seat = socket }\nView v { Button b text=\"x\", width=100, height=50, halign=right, valign=bottom\n Panel p width=100, height=50, halign=left, valign=top { seat socket } }", &|_| None);
+    assert!(!gogo_ui::has_errors(&c.diags), "{:#?}", c.diags);
+    let page: Page = c.page;
+    let (p, b, socket): (NodeId, NodeId, NodeId) = (page.find("p").unwrap(), page.find("b").unwrap(), page.find("socket").unwrap());
+    assert!(b.index() < socket.index(), "the button's number is lower than its seat's");
+    let mut rt = Runtime::new(&page);
+    rt.go_instant_id(ArrangementId::new(0));
+    rt.set_prop(p, PropKey::Rotate, Value::VNum(90.0));
+    let f = KeptFrame::fresh(&page, resolve(&page, &rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
+    assert!(f.frame().rects()[p].contains(f.frame().rects()[b].x + 1.0, f.frame().rects()[b].y + 1.0), "the button sits in the Panel: {:?} in {:?}", f.frame().rects()[b], f.frame().rects()[p]);
+    let (x, y): (f32, f32) = drawn_point_after_quarter_turn(&f, b, p);
+    assert_eq!(hit(&page, f.frame(), x, y, false), Some(b), "inside the turned picture of the seated button");
 }
 
 /// The fences: a full 0..1 pair or nothing — a bare number, a half pair
