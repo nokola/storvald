@@ -1,5 +1,5 @@
 //! Small notes program on TurboDot, in the shape every client has: one
-//! line builds pages (`build.rs`), one declares them, one starts the
+//! line builds pages (`build.rs`), one declares them, `main` starts the
 //! program, plus a struct and a `.gogo` file per page.
 //!
 //! - `home_page`: the notes. Opens the other two pages.
@@ -19,6 +19,7 @@ mod settings_page;
 turbodot::built_pages!();
 
 use home_page::HomePage;
+use turbodot::{Program, WindowOptions};
 
 /// Program-wide state. Every page reaches it as `host.app`.
 #[derive(Default)]
@@ -31,7 +32,14 @@ pub struct AppState {
     pub paper_frames_drawn: u32,
 }
 
-turbodot::start!(AppState, HomePage);
+/// Opens window on home page, stays until window is closed. Debug build:
+/// pages follow their `.gogo` files.
+///
+/// Returns why pages or window could not show.
+fn main() -> Result<(), String> {
+    let program: Program<AppState> = Program::following_page_files(&ui::BUILT, AppState::default(), HomePage)?;
+    turbodot::start(WindowOptions { title: "Notes", width: 960.0, height: 640.0 }, program)
+}
 
 #[cfg(test)]
 mod tests {
@@ -259,7 +267,6 @@ mod tests {
         impl Page<AppState> for NoKindPage {
             const PAGE: &'static BuiltPage = &clear_page::PAGE;
             type Handler = clear_page::Handler;
-            fn show(&mut self, _host: &mut Host<AppState>) {}
             fn handle(&mut self, _host: &mut Host<AppState>, _event: PageEvent<clear_page::Handler>) {}
         }
         let mut program: Program<AppState> = started(AppState::default());

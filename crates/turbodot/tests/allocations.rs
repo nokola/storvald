@@ -15,7 +15,7 @@
 use gogo_text::TextEngine;
 use gogo_ui::{Event, Images, MOUSE_ID, NodeId, Orientation, Phase, Rect, ScreenClass, compile, has_errors};
 use turbodot::alloc_count::{self, CountingAlloc};
-use turbodot::pages::{HostedPage, ImageTable, PageId, PagePlatform, PageStack, UiAssets};
+use turbodot::pages::{PageUi, ImageTable, PageId, PagePlatform, PageStack, UiAssets};
 
 #[global_allocator]
 static ALLOC: CountingAlloc = CountingAlloc;
@@ -60,7 +60,7 @@ impl Shown {
         let assets: UiAssets = UiAssets::new(TextEngine::new(&[("Roboto Regular", font)]), ImageTable::from_keys(Images::from_names(std::iter::empty::<&str>())));
         let platform: PagePlatform = PagePlatform::new([0.0; 4], Orientation::from_view(SIZE.0 as f32, SIZE.1 as f32), ScreenClass::from_view(SIZE.0 as f32, SIZE.1 as f32), None);
         let mut stack: PageStack = PageStack::new();
-        let id: PageId = stack.add(HostedPage::new(compiled.page));
+        let id: PageId = stack.add(PageUi::new(compiled.page));
         Shown { stack, assets, platform, id }
     }
 
@@ -68,7 +68,7 @@ impl Shown {
         self.stack.frame(FRAME_SECONDS, SIZE, EPX, &self.platform, &self.assets);
     }
 
-    fn page(&self) -> &HostedPage {
+    fn page(&self) -> &PageUi {
         self.stack.get(self.id)
     }
 

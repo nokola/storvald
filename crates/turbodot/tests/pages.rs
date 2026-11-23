@@ -11,7 +11,7 @@
 
 use gogo_text::TextEngine;
 use gogo_ui::{Event, EventKind, ImageKey, Images, NodeId, Orientation, Page, Phase, Rect, ScreenClass, compile, has_errors};
-use turbodot::pages::{HostedPage, ImageTable, PageId, PagePlatform, PageStack, UiAssets};
+use turbodot::pages::{PageUi, ImageTable, PageId, PagePlatform, PageStack, UiAssets};
 
 /// A page with one wide button at its top left.
 const BOTTOM: &str = r#"
@@ -50,8 +50,8 @@ fn platform() -> PagePlatform {
 fn two_pages() -> (PageStack, UiAssets, PageId, PageId) {
     let assets: UiAssets = assets();
     let mut stack: PageStack = PageStack::new();
-    let bottom: PageId = stack.add(HostedPage::new(page(BOTTOM)));
-    let top: PageId = stack.add(HostedPage::new(page(TOP)));
+    let bottom: PageId = stack.add(PageUi::new(page(BOTTOM)));
+    let top: PageId = stack.add(PageUi::new(page(TOP)));
     stack.frame(0.0, SIZE, EPX, &platform(), &assets);
     (stack, assets, bottom, top)
 }
@@ -76,7 +76,7 @@ fn tap(stack: &mut PageStack, assets: &UiAssets, x: f32, y: f32) -> Option<(Page
 fn the_outline_gives_each_node_its_kind_its_name_and_its_rectangle() {
     let assets: UiAssets = assets();
     let mut stack: PageStack = PageStack::new();
-    let id: PageId = stack.add(HostedPage::new(page(BOTTOM)));
+    let id: PageId = stack.add(PageUi::new(page(BOTTOM)));
     assert_eq!(stack.get(id).outline(), "", "no frame yet");
     stack.frame(0.0, SIZE, EPX, &platform(), &assets);
     let outline: String = stack.get(id).outline();
@@ -92,11 +92,11 @@ fn the_outline_gives_each_node_its_kind_its_name_and_its_rectangle() {
 fn a_page_covers_its_viewport_when_its_root_is_an_opaque_plate() {
     let assets: UiAssets = assets();
     let mut stack: PageStack = PageStack::new();
-    let opaque: PageId = stack.add(HostedPage::new(page(BOTTOM)));
-    let no_background: PageId = stack.add(HostedPage::new(page(TOP)));
-    let see_through: PageId = stack.add(HostedPage::new(page("View sheet background=black/0.6")));
-    let rounded: PageId = stack.add(HostedPage::new(page("View card background=#101010, corner_radius=12")));
-    let small: PageId = stack.add(HostedPage::new(page("View box background=#101010, width=200, height=100")));
+    let opaque: PageId = stack.add(PageUi::new(page(BOTTOM)));
+    let no_background: PageId = stack.add(PageUi::new(page(TOP)));
+    let see_through: PageId = stack.add(PageUi::new(page("View sheet background=black/0.6")));
+    let rounded: PageId = stack.add(PageUi::new(page("View card background=#101010, corner_radius=12")));
+    let small: PageId = stack.add(PageUi::new(page("View box background=#101010, width=200, height=100")));
     assert!(!stack.get(opaque).covers_viewport(), "no frame yet");
     stack.frame(0.0, SIZE, EPX, &platform(), &assets);
     assert!(stack.get(opaque).covers_viewport());
@@ -212,13 +212,13 @@ fn the_same_platform_twice_lays_nothing_out_again() {
     stack.frame(0.0, SIZE, EPX, &platform, &assets);
     assert!(!stack.get(bottom).runtime.dirty);
     platform.safe = [0.0, 24.0, 0.0, 0.0];
-    let hosted: &mut HostedPage = stack.get_mut(bottom);
-    platform.apply(&hosted.page, &mut hosted.runtime);
-    assert!(hosted.runtime.dirty, "new insets ask for a layout");
+    let page_ui: &mut PageUi = stack.get_mut(bottom);
+    platform.apply(&page_ui.page, &mut page_ui.runtime);
+    assert!(page_ui.runtime.dirty, "new insets ask for a layout");
     stack.frame(0.0, SIZE, EPX, &platform, &assets);
-    let hosted: &mut HostedPage = stack.get_mut(bottom);
-    platform.apply(&hosted.page, &mut hosted.runtime);
-    assert!(!hosted.runtime.dirty, "the same insets again ask for none");
+    let page_ui: &mut PageUi = stack.get_mut(bottom);
+    platform.apply(&page_ui.page, &mut page_ui.runtime);
+    assert!(!page_ui.runtime.dirty, "the same insets again ask for none");
 }
 
 /// A key that code makes while the app runs gets a row in every column of

@@ -492,6 +492,10 @@ All rows PROPOSED.
     command runs on them, with a second page. `Ui`, `App`, `run` and
     `Gpu::draw` are gone (user, 2026-11-22: "remove if not called");
     `Gpu::draw_program` draws a program's pages to a picture.
+  - 2026-11-22 (user's calls, recorded there under SV10):
+    `pages::HostedPage` is now `pages::PageUi`; `start!` is gone, a
+    client writes `main` and calls `turbodot::start`; `show` is
+    optional.
 - <span style='color:red'>TODO</span> AD34: USER CALL: an app draws under its pages.
   - MOVED 2026-11-22: FanRust's `docs/todo-storvald.md`, row SV5.
 - <span style='color:red'>TODO</span> AD35: a TurboDot app's pages are compiled when the program

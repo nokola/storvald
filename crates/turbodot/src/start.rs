@@ -1,6 +1,5 @@
 //! A `Program` in a window.
 
-use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -12,12 +11,8 @@ use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{Key as WinitKey, NamedKey};
 use winit::window::{Window, WindowId};
 
-use crate::page::IntoPage;
-use crate::program::{Built, Program};
+use crate::program::Program;
 use crate::window::{Gfx, TOUCHPAD_PIXELS_PER_NOTCH, WindowOptions, key_from_winit};
-
-/// Size a window opens at when program names none, in epx.
-const DEFAULT_WINDOW_SIZE_EPX: (f32, f32) = (960.0, 640.0);
 
 /// Window's side of a running program.
 struct ProgramWindow<'a, A> {
@@ -220,45 +215,4 @@ pub fn start<A: 'static>(options: WindowOptions<'_>, mut program: Program<A>) ->
         Some(why) => Err(why),
         None => Ok(()),
     }
-}
-
-/// What `start!` runs: program that opens on `first`, in window named
-/// `title`, pages following their files in debug build.
-///
-/// Returns exit code for `main`: failure when pages or window cannot
-/// show, after saying why on error stream.
-#[doc(hidden)]
-pub fn start_main<A: 'static, P: IntoPage<A, Kind>, Kind>(built: &'static Built, title: &str, app: A, first: P) -> ExitCode {
-    let (width, height): (f32, f32) = DEFAULT_WINDOW_SIZE_EPX;
-    match Program::following_page_files(built, app, first).and_then(|program| start(WindowOptions { title, width, height }, program)) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(why) => {
-            eprintln!("{title}: the window cannot be shown: {why}");
-            ExitCode::FAILURE
-        }
-    }
-}
-
-/// `main` of a program: opens window on first page. One line, same on
-/// every operating system.
-///
-/// ```text
-/// turbodot::start!(AppState, HomePage);   // pages share an AppState
-/// turbodot::start!(HomePage);             // pages share nothing
-/// ```
-///
-/// Program-wide state and first page start from their `Default`. Window
-/// is named after the crate. Pages: crate's `ui` module
-/// (`turbodot::built_pages!()`). Program that reads its own arguments
-/// first writes `main` itself and calls `turbodot::start`.
-#[macro_export]
-macro_rules! start {
-    ($first:ty) => {
-        $crate::start!((), $first);
-    };
-    ($app:ty, $first:ty) => {
-        fn main() -> ::std::process::ExitCode {
-            $crate::start_main::<$app, $first, _>(&crate::ui::BUILT, env!("CARGO_PKG_NAME"), <$app as ::std::default::Default>::default(), <$first as ::std::default::Default>::default())
-        }
-    };
 }

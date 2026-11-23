@@ -12,7 +12,10 @@
 //!
 //! // main.rs
 //! turbodot::built_pages!();               // the module `ui`
-//! turbodot::start!(AppState, HomePage);   // `main`, on every OS
+//! fn main() -> Result<(), String> {
+//!     let program: Program<AppState> = Program::following_page_files(&ui::BUILT, AppState::default(), HomePage)?;
+//!     turbodot::start(WindowOptions { title: "Notes", width: 960.0, height: 640.0 }, program)
+//! }
 //!
 //! // home_page.rs; its picture is ui/home_page.gogo
 //! impl Page<AppState> for HomePage {
@@ -46,6 +49,9 @@
 //! - [`Gpu`] is a device with no window. [`Gpu::draw_program`] draws a
 //!   program's pages to a [`Picture`] with the renderer a window uses, to
 //!   check pixels or to save a PNG and look at it.
+//! - [`gpu_start`] holds what a GPU start decides by: the backends to ask
+//!   for, the Vulkan drivers known to be bad, and the file a phone keeps
+//!   its backend in.
 //! - [`build`] holds what a client's `build.rs` calls.
 //! - [`alloc_count`] counts heap allocations, for a test that says "this
 //!   frame allocates nothing".
@@ -62,6 +68,8 @@ pub mod alloc_count;
 pub mod build;
 #[cfg(feature = "gpu")]
 mod gpu;
+#[cfg(feature = "gpu")]
+pub mod gpu_start;
 #[cfg(feature = "ui")]
 mod page;
 #[cfg(feature = "ui")]
@@ -97,14 +105,14 @@ pub use page::{AsCachedPage, AsPage, Back, BuiltPage, CachedPage, Host, IntoPage
 #[cfg(feature = "ui")]
 pub use program::{Built, Program};
 #[cfg(feature = "window")]
-pub use start::{start, start_main};
+pub use start::start;
 #[cfg(feature = "window")]
 pub use window::WindowOptions;
 
 /// What a file with a page needs: `use turbodot::prelude::*;`.
 #[cfg(feature = "ui")]
 pub mod prelude {
-    pub use crate::pages::HostedPage;
+    pub use crate::pages::PageUi;
     pub use crate::{Back, BuiltPage, CachedPage, Gpu, Host, Layers, Page, PageEvent, PageKind};
     pub use gogo_ui::runtime::{Item, ItemKey, ItemValue};
     pub use gogo_ui::{EventKind, NodeId};

@@ -28,8 +28,6 @@ impl Page<AppState> for PaperPage {
     /// Root is see-through, and page's own picture covers the screen.
     const DRAWS_GPU_PICTURE: bool = true;
 
-    fn show(&mut self, _host: &mut Host<AppState>) {}
-
     fn handle(&mut self, host: &mut Host<AppState>, event: PageEvent<Handler>) {
         match event.handler {
             Handler::GoBack => host.nav.back(),

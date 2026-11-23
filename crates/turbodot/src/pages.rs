@@ -3,7 +3,7 @@
 //!
 //! - [`UiAssets`] is what every page of an app shares: the text engine,
 //!   the pictures and the language.
-//! - [`HostedPage`] is one page with its state, its input and its last
+//! - [`PageUi`] is one page with its state, its input and its last
 //!   frame.
 //! - [`PageStack`] holds the pages of one window. It draws them bottom
 //!   first, and gives a touch to the topmost page that takes it.
@@ -21,7 +21,7 @@ use std::cell::RefCell;
 use std::sync::Arc;
 
 use gogo_text::{EpxMeasure, TextEngine};
-use gogo_ui::page::{Action, NO_NODE, NO_STR, StaticPage};
+use gogo_ui::page::{Action, NO_NODE, NO_STR, StaticPage, StrId};
 use gogo_ui::reload::{Refused, Reloader};
 use gogo_ui::{ArrangementId, Draw, Event, ImageKey, Images, Input, KeptFrame, Key, Kind, Locale, Mods, NodeId, Orientation, Page, Phase, PropKey, Rect, Runtime, ScreenClass, Touch, Value, hit};
 
@@ -360,7 +360,7 @@ pub struct PagePose {
     pub alpha: f32,
 }
 
-/// Where `HostedPage::draw_to_texture` puts a node and its children on the
+/// Where `PageUi::draw_to_texture` puts a node and its children on the
 /// texture.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TexturePlacement {
@@ -382,7 +382,7 @@ const COVER_SLACK_EPX: f32 = 0.01;
 
 /// One gogo page: its state, its input and its last frame. It is laid out
 /// again only when a state, the window's size or the scale changed.
-pub struct HostedPage {
+pub struct PageUi {
     pub page: Page,
     pub runtime: Runtime,
     pub input: Input,
@@ -419,16 +419,16 @@ pub struct HostedPage {
     pub viewport: Option<Rect>,
 }
 
-impl HostedPage {
-    pub fn new(page: Page) -> HostedPage {
+impl PageUi {
+    pub fn new(page: Page) -> PageUi {
         let runtime: Runtime = Runtime::new(&page);
-        HostedPage { page, runtime, input: Input::new(), kept: KeptFrame::default(), draws: Vec::new(), above_children: None, top_draws: Vec::new(), laid_out_for: ((0, 0), 0.0, None), is_modal: false, pose: None, viewport: None }
+        PageUi { page, runtime, input: Input::new(), kept: KeptFrame::default(), draws: Vec::new(), above_children: None, top_draws: Vec::new(), laid_out_for: ((0, 0), 0.0, None), is_modal: false, pose: None, viewport: None }
     }
 
     /// A page from what `gogo_ui::build_pages` wrote when the program was
     /// built.
-    pub fn from_static(page: &'static StaticPage) -> HostedPage {
-        HostedPage::new(Page::from_static(page))
+    pub fn from_static(page: &'static StaticPage) -> PageUi {
+        PageUi::new(Page::from_static(page))
     }
 
     /// Brings the page in step with its `.gogo` file, when the file says
@@ -521,15 +521,31 @@ impl HostedPage {
     /// arrangement, an anim), and for an event with no named node above
     /// it.
     pub fn handler_name(&self, event: &Event) -> Option<&str> {
+        self.handler_name_id(event).map(|id| self.page.str(id))
+    }
+
+    /// `handler_name` as id of that name in page's strings.
+    ///
+    /// Needed so an engine finds a page's handler by number: by text, 30
+    /// handler names cost 15 to 22 ns an event (measured, release build).
+    pub fn handler_name_id(&self, event: &Event) -> Option<StrId> {
+        self.handler_name_id_with(event, |name| self.page.str(name).contains('/'))
+    }
+
+    /// `handler_name_id`, with `is_inside_widget` saying which names belong
+    /// to a node inside a widget (`volume/thumb`): walk passes those.
+    ///
+    /// Needed so a caller with a table by string id reads no name's text.
+    pub fn handler_name_id_with(&self, event: &Event, is_inside_widget: impl Fn(StrId) -> bool) -> Option<StrId> {
         match event.action {
-            Some(Action::Named(id)) | Some(Action::Emit(id)) => Some(self.page.str(id)),
+            Some(Action::Named(id)) | Some(Action::Emit(id)) => Some(id),
             Some(Action::Go(_)) | Some(Action::ToggleArrangement(_)) | Some(Action::Play(_)) => None,
             None => {
                 let mut at: NodeId = event.node;
                 loop {
                     let node = &self.page.nodes[at.index()];
-                    if node.name != NO_STR && !self.page.str(node.name).contains('/') {
-                        return Some(self.page.str(node.name));
+                    if node.name != NO_STR && !is_inside_widget(node.name) {
+                        return Some(node.name);
                     }
                     if node.parent == NO_NODE {
                         return None;
@@ -542,7 +558,7 @@ impl HostedPage {
 }
 
 #[cfg(feature = "gpu")]
-impl HostedPage {
+impl PageUi {
     /// Draws `node` and everything inside it to a new texture, as the last
     /// `relayout` laid it out. A node that is hidden on screen is drawn
     /// too.
@@ -598,7 +614,7 @@ impl PageId {
 /// The pages of one window, drawn in `order`, bottom first, and touched
 /// from the top.
 pub struct PageStack {
-    pages: Vec<Option<HostedPage>>,
+    pages: Vec<Option<PageUi>>,
     /// The pages that show this frame, bottom first. A page that is not in
     /// it stays alive, and is neither drawn nor touched.
     pub order: Vec<PageId>,
@@ -620,7 +636,7 @@ impl PageStack {
     }
 
     /// Adds a page on top of the order.
-    pub fn add(&mut self, page: HostedPage) -> PageId {
+    pub fn add(&mut self, page: PageUi) -> PageId {
         let id: PageId = match self.pages.iter().position(|slot| slot.is_none()) {
             Some(i) => {
                 self.pages[i] = Some(page);
@@ -650,7 +666,7 @@ impl PageStack {
     }
 
     /// Marks in `live` every picture a page of the stack can show
-    /// (`HostedPage::mark_pictures`). A page out of the order counts: it
+    /// (`PageUi::mark_pictures`). A page out of the order counts: it
     /// comes back without a decode.
     pub fn mark_pictures(&self, live: &mut [bool]) {
         for (_, page) in self.iter() {
@@ -663,33 +679,33 @@ impl PageStack {
     }
 
     /// WARNING: panics for a page that was removed.
-    pub fn get(&self, id: PageId) -> &HostedPage {
+    pub fn get(&self, id: PageId) -> &PageUi {
         self.pages[id.0].as_ref().expect("a live page")
     }
 
     /// WARNING: panics for a page that was removed.
-    pub fn get_mut(&mut self, id: PageId) -> &mut HostedPage {
+    pub fn get_mut(&mut self, id: PageId) -> &mut PageUi {
         self.pages[id.0].as_mut().expect("a live page")
     }
 
     /// Two pages at once.
     ///
     /// WARNING: panics when `a` and `b` are the same page.
-    pub fn get2_mut(&mut self, a: PageId, b: PageId) -> (&mut HostedPage, &mut HostedPage) {
+    pub fn get2_mut(&mut self, a: PageId, b: PageId) -> (&mut PageUi, &mut PageUi) {
         assert_ne!(a, b);
         let (low, high): (usize, usize) = if a.0 < b.0 { (a.0, b.0) } else { (b.0, a.0) };
         let (left, right) = self.pages.split_at_mut(high);
-        let low_page: &mut HostedPage = left[low].as_mut().expect("a live page");
-        let high_page: &mut HostedPage = right[0].as_mut().expect("a live page");
+        let low_page: &mut PageUi = left[low].as_mut().expect("a live page");
+        let high_page: &mut PageUi = right[0].as_mut().expect("a live page");
         if a.0 < b.0 { (low_page, high_page) } else { (high_page, low_page) }
     }
 
     /// Every page of the stack, in no particular order.
-    pub fn iter(&self) -> impl Iterator<Item = (PageId, &HostedPage)> {
+    pub fn iter(&self) -> impl Iterator<Item = (PageId, &PageUi)> {
         self.pages.iter().enumerate().filter_map(|(i, slot)| slot.as_ref().map(|page| (PageId(i), page)))
     }
 
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = (PageId, &mut HostedPage)> {
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (PageId, &mut PageUi)> {
         self.pages.iter_mut().enumerate().filter_map(|(i, slot)| slot.as_mut().map(|page| (PageId(i), page)))
     }
 
@@ -833,7 +849,7 @@ impl PageStack {
     /// covers the point.
     pub fn pick(&self, x: f32, y: f32) -> Option<PageId> {
         self.order.iter().rev().copied().find(|id| {
-            let page: &HostedPage = self.get(*id);
+            let page: &PageUi = self.get(*id);
             page.covers(x, y) && (page.hit(x, y).is_some() || page.is_modal)
         })
     }
@@ -880,7 +896,7 @@ impl PageStack {
             self.touched.push((finger, id));
         }
         let measure: EpxMeasure<'_> = assets.measure(epx);
-        let page: &mut HostedPage = self.get_mut(id);
+        let page: &mut PageUi = self.get_mut(id);
         let events: Vec<Event> = page.input.touch(&page.page, &mut page.runtime, page.kept.frame(), &measure, Touch { phase, x, y, t, id: finger });
         if matches!(phase, Phase::Up | Phase::Cancel) {
             self.touched.retain(|(other, _)| *other != finger);
@@ -917,7 +933,7 @@ impl PageStack {
             None => Vec::new(),
         };
         for id in targets {
-            let page: &mut HostedPage = self.get_mut(id);
+            let page: &mut PageUi = self.get_mut(id);
             let events: Vec<Event> = page.input.key(&mut page.page, &mut page.runtime, page.kept.frame(), key, mods);
             let has_taken_it: bool = page.input.focused().is_some();
             for event in events {
@@ -963,35 +979,35 @@ impl PageStack {
     ///
     /// Returns the events of the control that took it.
     pub fn wheel_to(&mut self, id: PageId, x: f32, y: f32, is_up: bool) -> Vec<Event> {
-        let page: &mut HostedPage = self.get_mut(id);
+        let page: &mut PageUi = self.get_mut(id);
         page.input.wheel(&page.page, &mut page.runtime, page.kept.frame(), x, y, is_up)
     }
 
     /// The text selected on the page that has the keyboard, for a copy.
     pub fn selected_text(&self) -> Option<String> {
         let id: PageId = self.focused()?;
-        let page: &HostedPage = self.get(id);
+        let page: &PageUi = self.get(id);
         page.input.selected_text(&page.page, &page.runtime)
     }
 
     /// Deletes the selection on the page that has the keyboard, for a cut.
     pub fn delete_selection(&mut self) -> Vec<(PageId, Event)> {
         let Some(id) = self.focused() else { return Vec::new() };
-        let page: &mut HostedPage = self.get_mut(id);
+        let page: &mut PageUi = self.get_mut(id);
         page.input.delete_selection(&mut page.page, &mut page.runtime).into_iter().map(|event| (id, event)).collect()
     }
 
     /// Pastes `text` into the page that has the keyboard.
     pub fn paste(&mut self, text: &str) -> Vec<(PageId, Event)> {
         let Some(id) = self.focused() else { return Vec::new() };
-        let page: &mut HostedPage = self.get_mut(id);
+        let page: &mut PageUi = self.get_mut(id);
         page.input.paste(&mut page.page, &mut page.runtime, text).into_iter().map(|event| (id, event)).collect()
     }
 
     /// Selects all the text of the field that has the keyboard.
     pub fn select_all_focused(&mut self) {
         if let Some(id) = self.focused() {
-            let page: &mut HostedPage = self.get_mut(id);
+            let page: &mut PageUi = self.get_mut(id);
             page.input.select_all(&page.page, &mut page.runtime);
         }
     }

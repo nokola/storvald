@@ -20,7 +20,7 @@ default = ["window"]
 ui = ["dep:gogo-text"]
 # A GPU device with no window (`Gpu`), and pages drawn to a `Picture`.
 # Takes `ui` with it.
-gpu = ["ui", "dep:gogo-wgpu", "dep:png", "dep:pollster", "dep:wgpu"]
+gpu = ["ui", "dep:gogo-wgpu", "dep:log", "dep:png", "dep:pollster", "dep:wgpu"]
 # Pages in a window (`start`). Takes `gpu` with it.
 window = ["gpu", "dep:winit"]
 # A page that comes from a file follows that file while the program runs.
@@ -36,6 +36,8 @@ hot-reload = ["gogo-ui/hot-reload"]
 gogo-text = { path = "../gogo-text", version = "0.5.0", optional = true }
 gogo-ui = { path = "../gogo-ui", version = "0.5.0" }
 gogo-wgpu = { path = "../gogo-wgpu", version = "0.5.0", optional = true }
+# Says why a GPU start changed course (`gpu_start`).
+log = { version = "0.4.34", optional = true }
 # Writes a page's picture as a PNG file.
 png = { version = "0.18.1", optional = true }
 pollster = { version = "1.0.1", optional = true }

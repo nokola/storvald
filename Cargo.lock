@@ -2065,6 +2065,7 @@ dependencies = [
  "gogo-text",
  "gogo-ui",
  "gogo-wgpu",
+ "log",
  "png",
  "pollster",
  "wgpu",

@@ -10,7 +10,7 @@ use gogo_ui::reload::{BuildTables, Reloader, Sources};
 use gogo_ui::{Draw, Event, ImageKey, Images, Key, MOUSE_ID, Mods, NodeId, Orientation, Phase, Rect, ScreenClass};
 
 use crate::page::{Back, Host, IntoPage, Nav, PageKind, PageObject, Request};
-use crate::pages::{HostedPage, ImageTable, PageId, PagePlatform, PagePose, PageStack, UiAssets};
+use crate::pages::{PageUi, ImageTable, PageId, PagePlatform, PagePose, PageStack, UiAssets};
 
 /// Time an opened page takes to slide in.
 const OPEN_SLIDE_SEC: f32 = 0.3;
@@ -184,12 +184,12 @@ impl<A: 'static> Program<A> {
     }
 
     /// Page on screen: its nodes, texts, rows, rectangles.
-    pub fn ui(&self) -> &HostedPage {
+    pub fn ui(&self) -> &PageUi {
         self.stack.get(self.top())
     }
 
     /// Page on screen, to write into from outside a page.
-    pub fn ui_mut(&mut self) -> &mut HostedPage {
+    pub fn ui_mut(&mut self) -> &mut PageUi {
         let top: PageId = self.top();
         self.stack.get_mut(top)
     }
@@ -288,9 +288,17 @@ impl<A: 'static> Program<A> {
             self.size = (width, height);
             self.platform.set_screen_and_insets([0.0; 4], Orientation::from_view(width, height), ScreenClass::from_view(width, height));
         }
-        for (_, page) in self.stack.iter_mut() {
-            if let Err(why) = page.refresh(&mut self.reload) {
-                eprintln!("the saved page cannot be shown, keeping the last one:\n{why}");
+        for (id, page_ui) in self.stack.iter_mut() {
+            match page_ui.refresh(&mut self.reload) {
+                // Saved file gave page new strings: handler names sit at
+                // other ids.
+                Ok(true) => {
+                    if let Some(object) = self.objects[id.index()].as_mut() {
+                        object.read_handler_names(page_ui);
+                    }
+                }
+                Ok(false) => {}
+                Err(why) => eprintln!("the saved page cannot be shown, keeping the last one:\n{why}"),
             }
         }
         let is_sliding: bool = self.move_slides(dt);
@@ -451,11 +459,12 @@ impl<A: 'static> Program<A> {
 
     /// Makes a page from its compiled file and calls its `loaded`. Page
     /// lands on top of draw order.
-    fn make(&mut self, page: Box<dyn PageObject<A>>) -> PageId {
-        let mut hosted: HostedPage = HostedPage::new(self.reload.open(page.built()));
+    fn make(&mut self, mut page: Box<dyn PageObject<A>>) -> PageId {
+        let mut page_ui: PageUi = PageUi::new(self.reload.open(page.built()));
+        page.read_handler_names(&page_ui);
         // Plays each visible node's `on:show` once.
-        hosted.runtime.play_entrances(&hosted.page);
-        let id: PageId = self.stack.add(hosted);
+        page_ui.runtime.play_entrances(&page_ui.page);
+        let id: PageId = self.stack.add(page_ui);
         if self.objects.len() <= id.index() {
             self.objects.resize_with(id.index() + 1, || None);
             self.is_kind_checked.resize(id.index() + 1, false);
@@ -628,7 +637,7 @@ impl<A: 'static> Program<A> {
     fn check_page_kinds(&mut self) {
         for i in 1..self.back_stack.len() {
             let id: PageId = self.back_stack[i];
-            let page: &HostedPage = self.stack.get(id);
+            let page: &PageUi = self.stack.get(id);
             let is_still: bool = page.kept.is_laid_out() && page.pose.is_none() && !page.runtime.is_moving();
             if self.is_kind_checked[id.index()] || !is_still {
                 continue;
@@ -652,7 +661,7 @@ impl<A: 'static> Program<A> {
 impl<A> gogo_wgpu::DrawLists for Program<A> {
     fn for_each_list<'a>(&'a self, f: &mut dyn FnMut(&[Draw], &'a gogo_ui::Page)) {
         for id in &self.stack.order {
-            let page: &'a HostedPage = self.stack.get(*id);
+            let page: &'a PageUi = self.stack.get(*id);
             for draws in [self.layer_draws[id.index()].as_slice(), page.draws.as_slice()] {
                 match page.pose {
                     _ if draws.is_empty() => {}
@@ -678,7 +687,7 @@ mod tests {
     }
 
     fn slide_at(kind: SlideKind, elapsed_sec: f32) -> Slide {
-        Slide { page: PageStack::new().add(HostedPage::new(gogo_ui::compile("View v", &|_| None).page)), kind, elapsed_sec }
+        Slide { page: PageStack::new().add(PageUi::new(gogo_ui::compile("View v", &|_| None).page)), kind, elapsed_sec }
     }
 
     /// Opened page starts 60 epx to the right and clear, ends in place and

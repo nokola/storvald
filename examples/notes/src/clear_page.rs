@@ -15,8 +15,6 @@ impl Page<AppState> for ClearPage {
     /// Root is see-through: home page stays drawn under this page.
     const KIND: PageKind = PageKind::Overlay;
 
-    fn show(&mut self, _host: &mut Host<AppState>) {}
-
     fn handle(&mut self, host: &mut Host<AppState>, event: PageEvent<Handler>) {
         match event.handler {
             Handler::ClearAll => {

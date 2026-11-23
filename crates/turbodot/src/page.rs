@@ -2,11 +2,11 @@
 
 use std::any::{Any, TypeId};
 
-use gogo_ui::{Draw, Event, EventKind, HandlerName, NodeId, StaticPage};
+use gogo_ui::{Draw, Event, EventKind, HandlerName, NodeId, StaticPage, StrId};
 
 #[cfg(feature = "gpu")]
 use crate::gpu::Gpu;
-use crate::pages::HostedPage;
+use crate::pages::PageUi;
 
 /// Page as build compiled it from its `.gogo` file: `PAGE` of page's
 /// module in `ui`.
@@ -44,7 +44,7 @@ pub struct PageEvent<H> {
     /// What happened, with its value: slider's new value, finger's place.
     pub kind: EventKind,
     /// Node it happened on. In a list: the row's own node;
-    /// `HostedPage::row_key` gives the item.
+    /// `PageUi::row_key` gives the item.
     pub node: NodeId,
 }
 
@@ -56,7 +56,7 @@ pub struct Host<'a, A = ()> {
     /// Program-wide state, reached by every page.
     pub app: &'a mut A,
     /// The page being called: its nodes, texts, rows, rectangles.
-    pub ui: &'a mut HostedPage,
+    pub ui: &'a mut PageUi,
     /// Opens another page, asks for back.
     pub nav: &'a mut Nav<A>,
 }
@@ -158,8 +158,10 @@ pub trait Page<A = ()>: Sized + 'static {
     /// Writes program's data into page: texts, rows, selection.
     ///
     /// Called each time page comes into view: on open, and when page above
-    /// it left.
-    fn show(&mut self, host: &mut Host<'_, A>);
+    /// it left. Page with nothing to write leaves it out.
+    fn show(&mut self, host: &mut Host<'_, A>) {
+        let _ = host;
+    }
 
     /// Says what one user action means.
     fn handle(&mut self, host: &mut Host<'_, A>, event: PageEvent<Self::Handler>);
@@ -220,7 +222,9 @@ pub trait CachedPage<A = ()>: Sized + 'static {
     const DRAWS_GPU_PICTURE: bool = false;
 
     /// As `Page::show`.
-    fn show(&mut self, host: &mut Host<'_, A>);
+    fn show(&mut self, host: &mut Host<'_, A>) {
+        let _ = host;
+    }
 
     /// As `Page::handle`.
     fn handle(&mut self, host: &mut Host<'_, A>, event: PageEvent<Self::Handler>);
@@ -266,12 +270,17 @@ pub(crate) trait PageObject<A> {
     /// True when page cached on back (`CachedPage`).
     fn is_cached_page(&self) -> bool;
     fn kind(&self) -> PageKind;
+    /// Read by debug build's check of page's kind alone.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
     fn draws_gpu_picture(&self) -> bool;
     #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
     fn gpu_draw_textures(&mut self, host: &mut Host<'_, A>, gpu: &Gpu);
     #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
     fn gpu_draw_screen(&self, host: &Host<'_, A>, layers: &mut Layers<'_>);
     fn show(&mut self, host: &mut Host<'_, A>);
+    /// Reads page's handler names from `ui` (`HandlerTable`). Called when
+    /// page is made and when a saved file replaced its strings.
+    fn read_handler_names(&mut self, ui: &PageUi);
     /// Hands `event` to page under handler name from page's file. Event
     /// with no handler name is not for code.
     fn handle(&mut self, host: &mut Host<'_, A>, event: &Event);
@@ -286,14 +295,57 @@ pub(crate) trait PageObject<A> {
     fn page(&self) -> &dyn Any;
 }
 
-/// Handler `event` is for, in page's own enum.
-fn handler_of<H: HandlerName>(ui: &HostedPage, event: &Event) -> Option<H> {
-    ui.handler_name(event).and_then(H::from_name)
+/// Page's handlers by id of their names in page's strings.
+///
+/// Needed so finding an event's handler compares no handler name as
+/// text: one table read an event. By text, 30 handler names cost 15 to
+/// 22 ns an event (measured, release build).
+///
+/// Read when page is made, again when a saved file replaces page's
+/// strings (hot reload). String made later names no handler.
+pub(crate) struct HandlerTable<H> {
+    /// What each of page's strings is as a node's name, by string index.
+    by_string_index: Vec<NameUse<H>>,
 }
 
-pub(crate) struct Plain<P>(pub P);
+/// What one string is as a node's name.
+#[derive(Clone, Copy)]
+enum NameUse<H> {
+    Handler(H),
+    NoHandler,
+    /// Name of a node inside a widget (`volume/thumb`): event's handler
+    /// is named by a node above it.
+    InsideWidget,
+}
 
-impl<A: 'static, P: Page<A>> PageObject<A> for Plain<P> {
+impl<H: HandlerName> HandlerTable<H> {
+    pub(crate) fn new() -> HandlerTable<H> {
+        HandlerTable { by_string_index: Vec::new() }
+    }
+
+    /// Reads handler names from strings of `ui`.
+    fn read(&mut self, ui: &PageUi) {
+        self.by_string_index.clear();
+        self.by_string_index.extend(ui.page.strings.iter().map(|string| match H::from_name(string) {
+            Some(handler) => NameUse::Handler(handler),
+            None if string.contains('/') => NameUse::InsideWidget,
+            None => NameUse::NoHandler,
+        }));
+    }
+
+    /// Handler `event` is for, in page's own enum.
+    fn handler_of(&self, ui: &PageUi, event: &Event) -> Option<H> {
+        let name: StrId = ui.handler_name_id_with(event, |name| matches!(self.by_string_index.get(name.index()), Some(NameUse::InsideWidget)))?;
+        match self.by_string_index.get(name.index()) {
+            Some(NameUse::Handler(handler)) => Some(*handler),
+            _ => None,
+        }
+    }
+}
+
+pub(crate) struct Plain<P, H>(pub P, pub HandlerTable<H>);
+
+impl<A: 'static, P: Page<A>> PageObject<A> for Plain<P, P::Handler> {
     fn built(&self) -> &'static BuiltPage {
         P::PAGE
     }
@@ -318,8 +370,11 @@ impl<A: 'static, P: Page<A>> PageObject<A> for Plain<P> {
     fn show(&mut self, host: &mut Host<'_, A>) {
         self.0.show(host);
     }
+    fn read_handler_names(&mut self, ui: &PageUi) {
+        self.1.read(ui);
+    }
     fn handle(&mut self, host: &mut Host<'_, A>, event: &Event) {
-        if let Some(handler) = handler_of::<P::Handler>(host.ui, event) {
+        if let Some(handler) = self.1.handler_of(host.ui, event) {
             self.0.handle(host, PageEvent { handler, kind: event.kind, node: event.node });
         }
     }
@@ -338,9 +393,9 @@ impl<A: 'static, P: Page<A>> PageObject<A> for Plain<P> {
     }
 }
 
-pub(crate) struct Cached<P>(pub P);
+pub(crate) struct Cached<P, H>(pub P, pub HandlerTable<H>);
 
-impl<A: 'static, P: CachedPage<A>> PageObject<A> for Cached<P> {
+impl<A: 'static, P: CachedPage<A>> PageObject<A> for Cached<P, P::Handler> {
     fn built(&self) -> &'static BuiltPage {
         P::PAGE
     }
@@ -365,8 +420,11 @@ impl<A: 'static, P: CachedPage<A>> PageObject<A> for Cached<P> {
     fn show(&mut self, host: &mut Host<'_, A>) {
         self.0.show(host);
     }
+    fn read_handler_names(&mut self, ui: &PageUi) {
+        self.1.read(ui);
+    }
     fn handle(&mut self, host: &mut Host<'_, A>, event: &Event) {
-        if let Some(handler) = handler_of::<P::Handler>(host.ui, event) {
+        if let Some(handler) = self.1.handler_of(host.ui, event) {
             self.0.handle(host, PageEvent { handler, kind: event.kind, node: event.node });
         }
     }
@@ -411,13 +469,13 @@ pub struct PageBox<A>(pub(crate) Box<dyn PageObject<A>>);
 
 impl<A: 'static, P: Page<A>> IntoPage<A, AsPage> for P {
     fn into_page_object(self) -> PageBox<A> {
-        PageBox(Box::new(Plain(self)))
+        PageBox(Box::new(Plain::<P, P::Handler>(self, HandlerTable::new())))
     }
 }
 
 impl<A: 'static, P: CachedPage<A>> IntoPage<A, AsCachedPage> for P {
     fn into_page_object(self) -> PageBox<A> {
-        PageBox(Box::new(Cached(self)))
+        PageBox(Box::new(Cached::<P, P::Handler>(self, HandlerTable::new())))
     }
 }
 
@@ -478,6 +536,89 @@ impl<A: 'static> Nav<A> {
     /// Does nothing while page cache is off, or when page of that type is
     /// alive already.
     pub fn preload_if_cache_enabled<P: CachedPage<A>>(&mut self, page: P) {
-        self.requests.push(Request::Preload(Box::new(Cached(page))));
+        self.requests.push(Request::Preload(Box::new(Cached::<P, P::Handler>(page, HandlerTable::new()))));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gogo_ui::page::Action;
+
+    use super::*;
+
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    enum Handler {
+        Save,
+        CloseNote,
+    }
+
+    impl HandlerName for Handler {
+        fn from_name(name: &str) -> Option<Handler> {
+            match name {
+                "save" => Some(Handler::Save),
+                "closeNote" => Some(Handler::CloseNote),
+                _ => None,
+            }
+        }
+    }
+
+    /// `save` is wired by its own name, `x` by `on:`, `other` names no
+    /// handler.
+    const BUTTONS: &str = "Button save text=\"Save\"\n        Button x text=\"Close\", on:activate=closeNote\n        Button other text=\"Other\"\n";
+
+    /// Page with `BUTTONS` after `lines_before`.
+    fn page_ui(lines_before: &str) -> PageUi {
+        let text: String = format!("View root {{\n    Column col {{\n        {lines_before}{BUTTONS}    }}\n}}\n");
+        let compiled = gogo_ui::compile(&text, &|_| None);
+        assert!(!gogo_ui::has_errors(&compiled.diags), "{:?}", compiled.diags);
+        PageUi::new(compiled.page)
+    }
+
+    /// Tap's event on node `name`, with node's `on:` action when `is_wired`.
+    fn tap_on(ui: &PageUi, name: &str, is_wired: bool) -> Event {
+        let action: Option<Action> = if is_wired { ui.page.handlers.iter().map(|handler| handler.action).find(|action| matches!(action, Action::Named(_))) } else { None };
+        assert_eq!(action.is_some(), is_wired);
+        Event { node: ui.page.find(name).expect("the node"), kind: EventKind::Activate, action }
+    }
+
+    fn handlers_of(table: &HandlerTable<Handler>, ui: &PageUi) -> [Option<Handler>; 3] {
+        [table.handler_of(ui, &tap_on(ui, "save", false)), table.handler_of(ui, &tap_on(ui, "x", true)), table.handler_of(ui, &tap_on(ui, "other", false))]
+    }
+
+    #[test]
+    fn an_event_finds_its_handler_by_number() {
+        let ui: PageUi = page_ui("");
+        let mut table: HandlerTable<Handler> = HandlerTable::new();
+        table.read(&ui);
+        assert_eq!(handlers_of(&table, &ui), [Some(Handler::Save), Some(Handler::CloseNote), None]);
+    }
+
+    /// Hot reload: saved file with a new line before the buttons moves
+    /// handler names to other string ids.
+    #[test]
+    fn a_saved_file_with_new_strings_has_its_handler_names_read_again() {
+        let before: PageUi = page_ui("");
+        let saved: PageUi = page_ui("Label title text=\"A new line\"\n        ");
+        assert_ne!(before.handler_name_id(&tap_on(&before, "save", false)), saved.handler_name_id(&tap_on(&saved, "save", false)), "the save moved the name's id");
+        let mut table: HandlerTable<Handler> = HandlerTable::new();
+        table.read(&before);
+        assert_ne!(handlers_of(&table, &saved), [Some(Handler::Save), Some(Handler::CloseNote), None], "the table of the file before the save is wrong for the saved one");
+        table.read(&saved);
+        assert_eq!(handlers_of(&table, &saved), [Some(Handler::Save), Some(Handler::CloseNote), None]);
+    }
+    /// Event on a node inside a widget is for handler named like the
+    /// widget's own node: walk passes names inside it (`save/track`).
+    #[test]
+    fn an_event_inside_a_widget_is_for_the_widgets_own_name() {
+        const WIDGET: &str = "control Handle {\n    Layers width=90, height=30 {\n        slot track width=fill, height=fill { Rectangle width=fill, height=fill, color=#333333FF }\n    }\n}\nView root {\n    Column col {\n        Handle save\n    }\n}\n";
+        let compiled = gogo_ui::compile(WIDGET, &|_| None);
+        assert!(!gogo_ui::has_errors(&compiled.diags), "{:?}", compiled.diags);
+        let ui: PageUi = PageUi::new(compiled.page);
+        let inside: usize = ui.page.nodes.iter().position(|node| ui.page.str(node.name).contains('/')).expect("a named node inside the widget");
+        let mut table: HandlerTable<Handler> = HandlerTable::new();
+        table.read(&ui);
+        let event: Event = Event { node: NodeId::from_index(inside), kind: EventKind::Activate, action: None };
+        assert_eq!(table.handler_of(&ui, &event), Some(Handler::Save), "node `{}`", ui.page.str(ui.page.nodes[inside].name));
+        assert_eq!(ui.handler_name(&event), Some("save"));
     }
 }

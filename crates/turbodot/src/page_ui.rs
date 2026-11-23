@@ -5,12 +5,12 @@ use std::fmt::Write as _;
 use gogo_ui::runtime::{Item, ItemKey, Resolved};
 use gogo_ui::{Event, Kind, NO_NODE, NO_STR, NodeId, Rect};
 
-use crate::pages::HostedPage;
+use crate::pages::PageUi;
 
 /// Distance one notch of a mouse wheel moves a scrolling box, in epx.
 const WHEEL_NOTCH_EPX: f32 = 48.0;
 
-impl HostedPage {
+impl PageUi {
     /// Node the page's file names `name`.
     ///
     /// WARNING: panics when page has no such node. Page built with the
