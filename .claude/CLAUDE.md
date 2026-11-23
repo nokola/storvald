@@ -29,8 +29,9 @@ The rules, each loaded with this file:
 - `rules/working.md`: what was asked, commits, proof, build and test.
 
 The skills (`skills/`): `explain-comments` for every comment, `doc` for
-docs and explanations, `make-todo` for trackers, `wait-what` when the
-user says a message did not land.
+docs and explanations, `make-todo` for trackers, `noise-free-copy` for
+copy people read on a page, `wait-what` when the user says a message did
+not land.
 
 ## Gogo UI language — main goals (read every time)
 

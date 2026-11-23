@@ -12,6 +12,7 @@ const BUNDLED: &[(&str, &str)] = &[
     ("doc", include_str!("../skills/doc/SKILL.md")),
     ("explain-comments", include_str!("../skills/explain-comments/SKILL.md")),
     ("make-todo", include_str!("../skills/make-todo/SKILL.md")),
+    ("noise-free-copy", include_str!("../skills/noise-free-copy/SKILL.md")),
 ];
 
 /// One skill: instructions an AI agent follows for one kind of work.
