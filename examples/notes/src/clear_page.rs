@@ -4,6 +4,8 @@
 use turbodot::prelude::*;
 
 use crate::AppState;
+use crate::dropped_page::DroppedPage;
+use crate::home_page::HomePage;
 use crate::ui::clear_page::{Handler, PAGE};
 
 #[derive(Default)]
@@ -19,9 +21,18 @@ impl Page<AppState> for ClearPage {
         match event.handler {
             Handler::ClearAll => {
                 host.app.notes.clear();
-                host.nav.back();
+                // Home page shows under this page: it writes its list
+                // again now, not when it comes back on top.
+                host.nav.tell::<HomePage>(|home, host| home.show(host));
+                // Next dialog takes this one's place: back from it
+                // returns to home page.
+                host.nav.replace(DroppedPage);
             }
             Handler::KeepNotes => host.nav.back(),
         }
+    }
+
+    fn left(&mut self, host: &mut Host<AppState>) {
+        host.app.page_log.push("clear left");
     }
 }

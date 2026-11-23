@@ -5,6 +5,10 @@ View editPage background=$back, padding=16 {
     Column spacing=10, width=fill {
         Label title text="", font_size=24, font_color=$ink
         Label hint text="Save keeps this note. Back drops it.", font_color=$dim
+        // What user types is the note. Left empty, the note takes its
+        // number as its text.
+        Input noteText .Plain placeholder_text="What to remember", width=fill, on:edit=noteEdited
+        Label typedCount text="", font_color=$dim
         Label unsaved text="Not saved. Back again drops this note.", font_color=$warn, visibility=gone
         Row spacing=8 {
             Button saveNote .Plain text="Save"

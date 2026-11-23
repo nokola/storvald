@@ -41,7 +41,7 @@ impl CachedPage<AppState> for SettingsPage {
         // Picture made here: needs no file and no GPU. Engine uploads it
         // when a frame is drawn.
         let pixels: Vec<u8> = MADE_PICTURE_COLOR.repeat((MADE_PICTURE_SIDE_PX * MADE_PICTURE_SIDE_PX) as usize);
-        host.ui.set_picture(NAMES.made_in_code, MADE_PICTURE_SIDE_PX, MADE_PICTURE_SIDE_PX, &pixels);
+        host.ui.set_picture(NAMES.made_in_code, MADE_PICTURE_SIDE_PX, MADE_PICTURE_SIDE_PX, pixels);
     }
 
     fn show(&mut self, host: &mut Host<AppState>) {
@@ -57,5 +57,14 @@ impl CachedPage<AppState> for SettingsPage {
     /// Cached page opens again: takes over opener's value.
     fn reopened(&mut self, fresh: Self) {
         self.note_count = fresh.note_count;
+    }
+
+    fn arrived(&mut self, host: &mut Host<AppState>) {
+        host.app.page_log.push("settings arrived");
+    }
+
+    /// Cached page gets this call too, each time it slid out.
+    fn left(&mut self, host: &mut Host<AppState>) {
+        host.app.page_log.push("settings left");
     }
 }

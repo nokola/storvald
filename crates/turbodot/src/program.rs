@@ -135,6 +135,9 @@ pub struct Program<A = ()> {
     /// next GPU frame.
     #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
     pictures_to_release: Vec<ImageKey>,
+    /// Page on screen that got its `arrived` call. `None` from an open
+    /// or a back until no page slides.
+    arrived: Option<PageId>,
     /// Layers above every page, in the order added (`Nav::add_layer`).
     layers: Vec<PageId>,
     /// By page's id in `stack`: page it is placed in and that page's
@@ -193,6 +196,7 @@ impl<A: 'static> Program<A> {
         let mut program: Program<A> = Program { app, assets, platform, stack: PageStack::new(), objects: Vec::new(), back_stack: Vec::new(), cached: Vec::new(), is_kind_checked: Vec::new(), slides: Vec::new(), nav: Nav::new(), reload, is_screen_from_host: false, epx: 1.0, size: (0.0, 0.0), layer_draws: Vec::new(), picture_keys: Vec::new(),
             pictures_to_release: Vec::new(),
             code_pictures_to_release: Vec::new(),
+            arrived: None,
             layers: Vec::new(),
             placed_in: Vec::new(),
             placed_order: Vec::new(),
@@ -201,7 +205,7 @@ impl<A: 'static> Program<A> {
             has_freed_a_page: false,
             posed: RefCell::new(Vec::new()),
         };
-        program.open(first.into_page_object().0);
+        program.open(first.into_page_object().0, false);
         program.carry_out_requests();
         Ok(program)
     }
@@ -214,6 +218,21 @@ impl<A: 'static> Program<A> {
     /// Program-wide state, to change from outside a page.
     pub fn app_mut(&mut self) -> &mut A {
         &mut self.app
+    }
+
+    /// Program's text engine and picture table.
+    ///
+    /// Needed by a host that lays out pages of its own beside the
+    /// program's (`turbodot::pages`): one renderer draws both, so both
+    /// measure text with one engine and name pictures by one table.
+    pub fn assets(&self) -> &UiAssets {
+        &self.assets
+    }
+
+    /// As `assets`, to add a font or a picture's key from outside a
+    /// page.
+    pub fn assets_mut(&mut self) -> &mut UiAssets {
+        &mut self.assets
     }
 
     /// Page on screen: its nodes, texts, rows, rectangles.
@@ -397,8 +416,10 @@ impl<A: 'static> Program<A> {
             is_page_asking_for_frames |= self.call(id, |page, host| page.frame(host, dt));
         }
         self.carry_out_requests();
-        self.place_code_pictures();
         let is_sliding: bool = self.move_slides(dt);
+        // Slides that ended: `left`, then `arrived` of page on screen.
+        self.carry_out_requests();
+        self.place_code_pictures();
         let size_px: (u32, u32) = (((width * self.epx).round() as u32).max(1), ((height * self.epx).round() as u32).max(1));
         let is_moving: bool = self.frame_pages(dt, size_px);
         #[cfg(debug_assertions)]
@@ -486,7 +507,7 @@ impl<A: 'static> Program<A> {
         }
         // A press no page takes still goes to page whose field holds the
         // text caret, so the field ends its edit.
-        let taker: Option<PageId> = if phase == Phase::Down { self.page_that_takes(x, y).or_else(|| self.stack.caret_holder().map(|(id, _)| id)) } else { self.stack.touched_by(finger) };
+        let taker: Option<PageId> = if phase == Phase::Down { self.page_that_takes(x, y).or_else(|| self.caret_holder().map(|(id, _)| id)) } else { self.stack.touched_by(finger) };
         let Some(id) = taker else { return false };
         let events: EventList = self.stack.touch_to(id, phase, x, y, t, finger, self.epx, &self.assets);
         self.hand_events(id, &events);
@@ -600,13 +621,13 @@ impl<A: 'static> Program<A> {
         }
     }
 
-    /// Calls `show` of page `id`, then of pages placed in it.
-    fn show_with_placed(&mut self, id: PageId) {
-        self.call(id, |page, host| page.show(host));
+    /// Calls `f` with page `id`, then with pages placed in it.
+    fn call_with_placed(&mut self, id: PageId, f: fn(&mut dyn PageObject<A>, &mut Host<'_, A>)) {
+        self.call(id, f);
         for i in 0..self.placed_order.len() {
             let placed: PageId = self.placed_order[i];
             if self.placed_in[placed.index()].is_some_and(|(parent, _)| parent == id) {
-                self.show_with_placed(placed);
+                self.call_with_placed(placed, f);
             }
         }
     }
@@ -672,8 +693,106 @@ impl<A: 'static> Program<A> {
     /// Needed for what opens a page from outside a page: a host that got
     /// a file to show, a test.
     pub fn go<P: IntoPage<A, Kind>, Kind>(&mut self, page: P) {
-        self.open(page.into_page_object().0);
+        self.open(page.into_page_object().0, false);
         self.carry_out_requests();
+    }
+
+    /// Page and field that hold the text caret: where an on-screen
+    /// keyboard types. `None`: no field of a drawn page is being edited.
+    /// Field of a page that another page covers does not count: user
+    /// cannot see what a key would change.
+    ///
+    /// Needed by a host that shows a keyboard: up when this names a
+    /// field, down on `None`, and its text read again (`ime_text`) when
+    /// this names another field.
+    pub fn caret_holder(&self) -> Option<(PageId, NodeId)> {
+        self.stack.order.iter().rev().find_map(|id| self.stack.get(*id).runtime.caret.map(|caret| (*id, caret.0)))
+    }
+
+    /// Page that raised gogo's edit bar (cut, copy, paste) over one of
+    /// its fields, and the field. A finger held still on a field raises
+    /// it.
+    ///
+    /// Needed by a host that draws the bar: it reads field's rectangle
+    /// and selection from `page_ui`.
+    pub fn edit_bar_raised(&self) -> Option<(PageId, NodeId)> {
+        self.stack.edit_bar_raised()
+    }
+
+    /// Takes the edit bar down on whichever page raised it.
+    pub fn dismiss_edit_bar(&mut self) {
+        self.stack.dismiss_edit_bar();
+    }
+
+    /// Live page `id`: its nodes, texts, rectangles. `None`: page was
+    /// freed since `id` was handed out.
+    pub fn page_ui(&self, id: PageId) -> Option<&PageUi> {
+        if self.stack.contains(id) { Some(self.stack.get(id)) } else { None }
+    }
+
+    /// True while a node of a drawn page has the keyboard.
+    ///
+    /// Needed by a host with pages of its own beside the program's: a
+    /// copy or a paste goes to whichever side has the keyboard.
+    pub fn has_focus(&self) -> bool {
+        self.stack.focused().is_some()
+    }
+
+    /// Text selected in field that has the keyboard: what a copy puts on
+    /// the clipboard. gogo reads and writes no clipboard itself.
+    pub fn selected_text(&self) -> Option<String> {
+        self.stack.selected_text()
+    }
+
+    /// Cut: deletes text selected in field that has the keyboard, and
+    /// hands its page the change.
+    ///
+    /// Returns the deleted text, for the clipboard. `None`: nothing was
+    /// selected, nothing changed.
+    pub fn cut_selected_text(&mut self) -> Option<String> {
+        let text: String = self.stack.selected_text()?;
+        let id: PageId = self.stack.focused()?;
+        let page: &mut PageUi = self.stack.get_mut(id);
+        let events: EventList = page.input.delete_selection(&mut page.page, &mut page.runtime);
+        self.hand_events(id, &events);
+        Some(text)
+    }
+
+    /// Paste: writes `text` into field that has the keyboard, in place
+    /// of its selection, and hands its page the change. Does nothing
+    /// when no field has the keyboard.
+    pub fn paste(&mut self, text: &str) {
+        let Some(id) = self.stack.focused() else { return };
+        let page: &mut PageUi = self.stack.get_mut(id);
+        let events: EventList = page.input.paste(&mut page.page, &mut page.runtime, text);
+        self.hand_events(id, &events);
+    }
+
+    /// Selects all text of field that has the keyboard.
+    pub fn select_all(&mut self) {
+        self.stack.select_all_focused();
+    }
+
+    /// Text of field that holds the caret, with its selection as two
+    /// character counts (start, end; equal: caret alone).
+    ///
+    /// Needed by an on-screen keyboard that edits whole text (Android):
+    /// host seeds it from here when a field takes the caret, so
+    /// backspace and autocorrect act on field's real text.
+    pub fn ime_text(&self) -> Option<(String, usize, usize)> {
+        let (id, _) = self.caret_holder()?;
+        let page: &PageUi = self.stack.get(id);
+        page.input.ime_seed(&page.page, &page.runtime)
+    }
+
+    /// Whole text and selection an on-screen keyboard sends after each
+    /// of its edits: written into field that holds the caret, and its
+    /// page is handed the change. Does nothing when no field holds it.
+    pub fn ime_replace(&mut self, text: &str, start: usize, end: usize) {
+        let Some((id, _)) = self.caret_holder() else { return };
+        let page: &mut PageUi = self.stack.get_mut(id);
+        let events: EventList = page.input.ime_replace(&mut page.page, &mut page.runtime, text, start, end);
+        self.hand_events(id, &events);
     }
 
     /// Pages' own GPU drawing for one frame: each drawn page's
@@ -798,12 +917,38 @@ impl<A: 'static> Program<A> {
     }
 
     /// Does what pages asked of `Nav`, in order asked. A page called on the
-    /// way may ask for more.
+    /// way may ask for more. Then tells page on screen that it arrived,
+    /// when it did; what that page asks in turn is carried out too.
     fn carry_out_requests(&mut self) {
+        loop {
+            self.carry_out_asked();
+            if !self.tell_arrival() {
+                return;
+            }
+        }
+    }
+
+    /// Calls `arrived` of page on screen (and of pages placed in it),
+    /// once per arrival: no page slides, and that page has not had the
+    /// call since it came on top.
+    ///
+    /// Returns true when it made the call.
+    fn tell_arrival(&mut self) -> bool {
+        let top: PageId = self.top();
+        if !self.slides.is_empty() || self.arrived == Some(top) {
+            return false;
+        }
+        self.arrived = Some(top);
+        self.call_with_placed(top, |page, host| page.arrived(host));
+        true
+    }
+
+    fn carry_out_asked(&mut self) {
         while !self.nav.requests.is_empty() {
             for request in std::mem::take(&mut self.nav.requests) {
                 match request {
-                    Request::Go(page) => self.open(page),
+                    Request::Go { page, is_instant } => self.open(page, is_instant),
+                    Request::Replace(page) => self.replace(page),
                     Request::Back => {
                         self.back_once();
                     }
@@ -866,9 +1011,17 @@ impl<A: 'static> Program<A> {
         self.has_freed_a_page = true;
     }
 
+    /// Page on screen leaves unasked, `fresh` opens in its place.
+    fn replace(&mut self, fresh: Box<dyn PageObject<A>>) {
+        let leaving: PageId = self.back_stack.pop().expect("a program has a first page");
+        self.slide(leaving, SlideKind::Leave);
+        self.open(fresh, false);
+    }
+
     /// Opens `fresh` over page on screen. Cached page of that type, or one
     /// still sliding out, shows again and takes `fresh` over.
-    fn open(&mut self, fresh: Box<dyn PageObject<A>>) {
+    /// `is_instant`: with no slide in.
+    fn open(&mut self, fresh: Box<dyn PageObject<A>>, is_instant: bool) {
         let cached: Option<PageId> = if fresh.is_cached_page() {
             let page_type: TypeId = fresh.page_type();
             let leaving = self.slides.iter().filter(|slide| slide.kind == SlideKind::Leave).map(|slide| slide.page);
@@ -888,11 +1041,12 @@ impl<A: 'static> Program<A> {
         let has_page_under: bool = !self.back_stack.is_empty();
         self.back_stack.push(id);
         self.stack.get_mut(id).pose = None;
-        if has_page_under {
+        self.arrived = None;
+        if has_page_under && !is_instant {
             self.slide(id, SlideKind::Open);
         }
         self.order_drawn_pages();
-        self.show_with_placed(id);
+        self.call_with_placed(id, |page, host| page.show(host));
     }
 
     /// Makes a cached page ahead of its first open.
@@ -928,7 +1082,7 @@ impl<A: 'static> Program<A> {
         self.slide(revealed, SlideKind::Reveal);
         self.slide(leaving, SlideKind::Leave);
         self.order_drawn_pages();
-        self.show_with_placed(revealed);
+        self.call_with_placed(revealed, |page, host| page.show(host));
         true
     }
 
@@ -958,6 +1112,7 @@ impl<A: 'static> Program<A> {
             match slide.kind {
                 SlideKind::Open | SlideKind::Reveal => {}
                 SlideKind::Leave => {
+                    self.call_with_placed(slide.page, |page, host| page.left(host));
                     let is_cached_page: bool = self.objects[slide.page.index()].as_ref().is_some_and(|object| object.is_cached_page());
                     if is_cached_page && self.nav.is_page_cache_enabled {
                         self.order_remove_with_placed(slide.page);

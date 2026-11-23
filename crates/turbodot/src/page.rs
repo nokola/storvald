@@ -196,6 +196,27 @@ pub trait Page<A = ()>: Sized + 'static {
         false
     }
 
+    /// Called once page is on screen, in place, with no page sliding:
+    /// when its slide in ended (at once for `Nav::go_instantly` and for
+    /// program's first page), and when page above it finished sliding
+    /// out.
+    ///
+    /// Needed for what must wait for the slide: a native view (an ad
+    /// banner) shown at open is on screen a moment before the page it
+    /// belongs to.
+    fn arrived(&mut self, host: &mut Host<'_, A>) {
+        let _ = host;
+    }
+
+    /// Called once page's slide out ended: page is off screen. Cached
+    /// page is cached after this call, any other page is freed.
+    ///
+    /// Needed as page's last call with `host`: what page took for
+    /// itself in program's state goes back here. `Drop` has no `host`.
+    fn left(&mut self, host: &mut Host<'_, A>) {
+        let _ = host;
+    }
+
     /// Answers back request: Android back key, Esc on PC, page's own
     /// `Nav::back`.
     ///
@@ -286,6 +307,16 @@ pub trait CachedPage<A = ()>: Sized + 'static {
         false
     }
 
+    /// As `Page::arrived`.
+    fn arrived(&mut self, host: &mut Host<'_, A>) {
+        let _ = host;
+    }
+
+    /// As `Page::left`.
+    fn left(&mut self, host: &mut Host<'_, A>) {
+        let _ = host;
+    }
+
     /// As `Page::back`.
     fn back(&mut self, host: &mut Host<'_, A>) -> Back {
         let _ = host;
@@ -332,6 +363,8 @@ pub(crate) trait PageObject<A> {
     fn handle(&mut self, host: &mut Host<'_, A>, event: &Event);
     fn loaded(&mut self, host: &mut Host<'_, A>);
     fn frame(&mut self, host: &mut Host<'_, A>, dt_sec: f32) -> bool;
+    fn arrived(&mut self, host: &mut Host<'_, A>);
+    fn left(&mut self, host: &mut Host<'_, A>);
     fn back(&mut self, host: &mut Host<'_, A>) -> Back;
     /// `CachedPage::reopened` with `fresh`: struct of this page's own
     /// type.
@@ -436,6 +469,12 @@ impl<A: 'static, P: Page<A>> PageObject<A> for Plain<P, P::Handler> {
     fn frame(&mut self, host: &mut Host<'_, A>, dt_sec: f32) -> bool {
         self.0.frame(host, dt_sec)
     }
+    fn arrived(&mut self, host: &mut Host<'_, A>) {
+        self.0.arrived(host);
+    }
+    fn left(&mut self, host: &mut Host<'_, A>) {
+        self.0.left(host);
+    }
     fn back(&mut self, host: &mut Host<'_, A>) -> Back {
         self.0.back(host)
     }
@@ -495,6 +534,12 @@ impl<A: 'static, P: CachedPage<A>> PageObject<A> for Cached<P, P::Handler> {
     fn frame(&mut self, host: &mut Host<'_, A>, dt_sec: f32) -> bool {
         self.0.frame(host, dt_sec)
     }
+    fn arrived(&mut self, host: &mut Host<'_, A>) {
+        self.0.arrived(host);
+    }
+    fn left(&mut self, host: &mut Host<'_, A>) {
+        self.0.left(host);
+    }
     fn back(&mut self, host: &mut Host<'_, A>) -> Back {
         self.0.back(host)
     }
@@ -549,7 +594,10 @@ impl<A: 'static, P: CachedPage<A>> IntoPage<A, AsCachedPage> for P {
 /// What a page asked for during a call. Program carries it out when call
 /// returns.
 pub(crate) enum Request<A> {
-    Go(Box<dyn PageObject<A>>),
+    /// Page to open over page on screen. `is_instant`: with no slide.
+    Go { page: Box<dyn PageObject<A>>, is_instant: bool },
+    /// Page to open in place of page on screen.
+    Replace(Box<dyn PageObject<A>>),
     Back,
     Preload(Box<dyn PageObject<A>>),
     /// Page to add as a layer above every page.
@@ -582,7 +630,28 @@ impl<A: 'static> Nav<A> {
     /// Cached `CachedPage` shows again same view, and takes `page` over in
     /// its `reopened`.
     pub fn go<P: IntoPage<A, Kind>, Kind>(&mut self, page: P) {
-        self.requests.push(Request::Go(page.into_page_object().0));
+        self.requests.push(Request::Go { page: page.into_page_object().0, is_instant: false });
+    }
+
+    /// As `go`, with no slide in: `page` is in place on its first frame.
+    /// Back from it slides it out as any page.
+    ///
+    /// Needed where a slide would look like a second step: page that
+    /// takes the place of a "Loading" line.
+    pub fn go_instantly<P: IntoPage<A, Kind>, Kind>(&mut self, page: P) {
+        self.requests.push(Request::Go { page: page.into_page_object().0, is_instant: true });
+    }
+
+    /// Opens `page` in place of page on screen: that page slides out,
+    /// `page` slides in. Back from `page` returns to page under both.
+    ///
+    /// Needed for a dialog that leads to another: user then closes one
+    /// dialog, not a pile of them.
+    ///
+    /// Page on screen is not asked (`Page::back` is not called): user
+    /// made no back request. Its `left` is called when it is off screen.
+    pub fn replace<P: IntoPage<A, Kind>, Kind>(&mut self, page: P) {
+        self.requests.push(Request::Replace(page.into_page_object().0));
     }
 
     /// Adds `page` as a layer: always there, drawn above every page of

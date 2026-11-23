@@ -1,0 +1,10 @@
+// Overlay page: says every note is dropped. The clear page opens it in
+// its own place, so back from here shows the home page.
+uses "look.gogo"
+
+View droppedPage background=black/0.6 {
+    Column box halign=center, valign=center, spacing=12, padding=16, background=$back, corner_radius=8 {
+        Label done text="Every note is dropped.", font_color=$ink
+        Button gotIt .Plain text="OK"
+    }
+}

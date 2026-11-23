@@ -19,6 +19,11 @@ impl Page<AppState> for FooterPage {
         host.ui.set_text(NAMES.note_count, &format!("{} notes", host.app.notes.len()));
     }
 
+    /// Called with the page it sits in.
+    fn arrived(&mut self, host: &mut Host<AppState>) {
+        host.app.page_log.push("footer arrived");
+    }
+
     fn handle(&mut self, host: &mut Host<AppState>, event: PageEvent<Handler>) {
         match event.handler {
             Handler::AddSample => {

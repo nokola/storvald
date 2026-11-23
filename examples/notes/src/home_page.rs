@@ -35,6 +35,12 @@ impl Page<AppState> for HomePage {
         host.ui.set_items(NAMES.notes, &rows).expect("every note has a key of its own");
     }
 
+    /// Page is in place, no page slides: at program start, and when
+    /// page above it finished sliding out.
+    fn arrived(&mut self, host: &mut Host<AppState>) {
+        host.app.page_log.push("home arrived");
+    }
+
     /// One call per user action.
     fn handle(&mut self, host: &mut Host<AppState>, event: PageEvent<Handler>) {
         match event.handler {

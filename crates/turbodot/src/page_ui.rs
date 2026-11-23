@@ -42,13 +42,17 @@ impl PageUi {
     /// screen at the next frame drawn on a GPU; with no GPU only the
     /// size shows.
     ///
-    /// Page keeps a copy of the bytes for this node: next picture of the
-    /// same size for the same node allocates nothing. Picture that
+    /// Page takes `rgba` over, with no copy, and keeps it while it
+    /// lives: a renderer made new gets the pixels again. Picture that
     /// changes every frame: draw it on the GPU instead
-    /// (`Page::gpu_draw_screen`), which copies nothing.
+    /// (`Page::gpu_draw_screen`), which keeps nothing.
     ///
     /// WARNING: panics when `rgba` is not `width * height * 4` bytes long.
-    pub fn set_picture(&mut self, node: NodeId, width: u32, height: u32, rgba: &[u8]) {
+    ///
+    /// Returns buffer of the picture `node` showed before, empty for
+    /// its first picture. Page that fills it for its next picture
+    /// allocates nothing.
+    pub fn set_picture(&mut self, node: NodeId, width: u32, height: u32, rgba: Vec<u8>) -> Vec<u8> {
         let byte_count: usize = width as usize * height as usize * 4;
         assert_eq!(rgba.len(), byte_count, "set_picture: {width} x {height} pixels are {byte_count} bytes (4 a pixel, R G B A), and `rgba` holds {}", rgba.len());
         let at: usize = match self.code_pictures.iter().position(|picture| picture.node == node) {
@@ -61,10 +65,9 @@ impl PageUi {
         let picture: &mut CodePicture = &mut self.code_pictures[at];
         picture.width = width;
         picture.height = height;
-        picture.rgba.clear();
-        picture.rgba.extend_from_slice(rgba);
         picture.is_size_new = true;
         picture.is_uploaded = false;
+        std::mem::replace(&mut picture.rgba, rgba)
     }
 
     /// Shows or hides `node`. Hidden node takes no space and no touch.
@@ -216,19 +219,25 @@ mod tests {
         (ui, node)
     }
 
-    /// Second picture of same size for same node goes into memory page
-    /// already holds: no allocation. Other node gets its own.
+    /// Page takes picture's bytes over with no copy, and hands back
+    /// buffer of the picture before: page that fills it for its next
+    /// picture allocates nothing.
     #[test]
-    fn a_second_picture_for_a_node_takes_no_new_memory() {
+    fn a_page_takes_a_pictures_bytes_over_and_hands_back_the_buffer_before() {
         let (mut ui, node) = page_with_an_image();
-        ui.set_picture(node, 2, 1, &[1, 2, 3, 4, 5, 6, 7, 8]);
-        let memory: *const u8 = ui.code_pictures[0].rgba.as_ptr();
+        let first: Vec<u8> = vec![1, 2, 3, 4, 5, 6, 7, 8];
+        let first_memory: *const u8 = first.as_ptr();
+        assert!(ui.set_picture(node, 2, 1, first).is_empty(), "node's first picture replaces none");
+        assert_eq!(ui.code_pictures[0].rgba.as_ptr(), first_memory, "page holds caller's own buffer: no copy");
         ui.code_pictures[0].is_size_new = false;
         ui.code_pictures[0].is_uploaded = true;
-        ui.set_picture(node, 1, 2, &[9, 9, 9, 9, 8, 8, 8, 8]);
+        let second: Vec<u8> = vec![9, 9, 9, 9, 8, 8, 8, 8];
+        let second_memory: *const u8 = second.as_ptr();
+        let handed_back: Vec<u8> = ui.set_picture(node, 1, 2, second);
+        assert_eq!(handed_back.as_ptr(), first_memory, "first picture's buffer comes back");
         assert_eq!(ui.code_pictures.len(), 1, "one picture per node");
         let picture: &CodePicture = &ui.code_pictures[0];
-        assert_eq!(picture.rgba.as_ptr(), memory, "same memory");
+        assert_eq!(picture.rgba.as_ptr(), second_memory, "page holds the second buffer: no copy");
         assert_eq!((picture.width, picture.height, &picture.rgba[..]), (1, 2, &[9, 9, 9, 9, 8, 8, 8, 8][..]));
         assert!(picture.is_size_new && !picture.is_uploaded, "to place and to upload again");
     }
@@ -239,6 +248,6 @@ mod tests {
     #[should_panic(expected = "set_picture: 2 x 2 pixels are 16 bytes")]
     fn a_picture_with_the_wrong_count_of_bytes_is_refused() {
         let (mut ui, node) = page_with_an_image();
-        ui.set_picture(node, 2, 2, &[0; 12]);
+        ui.set_picture(node, 2, 2, vec![0; 12]);
     }
 }

@@ -6,6 +6,7 @@
 //! - `edit_page`: a new note. Asks once before back drops it.
 //! - `settings_page`: cached page. Later open shows same view.
 //! - `clear_page`: overlay page. Home page stays in view under it.
+//! - `dropped_page`: overlay page that takes the clear page's place.
 //! - `paper_page`: page with a GPU picture of its own under its nodes.
 //! - `footer_page`: page placed inside the home page and the edit page.
 //! - `toast_page`: layer above every page, shows a line for a moment.
@@ -13,6 +14,7 @@
 //! Run it with `cargo run -p turbodot-example-notes`. Esc is back.
 
 mod clear_page;
+mod dropped_page;
 mod edit_page;
 mod footer_page;
 mod home_page;
@@ -34,6 +36,9 @@ pub struct AppState {
     /// Count of frames paper page did its GPU drawing for. A test reads
     /// it: engine skips that drawing while another page covers the page.
     pub paper_frames_drawn: u32,
+    /// What pages wrote when they arrived and when they left, in order.
+    /// A test reads it.
+    pub page_log: Vec<&'static str>,
 }
 
 /// Opens window on home page, stays until window is closed. Debug build:
@@ -53,15 +58,17 @@ mod tests {
 
     use super::*;
     use crate::clear_page::ClearPage;
+    use crate::dropped_page::DroppedPage;
     use crate::edit_page::EditPage;
     use crate::footer_page::FooterPage;
     use crate::toast_page::{TOAST_SEC, ToastPage};
     use crate::paper_page::{LINE, LINE_EVERY_TEXELS, PAPER, PAPER_SIDE_TEXELS, PaperPage};
     use crate::settings_page::{MADE_PICTURE_COLOR, MADE_PICTURE_SIDE_PX, SettingsPage};
-    use crate::ui::{clear_page, edit_page, footer_page, home_page, settings_page, toast_page};
+    use crate::ui::{clear_page, dropped_page, edit_page, footer_page, home_page, settings_page, toast_page};
 
     const HOME: home_page::Names = home_page::NAMES;
     const CLEAR: clear_page::Names = clear_page::NAMES;
+    const DROPPED: dropped_page::Names = dropped_page::NAMES;
     const EDIT: edit_page::Names = edit_page::NAMES;
     const SETTINGS: settings_page::Names = settings_page::NAMES;
     const FOOTER: footer_page::Names = footer_page::NAMES;
@@ -244,7 +251,210 @@ mod tests {
         let_the_slides_end(&mut program);
         program.tap(CLEAR.clear_all, 4.0);
         assert!(program.app().notes.is_empty());
+        let_the_slides_end(&mut program);
+        program.tap(DROPPED.got_it, 5.0);
         assert_eq!(program.ui().rows(HOME.notes).len(), 0, "home page wrote its list again");
+    }
+
+    /// Page opened in place of another: that one leaves unasked, and
+    /// back from the new page shows the page under both.
+    ///
+    /// Needed for a dialog that leads to another: user closes one
+    /// dialog, not a pile.
+    #[test]
+    fn a_page_opened_in_place_of_another_takes_its_place() {
+        let mut program: Program<AppState> = started(AppState { notes: vec!["Note 1".to_string()], ..AppState::default() });
+        let live_at_home: usize = program.live_page_count();
+        program.tap(HOME.clear_notes, 1.0);
+        let_the_slides_end(&mut program);
+
+        program.tap(CLEAR.clear_all, 2.0);
+        assert!(program.page::<DroppedPage>().is_some(), "the new page is on screen");
+        assert_eq!(program.depth(), 2, "in the clear page's place, not over it");
+        assert!(program.is_sliding() && program.is_drawn::<ClearPage>(), "the clear page slides out");
+        let_the_slides_end(&mut program);
+        assert!(!program.is_drawn::<ClearPage>());
+        assert_eq!(program.live_page_count(), live_at_home + 1, "the clear page is freed");
+        assert_eq!(program.app().page_log.last(), Some(&"clear left"), "its `left` ran, with no back request asked of it");
+
+        assert!(program.back());
+        assert!(program.page::<HomePage>().is_some(), "back shows the page under both");
+        assert_eq!(program.ui().rows(HOME.notes).len(), 0, "which the clear page told to write its list again");
+    }
+
+    /// Page is told when it arrived (in place, no page sliding) and when
+    /// it left (off screen), with pages placed in it. Cached page too.
+    ///
+    /// Needed for what must wait for a slide's end: a native view shown
+    /// at open is on screen before the page it belongs to.
+    #[test]
+    fn a_page_is_told_when_it_arrived_and_when_it_left() {
+        let mut program: Program<AppState> = started(AppState::default());
+        assert_eq!(program.app().page_log, ["home arrived", "footer arrived"], "first page arrives with no slide");
+
+        program.app_mut().page_log.clear();
+        program.tap(HOME.add_note, 1.0);
+        frame(&mut program, 0.016);
+        assert_eq!(program.app().page_log, [""; 0], "nothing while the edit page slides in");
+        let_the_slides_end(&mut program);
+        assert_eq!(program.app().page_log, ["edit arrived", "footer arrived"], "at its slide's end, with its own footer");
+
+        program.app_mut().page_log.clear();
+        program.back();
+        program.back();
+        frame(&mut program, 0.016);
+        assert_eq!(program.app().page_log, [""; 0], "nothing while it slides out");
+        let_the_slides_end(&mut program);
+        assert_eq!(program.app().page_log, ["edit left", "home arrived", "footer arrived"], "page that left first, then page that shows");
+
+        // Back before the slide in ended: page never arrived, and home
+        // page arrives again.
+        program.app_mut().page_log.clear();
+        program.tap(HOME.add_note, 2.0);
+        frame(&mut program, 0.016);
+        program.back();
+        program.back();
+        let_the_slides_end(&mut program);
+        assert_eq!(program.app().page_log, ["edit left", "home arrived", "footer arrived"]);
+
+        // Cached page: `left` each time it slid out, and it stays cached.
+        program.app_mut().page_log.clear();
+        open_settings(&mut program, 3.0);
+        program.back();
+        let_the_slides_end(&mut program);
+        assert_eq!(program.app().page_log, ["settings arrived", "settings left", "home arrived", "footer arrived"]);
+        assert_eq!(program.cached_page_count(), 1);
+    }
+
+    /// Page opened instantly is in place at once: no slide in. Back
+    /// slides it out as any page.
+    ///
+    /// Needed where a slide would look like a second step: page that
+    /// takes the place of a "Loading" line.
+    #[test]
+    fn a_page_opened_instantly_does_not_slide_in() {
+        /// `clear_page.gogo` as a first page: "Drop all" opens the clear
+        /// page with no slide.
+        struct FlipPage;
+        impl Page<AppState> for FlipPage {
+            const PAGE: &'static BuiltPage = &clear_page::PAGE;
+            type Handler = clear_page::Handler;
+            fn handle(&mut self, host: &mut Host<AppState>, event: PageEvent<clear_page::Handler>) {
+                match event.handler {
+                    clear_page::Handler::ClearAll => host.nav.go_instantly(ClearPage),
+                    clear_page::Handler::KeepNotes => {}
+                }
+            }
+        }
+        let mut program: Program<AppState> = Program::new(&crate::ui::BUILT, AppState::default(), FlipPage).expect("the pages can be shown");
+        frame(&mut program, 0.0);
+        program.tap(CLEAR.clear_all, 1.0);
+        assert!(program.page::<ClearPage>().is_some());
+        assert!(!program.is_sliding(), "in place at once");
+        assert!(program.back());
+        assert!(program.is_sliding(), "back slides it out");
+    }
+
+    /// First page answers a back request like any page: it may use the
+    /// request itself. `Program::back` says false only when first page
+    /// said it leaves: then host does its own step (a phone puts the
+    /// program in background).
+    #[test]
+    fn the_first_page_can_use_a_back_request_before_the_host_does() {
+        /// `clear_page.gogo` as a first page with a panel that back
+        /// closes first.
+        struct PanelPage {
+            is_panel_open: bool,
+        }
+        impl Page<AppState> for PanelPage {
+            const PAGE: &'static BuiltPage = &clear_page::PAGE;
+            type Handler = clear_page::Handler;
+            fn handle(&mut self, _host: &mut Host<AppState>, _event: PageEvent<clear_page::Handler>) {}
+            fn back(&mut self, _host: &mut Host<AppState>) -> Back {
+                if !self.is_panel_open {
+                    return Back::Leave;
+                }
+                self.is_panel_open = false;
+                Back::Stay
+            }
+        }
+        let mut program: Program<AppState> = Program::new(&crate::ui::BUILT, AppState::default(), PanelPage { is_panel_open: true }).expect("the pages can be shown");
+        frame(&mut program, 0.0);
+        assert!(program.back(), "first page used the request: host does nothing");
+        assert!(!program.page::<PanelPage>().expect("the first page").is_panel_open);
+        assert!(!program.back(), "first page leaves: host's turn");
+        assert!(!program.back(), "and again, each time");
+        assert_eq!(program.depth(), 1, "first page stays");
+        assert!(program.page::<PanelPage>().is_some());
+    }
+
+    /// Host of a program reads which field is being edited, feeds it an
+    /// on-screen keyboard's text, cuts, copies and pastes, and reads
+    /// where the edit bar belongs: all without the page's own code.
+    ///
+    /// Needed on a phone: keyboard, clipboard and edit bar are the
+    /// host's, the field is a page's.
+    #[test]
+    fn a_host_reaches_the_field_a_user_edits() {
+        let mut program: Program<AppState> = started(AppState::default());
+        program.tap(HOME.add_note, 1.0);
+        let_the_slides_end(&mut program);
+        frame(&mut program, 0.016);
+        assert_eq!((program.caret_holder(), program.has_focus(), program.ime_text()), (None, false, None), "no field is being edited");
+
+        program.tap(EDIT.note_text, 2.0);
+        let (page, field) = program.caret_holder().expect("the tapped field holds the caret");
+        assert_eq!(field, EDIT.note_text);
+        assert!(program.has_focus());
+        assert_eq!(program.page_ui(page).expect("the edit page").rect(field), program.ui().rect(EDIT.note_text), "host reads the field's place");
+        assert_eq!(program.ime_text(), Some((String::new(), 0, 0)));
+
+        // On-screen keyboard sends whole text with its caret.
+        program.ime_replace("milk and eggs", 13, 13);
+        assert_eq!(program.ui().text_of(EDIT.note_text), Some("milk and eggs"));
+        assert_eq!(program.ui().text_of(EDIT.typed_count), Some("13 characters"), "the page was handed the change");
+        assert_eq!(program.ime_text(), Some(("milk and eggs".to_string(), 13, 13)));
+
+        // Copy, cut, paste.
+        assert_eq!(program.selected_text(), None);
+        program.select_all();
+        assert_eq!(program.selected_text().as_deref(), Some("milk and eggs"));
+        assert_eq!(program.cut_selected_text().as_deref(), Some("milk and eggs"));
+        assert_eq!(program.ui().text_of(EDIT.note_text), Some(""));
+        assert_eq!(program.ui().text_of(EDIT.typed_count), Some("0 characters"));
+        assert_eq!(program.cut_selected_text(), None, "nothing selected, nothing cut");
+        program.paste("bread");
+        assert_eq!(program.ui().text_of(EDIT.note_text), Some("bread"));
+        assert_eq!(program.ui().text_of(EDIT.typed_count), Some("5 characters"));
+
+        // Finger held still on the field raises the edit bar.
+        frame(&mut program, 0.016);
+        assert_eq!(program.edit_bar_raised(), None);
+        let place: Rect = program.ui().rect(EDIT.note_text);
+        let (x, y): (f32, f32) = (place.x + 12.0, place.y + place.h / 2.0);
+        assert!(program.touch_finger(Phase::Down, x, y, 3.0, 7));
+        for _ in 0..4 {
+            frame(&mut program, 0.2);
+        }
+        assert_eq!(program.edit_bar_raised(), Some((page, EDIT.note_text)));
+        program.touch_finger(Phase::Up, x, y, 3.8, 7);
+        program.dismiss_edit_bar();
+        assert_eq!(program.edit_bar_raised(), None);
+
+        // Page covered by another: its field holds no caret for the
+        // host, so the keyboard goes down. Back in view: it does again.
+        program.go(SettingsPage::new(0));
+        let_the_slides_end(&mut program);
+        assert_eq!((program.caret_holder(), program.ime_text()), (None, None), "the edit page is covered");
+        program.back();
+        let_the_slides_end(&mut program);
+        assert_eq!(program.caret_holder(), Some((page, EDIT.note_text)));
+
+        // What user typed is the note.
+        program.tap(EDIT.save_note, 5.0);
+        assert_eq!(program.app().notes, ["bread"]);
+        let_the_slides_end(&mut program);
+        assert_eq!(program.caret_holder(), None, "the freed page holds no caret");
     }
 
     /// A fullscreen page over an overlay covers both pages under it,
@@ -570,7 +780,7 @@ mod tests {
         let side: f32 = MADE_PICTURE_SIDE_PX as f32;
         let made: Rect = program.ui().rect(SETTINGS.made_in_code);
         assert_eq!((made.w, made.h), (side, side), "the size the page's code said");
-        program.ui_mut().set_picture(SETTINGS.made_in_code, 20, 6, &[0xFF; 20 * 6 * 4]);
+        program.ui_mut().set_picture(SETTINGS.made_in_code, 20, 6, vec![0xFF; 20 * 6 * 4]);
         frame(&mut program, 0.016);
         let made: Rect = program.ui().rect(SETTINGS.made_in_code);
         assert_eq!((made.w, made.h), (20.0, 6.0), "the second picture's size");
@@ -597,7 +807,7 @@ mod tests {
         }
 
         let red: Vec<u8> = RED.repeat((MADE_PICTURE_SIDE_PX * MADE_PICTURE_SIDE_PX) as usize);
-        program.ui_mut().set_picture(SETTINGS.made_in_code, MADE_PICTURE_SIDE_PX, MADE_PICTURE_SIDE_PX, &red);
+        program.ui_mut().set_picture(SETTINGS.made_in_code, MADE_PICTURE_SIDE_PX, MADE_PICTURE_SIDE_PX, red);
         frame(&mut program, 0.016);
         let picture: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
         assert_eq!(picture.at(x, y), RED, "the second picture in the first one's place");
@@ -611,6 +821,21 @@ mod tests {
         let (x, y): (u32, u32) = center(program.ui().rect(SETTINGS.made_in_code));
         let picture: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
         assert_eq!(picture.at(x, y), MADE_PICTURE_COLOR, "the page made again shows its own picture");
+    }
+
+    /// Host reaches the text engine and the picture table the program's
+    /// pages use, and adds a picture's key of its own there.
+    ///
+    /// Needed by a host with pages of its own beside the program's: one
+    /// renderer draws both.
+    #[test]
+    fn a_host_reaches_the_programs_picture_table() {
+        let mut program: Program<AppState> = started(AppState::default());
+        assert!(program.assets().images.get("res://assets/note.png").is_some(), "a picture a page names");
+        let before: usize = program.assets().images.len();
+        let key = program.assets_mut().images.intern("host://its-own-picture");
+        assert_eq!(program.assets().images.len(), before + 1);
+        assert_eq!(program.assets().images.name(key), "host://its-own-picture");
     }
 
     /// Picture loads late only when every line that names it says
