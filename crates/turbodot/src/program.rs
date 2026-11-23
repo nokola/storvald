@@ -186,6 +186,16 @@ impl<A: 'static> Program<A> {
         Program::with_reloader(built, app, first, reloader)
     }
 
+    /// As `following_page_files`, for files in `folder`, which need not
+    /// be where build read them, in any build with cargo feature
+    /// `hot-reload`.
+    ///
+    /// Needed on a phone: its pages' files are where a PC pushes each
+    /// save, and its build is not a debug build.
+    pub fn following_page_files_in<P: IntoPage<A, Kind>, Kind>(built: &'static Built, app: A, first: P, folder: &Path) -> Result<Program<A>, String> {
+        Program::with_reloader(built, app, first, Reloader::new(built.tables, Sources::dir(folder)))
+    }
+
     fn with_reloader<P: IntoPage<A, Kind>, Kind>(built: &'static Built, app: A, first: P, reload: Reloader) -> Result<Program<A>, String> {
         if built.fonts.is_empty() {
             return Err("no page names a font, so no text can be drawn: write `theme { font = \"res://assets/<file>.ttf\" }` in a page".to_string());
@@ -344,6 +354,19 @@ impl<A: 'static> Program<A> {
     /// True while a page is on its way in or out.
     pub fn is_sliding(&self) -> bool {
         !self.slides.is_empty()
+    }
+
+    /// True while a fullscreen page is in place: nothing under the
+    /// program's pages shows. False while that page slides: what is
+    /// under it shows through.
+    ///
+    /// Needed by host that draws under the program (a painting): it
+    /// skips that drawing while this says true.
+    ///
+    /// First page counts by its `KIND` like any page: see-through
+    /// first page says `PageKind::Overlay`.
+    pub fn covers_screen(&self) -> bool {
+        self.back_stack.iter().any(|id| self.page_covers_screen(*id))
     }
 
     /// Frees every cached page. Next open makes it again.
@@ -675,11 +698,17 @@ impl<A: 'static> Program<A> {
 
     /// Mouse moved with no button held: node under it shows its `when
     /// hovered` look.
-    pub fn hover(&mut self, x: f32, y: f32) {
-        if self.stack.get(self.top()).kept.is_laid_out() {
-            let under_mouse: Option<PageId> = self.page_that_takes(x, y);
-            self.stack.hover(under_mouse, x, y);
+    ///
+    /// Returns false when no page is under the mouse (as a touch there
+    /// would go on to the host): host with pages of its own under the
+    /// program's hands them the move.
+    pub fn hover(&mut self, x: f32, y: f32) -> bool {
+        if !self.stack.get(self.top()).kept.is_laid_out() {
+            return false;
         }
+        let under_mouse: Option<PageId> = self.page_that_takes(x, y);
+        self.stack.hover(under_mouse, x, y);
+        under_mouse.is_some()
     }
 
     /// Mouse left the window: nothing is hovered.
@@ -701,10 +730,16 @@ impl<A: 'static> Program<A> {
 
     /// Mouse wheel turned by `notches` at (`x`, `y`) over page on screen.
     /// Positive count: turn away from user.
-    pub fn wheel(&mut self, x: f32, y: f32, notches: f32) {
-        let under_mouse: PageId = self.page_that_takes(x, y).unwrap_or(self.top());
+    ///
+    /// Returns false when no page is under the mouse: page on screen
+    /// got the turn all the same, and host with pages of its own under
+    /// the program's hands them the turn too.
+    pub fn wheel(&mut self, x: f32, y: f32, notches: f32) -> bool {
+        let taker: Option<PageId> = self.page_that_takes(x, y);
+        let under_mouse: PageId = taker.unwrap_or(self.top());
         let events: EventList = self.stack.get_mut(under_mouse).wheel(x, y, notches);
         self.hand_events(under_mouse, &events);
+        taker.is_some()
     }
 
     /// Opens `page` over page on screen, as `Nav::go` from a page does.
@@ -1028,6 +1063,9 @@ impl<A: 'static> Program<A> {
         // Plays each visible node's `on:show` once.
         page_ui.runtime.play_entrances(&page_ui.page);
         page_ui.is_modal = page.takes_every_touch();
+        // Screen's facts and language, before page's `loaded`: what
+        // page's code writes there is in that language.
+        self.platform.apply(&page_ui.page, &mut page_ui.runtime);
         let id: PageId = self.stack.add(page_ui);
         if self.objects.len() <= id.index() {
             self.objects.resize_with(id.index() + 1, || None);
@@ -1063,8 +1101,30 @@ impl<A: 'static> Program<A> {
     /// Page on screen leaves unasked, `fresh` opens in its place.
     fn replace(&mut self, fresh: Box<dyn PageObject<A>>) {
         let leaving: PageId = self.back_stack.pop().expect("a program has a first page");
-        self.slide(leaving, SlideKind::Leave);
+        if self.slides_in_and_out(leaving) {
+            self.slide(leaving, SlideKind::Leave);
+        } else {
+            self.end_leave(leaving);
+        }
         self.open(fresh, false);
+    }
+
+    /// True for page that slides in and out (`Page::SLIDES`).
+    fn slides_in_and_out(&self, id: PageId) -> bool {
+        self.objects[id.index()].as_ref().is_some_and(|object| object.slides())
+    }
+
+    /// Page `id` is off screen for good: its `left`, then cached page
+    /// is cached, any other page freed.
+    fn end_leave(&mut self, id: PageId) {
+        self.call_with_placed(id, |page, host| page.left(host));
+        let is_cached_page: bool = self.objects[id.index()].as_ref().is_some_and(|object| object.is_cached_page());
+        if is_cached_page && self.nav.is_page_cache_enabled {
+            self.order_remove_with_placed(id);
+            self.cached.push(id);
+        } else {
+            self.free(id);
+        }
     }
 
     /// Opens `fresh` over page on screen. Cached page of that type, or one
@@ -1091,7 +1151,7 @@ impl<A: 'static> Program<A> {
         self.back_stack.push(id);
         self.stack.get_mut(id).pose = None;
         self.arrived = None;
-        if has_page_under && !is_instant {
+        if has_page_under && !is_instant && self.slides_in_and_out(id) {
             self.slide(id, SlideKind::Open);
         }
         self.order_drawn_pages();
@@ -1128,8 +1188,17 @@ impl<A: 'static> Program<A> {
         }
         let leaving: PageId = self.back_stack.pop().expect("two pages");
         let revealed: PageId = self.top();
-        self.slide(revealed, SlideKind::Reveal);
-        self.slide(leaving, SlideKind::Leave);
+        let is_sliding_out: bool = self.slides_in_and_out(leaving);
+        let is_overlay: bool = self.objects[leaving.index()].as_ref().is_some_and(|object| object.kind() == PageKind::Overlay);
+        // Page under an overlay never left the screen: it stays as it is.
+        if is_sliding_out && !is_overlay {
+            self.slide(revealed, SlideKind::Reveal);
+        }
+        if is_sliding_out {
+            self.slide(leaving, SlideKind::Leave);
+        } else {
+            self.end_leave(leaving);
+        }
         self.order_drawn_pages();
         self.call_with_placed(revealed, |page, host| page.show(host));
         true
@@ -1160,16 +1229,7 @@ impl<A: 'static> Program<A> {
         for slide in ended {
             match slide.kind {
                 SlideKind::Open | SlideKind::Reveal => {}
-                SlideKind::Leave => {
-                    self.call_with_placed(slide.page, |page, host| page.left(host));
-                    let is_cached_page: bool = self.objects[slide.page.index()].as_ref().is_some_and(|object| object.is_cached_page());
-                    if is_cached_page && self.nav.is_page_cache_enabled {
-                        self.order_remove_with_placed(slide.page);
-                        self.cached.push(slide.page);
-                    } else {
-                        self.free(slide.page);
-                    }
-                }
+                SlideKind::Leave => self.end_leave(slide.page),
             }
         }
         // A fullscreen page in place now covers what is under it.
@@ -1179,7 +1239,7 @@ impl<A: 'static> Program<A> {
 
     /// True when page `id` hides everything under it: fullscreen page, in
     /// place. A page still sliding in fades in, so what is under it shows.
-    fn covers_screen(&self, id: PageId) -> bool {
+    fn page_covers_screen(&self, id: PageId) -> bool {
         let is_fullscreen: bool = self.objects[id.index()].as_ref().is_some_and(|object| object.kind() == PageKind::Fullscreen);
         is_fullscreen && !self.slides.iter().any(|slide| slide.page == id)
     }
@@ -1190,7 +1250,7 @@ impl<A: 'static> Program<A> {
     /// Needed so a page under a fullscreen page costs no drawing, and a
     /// page under an overlay keeps showing.
     fn order_drawn_pages(&mut self) {
-        let lowest_drawn: usize = (0..self.back_stack.len()).rev().find(|i| self.covers_screen(self.back_stack[*i])).unwrap_or(0);
+        let lowest_drawn: usize = (0..self.back_stack.len()).rev().find(|i| self.page_covers_screen(self.back_stack[*i])).unwrap_or(0);
         for i in 0..self.back_stack.len() {
             let id: PageId = self.back_stack[i];
             if i < lowest_drawn {

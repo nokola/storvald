@@ -44,14 +44,18 @@ fn still_pages_a_mouse_move_and_a_slide_allocate_nothing() {
     let list: Rect = program.ui().rect(skills_page::NAMES.skill_list);
     program.hover(list.x + 20.0, list.y + 20.0);
     frame(&mut program);
-    assert_eq!(allocations_of(|| program.hover(list.x + 24.0, list.y + 22.0)), 0, "a move of the mouse inside one row");
+    assert_eq!(allocations_of(|| {
+        program.hover(list.x + 24.0, list.y + 22.0);
+    }), 0, "a move of the mouse inside one row");
     assert_eq!(allocations_of(|| frame(&mut program)), 0, "a frame after that move");
     // Move onto another row changes which row looks hovered. First such
     // move makes gogo's list of state changes long enough, once.
     program.hover(list.x + 20.0, list.y + 60.0);
     frame(&mut program);
     frame(&mut program);
-    let onto_another_row: u64 = allocations_of(|| program.hover(list.x + 20.0, list.y + 100.0));
+    let onto_another_row: u64 = allocations_of(|| {
+        program.hover(list.x + 20.0, list.y + 100.0);
+    });
     let frame_after: u64 = allocations_of(|| frame(&mut program));
     assert_eq!((onto_another_row, frame_after), (0, 0), "a move of the mouse onto another row, and the frame after it");
     assert_eq!(allocations_of(|| frame(&mut program)), 0, "the next frame");

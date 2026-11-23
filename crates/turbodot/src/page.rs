@@ -162,6 +162,15 @@ pub trait Page<A = ()>: Sized + 'static {
     /// painting): host hands that surface the fingers no button took.
     /// Any other page keeps a tap beside its buttons to itself.
     const TAKES_EVERY_TOUCH: bool = true;
+    /// False for page that comes and goes at once: in place on its
+    /// first frame, off screen the moment it leaves, and page under it
+    /// does not slide back in.
+    ///
+    /// Needed for a dialog whose file plays its own entrance
+    /// (`on:show`): with engine's slide on top, dialog moves twice.
+    ///
+    /// Its `left` is called before page under it hears `show`.
+    const SLIDES: bool = true;
 
     /// Writes program's data into page: texts, rows, selection.
     ///
@@ -271,6 +280,8 @@ pub trait CachedPage<A = ()>: Sized + 'static {
     /// painting): host hands that surface the fingers no button took.
     /// Any other page keeps a tap beside its buttons to itself.
     const TAKES_EVERY_TOUCH: bool = true;
+    /// As `Page::SLIDES`.
+    const SLIDES: bool = true;
 
     /// As `Page::show`.
     fn show(&mut self, host: &mut Host<'_, A>) {
@@ -347,6 +358,8 @@ pub(crate) trait PageObject<A> {
     fn kind(&self) -> PageKind;
     /// True for page that takes a touch on none of its nodes.
     fn takes_every_touch(&self) -> bool;
+    /// True for page that slides in and out.
+    fn slides(&self) -> bool;
     /// Read by debug build's check of page's kind alone.
     #[cfg_attr(not(debug_assertions), allow(dead_code))]
     fn draws_gpu_picture(&self) -> bool;
@@ -443,6 +456,9 @@ impl<A: 'static, P: Page<A>> PageObject<A> for Plain<P, P::Handler> {
     fn takes_every_touch(&self) -> bool {
         P::TAKES_EVERY_TOUCH
     }
+    fn slides(&self) -> bool {
+        P::SLIDES
+    }
     fn draws_gpu_picture(&self) -> bool {
         P::DRAWS_GPU_PICTURE
     }
@@ -507,6 +523,9 @@ impl<A: 'static, P: CachedPage<A>> PageObject<A> for Cached<P, P::Handler> {
     }
     fn takes_every_touch(&self) -> bool {
         P::TAKES_EVERY_TOUCH
+    }
+    fn slides(&self) -> bool {
+        P::SLIDES
     }
     fn draws_gpu_picture(&self) -> bool {
         P::DRAWS_GPU_PICTURE

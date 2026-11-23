@@ -355,6 +355,152 @@ mod tests {
         assert!(program.is_sliding(), "back slides it out");
     }
 
+    /// Program follows its pages' files in a folder its host names: a
+    /// save there shows in the open page.
+    ///
+    /// Needed on a phone, where the files are not where build read
+    /// them.
+    #[test]
+    fn a_program_follows_page_files_in_a_folder_its_host_names() {
+        let folder = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/notes_pages_followed"));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).expect("a folder for the pages' files");
+        for entry in std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/ui")).expect("the pages' folder") {
+            let path = entry.expect("a file").path();
+            std::fs::copy(&path, folder.join(path.file_name().expect("a file name"))).expect("the file is copied");
+        }
+        let mut program: Program<AppState> = Program::following_page_files_in(&crate::ui::BUILT, AppState::default(), HomePage, &folder).expect("the pages can be shown");
+        frame(&mut program, 0.0);
+        assert_eq!(program.ui().text_of(HOME.title), Some("Notes"));
+
+        let file = folder.join("home_page.gogo");
+        let saved: String = std::fs::read_to_string(&file).expect("the home page's file").replace("text=\"Notes\"", "text=\"My notes\"");
+        std::fs::write(&file, saved).expect("the save");
+        for _ in 0..200 {
+            std::thread::sleep(std::time::Duration::from_millis(25));
+            frame(&mut program, 0.016);
+            if program.ui().text_of(HOME.title) == Some("My notes") {
+                return;
+            }
+        }
+        panic!("the save did not show within five seconds: the title reads {:?}", program.ui().text_of(HOME.title));
+    }
+
+    /// `clear_page.gogo` as a dialog that does not slide. "Drop all"
+    /// opens the dropped page in its place.
+    struct QuickPage;
+    impl Page<AppState> for QuickPage {
+        const PAGE: &'static BuiltPage = &clear_page::PAGE;
+        type Handler = clear_page::Handler;
+        const KIND: PageKind = PageKind::Overlay;
+        const SLIDES: bool = false;
+        fn handle(&mut self, host: &mut Host<AppState>, event: PageEvent<clear_page::Handler>) {
+            match event.handler {
+                clear_page::Handler::ClearAll => host.nav.replace(DroppedPage),
+                clear_page::Handler::KeepNotes => host.nav.back(),
+            }
+        }
+        fn left(&mut self, host: &mut Host<AppState>) {
+            host.app.page_log.push("quick left");
+        }
+    }
+
+    /// Page that says it does not slide is in place at once and gone at
+    /// once, on back and when another page takes its place.
+    ///
+    /// Needed for a dialog whose file plays its own entrance: with
+    /// engine's slide on top, dialog moves twice.
+    #[test]
+    fn a_page_that_does_not_slide_comes_and_goes_at_once() {
+        let mut program: Program<AppState> = started(AppState::default());
+        let live_at_home: usize = program.live_page_count();
+        program.go(QuickPage);
+        assert!(program.page::<QuickPage>().is_some());
+        assert!(!program.is_sliding(), "in place at once");
+        frame(&mut program, 0.016);
+
+        program.tap(CLEAR.keep_notes, 1.0);
+        assert!(program.page::<HomePage>().is_some());
+        assert!(!program.is_sliding(), "gone at once, and the page under it does not move");
+        assert_eq!(program.live_page_count(), live_at_home, "freed at once");
+        assert!(program.app().page_log.contains(&"quick left"), "its `left` ran");
+
+        program.go(QuickPage);
+        frame(&mut program, 0.016);
+        program.tap(CLEAR.clear_all, 2.0);
+        assert!(program.page::<DroppedPage>().is_some(), "the dropped page takes its place");
+        assert_eq!(program.live_page_count(), live_at_home + 1, "the quick page is freed at once");
+        assert!(program.is_sliding(), "the dropped page slides in as any page");
+    }
+
+    /// Page under a leaving overlay stays where it is: it never left the
+    /// screen. Page under a leaving fullscreen page slides back in.
+    #[test]
+    fn the_page_under_a_leaving_overlay_does_not_slide() {
+        let mut program: Program<AppState> = started(AppState { notes: vec!["Note 1".to_string()], ..AppState::default() });
+        program.tap(HOME.clear_notes, 1.0);
+        let_the_slides_end(&mut program);
+        program.tap(CLEAR.keep_notes, 2.0);
+        assert!(program.is_sliding(), "the overlay slides out");
+        assert!(program.page::<HomePage>().is_some() && program.ui().pose.is_none(), "the home page under it stays in place");
+        let_the_slides_end(&mut program);
+
+        open_settings(&mut program, 3.0);
+        assert!(program.back());
+        assert!(program.page::<HomePage>().is_some() && program.ui().pose.is_some(), "under a fullscreen page it slides back in");
+    }
+
+    /// Mouse move and wheel turn say whether a page is under the mouse,
+    /// as a touch does.
+    ///
+    /// Needed by host with pages of its own under the program's: on
+    /// false it hands them the move.
+    #[test]
+    fn the_mouse_says_whether_a_page_is_under_it() {
+        let middle = |rect: Rect| -> (f32, f32) { (rect.x + rect.w / 2.0, rect.y + rect.h / 2.0) };
+        let mut program: Program<AppState> = started(AppState::default());
+        let (x, y): (f32, f32) = middle(program.ui().rect(HOME.title));
+        assert!(program.hover(x, y), "a page that takes every touch is under the mouse everywhere");
+        assert!(program.wheel(x, y, 1.0));
+
+        program.tap(HOME.open_paper, 2.0);
+        let_the_slides_end(&mut program);
+        let (x, y): (f32, f32) = middle(program.ui().rect(crate::ui::paper_page::NAMES.hint));
+        assert!(!program.hover(x, y), "the mouse over the paper is the host's");
+        assert!(!program.wheel(x, y, 1.0));
+        let (x, y): (f32, f32) = middle(program.ui().rect(crate::ui::paper_page::NAMES.go_back));
+        assert!(program.hover(x, y), "over the page's button it is the page's");
+        assert!(program.wheel(x, y, 1.0));
+    }
+
+    /// Program says when a fullscreen page is in place: nothing under
+    /// its pages shows then.
+    ///
+    /// Needed by host that draws under the program: it skips that
+    /// drawing meanwhile.
+    #[test]
+    fn a_program_says_when_it_covers_what_is_under_it() {
+        /// `clear_page.gogo` as a see-through first page.
+        struct GlassPage;
+        impl Page<AppState> for GlassPage {
+            const PAGE: &'static BuiltPage = &clear_page::PAGE;
+            type Handler = clear_page::Handler;
+            const KIND: PageKind = PageKind::Overlay;
+            fn handle(&mut self, _host: &mut Host<AppState>, _event: PageEvent<clear_page::Handler>) {}
+        }
+        let mut program: Program<AppState> = Program::new(&crate::ui::BUILT, AppState::default(), GlassPage).expect("the pages can be shown");
+        frame(&mut program, 0.0);
+        assert!(!program.covers_screen(), "a see-through first page covers nothing");
+        program.go(SettingsPage::new(0));
+        assert!(!program.covers_screen(), "a page that slides in lets what is under it show");
+        let_the_slides_end(&mut program);
+        assert!(program.covers_screen(), "in place, it covers");
+        assert!(program.back());
+        assert!(!program.covers_screen(), "on its way out it covers no more");
+
+        assert!(started(AppState::default()).covers_screen(), "a fullscreen first page covers");
+    }
+
     /// First page answers a back request like any page: it may use the
     /// request itself. `Program::back` says false only when first page
     /// said it leaves: then host does its own step (a phone puts the
@@ -762,6 +908,8 @@ mod tests {
 
         program.tap(HOME.add_note, 1.0);
         assert!(program.page::<EditPage>().is_some());
+        assert!(program.ui().runtime.locale.is_some(), "a page has the language from the moment it is made: its `loaded` writes in it");
+        assert_eq!(program.ui().runtime.safe, SAFE, "and the insets");
         program.frame(300.0, 900.0, 0.016);
         assert_eq!(program.ui().runtime.safe, SAFE, "page opened later");
         assert!(program.ui().runtime.locale.is_some(), "page opened later");
