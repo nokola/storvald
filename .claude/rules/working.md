@@ -13,8 +13,11 @@
 
 ## Commits
 
-The user commits and pushes. Leave the change in the working tree and
-say what is in it. Hand over a commit message when asked.
+Claude adds, commits and pushes its own finished, checked work, and
+says what went in.
+
+- Add by path. Another session may have uncommitted files here.
+- No force-push. No rewrite of a pushed commit.
 
 ## Proof
 
