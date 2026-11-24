@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use gogo_text::TextEngine;
 use gogo_ui::reload::{BuildTables, Reloader, Sources};
-use gogo_ui::{Buttons, Draw, Event, EventList, Hook, ImageKey, Key, Locale, Mods, NodeId, Orientation, Phase, PropKey, Rect, ScreenClass, Touch, Value};
+use gogo_ui::{Buttons, CapturedMouse, Draw, Event, EventList, Hook, ImageKey, Key, Locale, MOUSE_ID, Mods, NodeId, Orientation, Phase, PropKey, Rect, ScreenClass, Touch, Value};
 
 use crate::page::{Back, Host, IntoPage, Nav, PageKind, PageObject, Request};
 use crate::pages::{PageUi, PageId, PagePlatform, PagePose, PageStack, UiAssets};
@@ -67,6 +67,16 @@ struct PageOnItsWay {
     way: Way,
 }
 
+/// The Surface that has the mouse, while it has it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct CapturedBy {
+    page: PageId,
+    surface: NodeId,
+    /// Where the mouse was when it was captured, in epx: every sample
+    /// of a captured mouse says this place.
+    at: (f32, f32),
+}
+
 /// A program's pages, run with no window and no GPU.
 ///
 /// Needed so same pages run in a window (`start`), in a test and under an
@@ -106,6 +116,13 @@ pub struct Program<A = ()> {
     epx: f32,
     /// Mouse buttons down, as `mouse_button` was told.
     mouse_buttons: Buttons,
+    /// Where the mouse is, as `mouse_moved` and `mouse_button` were
+    /// told, in epx.
+    mouse_at: (f32, f32),
+    /// Surface that has the mouse (`is_mouse_captured`).
+    captured: Option<CapturedBy>,
+    /// As `set_window_focused` was told. True until told otherwise.
+    is_window_focused: bool,
     /// `on:hover=` events of one mouse move, each with its page. Kept
     /// between moves: a move allocates nothing.
     hover_events: Vec<(PageId, Event)>,
@@ -188,7 +205,7 @@ impl<A: 'static> Program<A> {
         let fonts: Vec<(&str, Vec<u8>)> = built.fonts.iter().map(|(key, bytes)| (*key, bytes.to_vec())).collect();
         let assets: UiAssets = UiAssets::new(TextEngine::new(&fonts), crate::pictures::image_table(built.tables, built.release_unused));
         let platform: PagePlatform = PagePlatform::new([0.0; 4], Orientation::from_view(1.0, 1.0), ScreenClass::from_view(1.0, 1.0), None);
-        let mut program: Program<A> = Program { app, assets, platform, stack: PageStack::new(), objects: Vec::new(), back_stack: Vec::new(), cached: Vec::new(), is_kind_checked: Vec::new(), has_played_entrances: Vec::new(), on_their_way: Vec::new(), nav: Nav::new(), reload, is_screen_from_host: false, epx: 1.0, mouse_buttons: Buttons::NONE, hover_events: Vec::new(), size: (0.0, 0.0),
+        let mut program: Program<A> = Program { app, assets, platform, stack: PageStack::new(), objects: Vec::new(), back_stack: Vec::new(), cached: Vec::new(), is_kind_checked: Vec::new(), has_played_entrances: Vec::new(), on_their_way: Vec::new(), nav: Nav::new(), reload, is_screen_from_host: false, epx: 1.0, mouse_buttons: Buttons::NONE, mouse_at: (0.0, 0.0), captured: None, is_window_focused: true, hover_events: Vec::new(), size: (0.0, 0.0),
             pictures_to_release: Vec::new(),
             code_pictures_to_release: Vec::new(),
             arrived: None,
@@ -470,14 +487,102 @@ impl<A: 'static> Program<A> {
             self.place_code_pictures();
             is_moving |= self.frame_pages(0.0, size_px);
         }
-        // Only a layout leaves a Surface to write, so a frame with none
-        // asks no page.
-        if self.assets.take_surface_asks() {
-            self.draw_surfaces();
+        // Only a layout leaves a Surface to write, or another Surface
+        // asking for the mouse, so a frame with none asks no page.
+        let news: u8 = self.assets.take_layout_news();
+        if news != 0 {
+            if news & crate::pages::SURFACE_ASKS != 0 {
+                self.draw_surfaces();
+            }
+            if news & crate::pages::MOUSE_CAPTURE_NEWS != 0 {
+                self.update_mouse_capture();
+            }
         }
         #[cfg(debug_assertions)]
         self.check_page_kinds();
         is_moving | is_page_asking_for_frames
+    }
+
+    /// Finds who has the mouse now: the Surface of the top page whose
+    /// `capture_mouse=` is true, while the window has the keyboard.
+    ///
+    /// The Surface that loses the mouse with a button down hears
+    /// `Cancel`. When a Surface gets it, the cursor goes: what the mouse
+    /// pressed is cancelled, and nothing is hovered.
+    fn update_mouse_capture(&mut self) {
+        let top: PageId = self.top();
+        let wanted: Option<NodeId> = if self.is_window_focused { self.stack.get(top).runtime.mouse_capture() } else { None };
+        if wanted.map(|surface| (top, surface)) == self.captured.map(|by| (by.page, by.surface)) {
+            return;
+        }
+        if let Some(old) = self.captured {
+            if !self.mouse_buttons.is_none() && self.stack.contains(old.page) {
+                self.to_captured(CapturedMouse::Press(Phase::Cancel), 0.0, Mods::NONE);
+            }
+            self.captured = None;
+        }
+        let Some(surface) = wanted else { return };
+        if self.stack.touched_by(MOUSE_ID).is_some() {
+            self.pointer(Touch::mouse(Phase::Cancel, self.mouse_at.0, self.mouse_at.1, 0.0, self.mouse_buttons));
+        }
+        self.unhover();
+        self.captured = Some(CapturedBy { page: top, surface, at: self.mouse_at });
+        #[cfg(debug_assertions)]
+        if self.stack.get(top).runtime.has_two_mouse_captures() {
+            eprintln!("two Surfaces of one page say `capture_mouse=true`: the first in the file has the mouse (`{}`)", self.stack.get(top).page.str(self.stack.get(top).page.nodes[surface.index()].name));
+        }
+    }
+
+    /// Hands the Surface that has the mouse what the mouse did.
+    fn to_captured(&mut self, what: CapturedMouse, t: f64, mods: Mods) {
+        let Some(by) = self.captured else { return };
+        let buttons: Buttons = self.mouse_buttons;
+        let page: &mut PageUi = self.stack.get_mut(by.page);
+        let events: EventList = page.input.captured_mouse(&page.page, &mut page.runtime, page.kept.frame(), by.surface, by.at, what, buttons, t, mods);
+        self.hand_events(by.page, &events);
+    }
+
+    /// True while a Surface has the mouse: its `capture_mouse=` is true,
+    /// its page is the top page, and the window has the keyboard
+    /// (`set_window_focused`). As the last `frame` found it.
+    ///
+    /// Needed by a host with its own window, each frame: on true it
+    /// hides the cursor, holds it in place and hands every move of the
+    /// mouse to `captured_mouse_moved`; on false it frees the cursor and
+    /// hands moves to `mouse_moved` again. `start`'s window does both.
+    /// Buttons and the wheel go to `mouse_button` and `wheel` as ever.
+    pub fn is_mouse_captured(&self) -> bool {
+        self.captured.is_some()
+    }
+
+    /// A captured mouse moved by (`dx`, `dy`), in the mouse's own
+    /// counts: what the device reported, before the system speeds a
+    /// cursor up. `t`: when, in seconds.
+    ///
+    /// The Surface that has the mouse hears it: its `on:hover=` with no
+    /// button down, its `on:pointer=` with one down. Every move is one
+    /// event, none is summed, and none allocates.
+    ///
+    /// Returns false while no Surface has the mouse.
+    pub fn captured_mouse_moved(&mut self, dx: f32, dy: f32, t: f64, mods: Mods) -> bool {
+        if self.captured.is_none() {
+            return false;
+        }
+        self.to_captured(CapturedMouse::Move { dx, dy }, t, mods);
+        true
+    }
+
+    /// Says whether program's window has the keyboard. A window that
+    /// loses it frees a captured mouse; one that has it again captures
+    /// it again, with no code in a page.
+    ///
+    /// Needed so a user who goes to another window has their cursor
+    /// there. A host that never calls it is taken to have the keyboard.
+    pub fn set_window_focused(&mut self, is_focused: bool) {
+        if self.is_window_focused != is_focused {
+            self.is_window_focused = is_focused;
+            self.assets.note_mouse_capture_news();
+        }
     }
 
     /// Screen's facts, from a host that knows them: what notch and
@@ -621,6 +726,12 @@ impl<A: 'static> Program<A> {
     ///
     /// Returns false when no page took it.
     pub fn mouse_moved(&mut self, x: f32, y: f32, t: f64, mods: Mods) -> bool {
+        // A captured mouse has no place: its moves come through
+        // `captured_mouse_moved`.
+        if self.captured.is_some() {
+            return true;
+        }
+        self.mouse_at = (x, y);
         let sample: Touch = Touch { mods, ..Touch::mouse(Phase::Move, x, y, t, self.mouse_buttons) };
         if self.mouse_buttons.is_none() { self.hover_sample(sample) } else { self.pointer(sample) }
     }
@@ -645,6 +756,11 @@ impl<A: 'static> Program<A> {
             // the window.
             (true, true) => return false,
         };
+        if self.captured.is_some() {
+            self.to_captured(CapturedMouse::Press(phase), t, mods);
+            return true;
+        }
+        self.mouse_at = (x, y);
         self.pointer(Touch { mods, ..Touch::mouse(phase, x, y, t, self.mouse_buttons) })
     }
 
@@ -853,6 +969,10 @@ impl<A: 'static> Program<A> {
     ///
     /// `mods`: keys held. A box with `on:wheel=` gets them with the turn.
     pub fn wheel(&mut self, x: f32, y: f32, notches: f32, mods: Mods) -> bool {
+        if self.captured.is_some() {
+            self.to_captured(CapturedMouse::Wheel { notches }, 0.0, mods);
+            return true;
+        }
         for i in (0..self.stack.order.len()).rev() {
             let id: PageId = self.stack.order[i];
             if self.is_leaving(id) || !self.stack.get(id).covers(x, y) {
@@ -1305,6 +1425,7 @@ impl<A: 'static> Program<A> {
     /// Page on screen leaves unasked, `fresh` opens in its place.
     fn replace(&mut self, fresh: Box<dyn PageObject<A>>) {
         let leaving: PageId = self.back_stack.pop().expect("a program has a first page");
+        self.assets.note_mouse_capture_news();
         self.start_leave(leaving);
         self.open(fresh);
     }
@@ -1388,6 +1509,7 @@ impl<A: 'static> Program<A> {
             None => self.make(fresh, true),
         };
         self.back_stack.push(id);
+        self.assets.note_mouse_capture_news();
         self.arrived = None;
         self.note_way(id, Way::ComesIn);
         self.order_drawn_pages();
@@ -1424,6 +1546,7 @@ impl<A: 'static> Program<A> {
             return false;
         }
         let leaving: PageId = self.back_stack.pop().expect("two pages");
+        self.assets.note_mouse_capture_news();
         let revealed: PageId = self.top();
         let is_fullscreen: bool = self.objects[leaving.index()].as_ref().is_some_and(|object| object.kind() == PageKind::Fullscreen);
         let is_on_its_way_out: bool = self.start_leave(leaving);

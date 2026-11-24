@@ -6,10 +6,10 @@ use std::time::Instant;
 use gogo_ui::{Buttons, Key, Mods};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
-use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::{DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{Key as WinitKey, NamedKey};
-use winit::window::{Window, WindowId};
+use winit::window::{CursorGrabMode, Window, WindowId};
 
 use crate::program::Program;
 use crate::window::{Gfx, TOUCHPAD_PIXELS_PER_NOTCH, WindowOptions, key_from_winit};
@@ -26,6 +26,9 @@ struct ProgramWindow<'a, A> {
     last_frame: Instant,
     /// Why window could not start, for `start` to return.
     failed: Option<String>,
+    /// True while window holds the cursor for a Surface that has the
+    /// mouse (`Program::is_mouse_captured`).
+    is_cursor_held: bool,
 }
 
 impl<A: 'static> ProgramWindow<'_, A> {
@@ -52,8 +55,39 @@ impl<A: 'static> ProgramWindow<'_, A> {
         self.started.elapsed().as_secs_f64()
     }
 
+    /// Holds the cursor or frees it, as the program says after a frame:
+    /// a Surface has the mouse, or none has.
+    ///
+    /// Held: hidden and kept in place, or kept inside the window where
+    /// the system cannot keep it in place. The mouse's moves then come
+    /// as the device reports them (`device_event`).
+    fn hold_or_free_the_cursor(&mut self) {
+        let Some(gfx) = self.gfx.as_ref() else { return };
+        let is_wanted: bool = self.program.is_mouse_captured();
+        if is_wanted == self.is_cursor_held {
+            return;
+        }
+        if is_wanted {
+            if gfx.window.set_cursor_grab(CursorGrabMode::Locked).or_else(|_| gfx.window.set_cursor_grab(CursorGrabMode::Confined)).is_err() {
+                // A system that can do neither: the cursor stays free,
+                // and the Surface still gets the mouse's moves.
+            }
+            gfx.window.set_cursor_visible(false);
+        } else {
+            let _ = gfx.window.set_cursor_grab(CursorGrabMode::None);
+            gfx.window.set_cursor_visible(true);
+        }
+        self.is_cursor_held = is_wanted;
+    }
+
     /// One frame: advance, lay out, draw.
     fn frame(&mut self) {
+        self.frame_and_draw();
+        self.hold_or_free_the_cursor();
+    }
+
+    /// `frame` without the cursor's part.
+    fn frame_and_draw(&mut self) {
         let Some(gfx) = self.gfx.as_mut() else { return };
         let now: Instant = Instant::now();
         // A window that was hidden for a minute does not play a minute
@@ -131,6 +165,12 @@ impl<A: 'static> ApplicationHandler for ProgramWindow<'_, A> {
                 }
             }
             WindowEvent::ScaleFactorChanged { .. } => self.redraw(),
+            WindowEvent::Focused(is_focused) => {
+                self.program.set_window_focused(is_focused);
+                self.redraw();
+            }
+            // A held cursor has no place: its moves come from the device.
+            WindowEvent::CursorMoved { .. } if self.is_cursor_held => {}
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor = (position.x as f32, position.y as f32);
                 let (x, y) = self.cursor_epx();
@@ -187,6 +227,17 @@ impl<A: 'static> ApplicationHandler for ProgramWindow<'_, A> {
         }
     }
 
+    /// What the mouse itself reported: its move in its own counts,
+    /// before the system speeds a cursor up. Read only while the cursor
+    /// is held; a free mouse comes as `CursorMoved`.
+    fn device_event(&mut self, _event_loop: &ActiveEventLoop, _id: DeviceId, event: DeviceEvent) {
+        if let (true, DeviceEvent::MouseMotion { delta }) = (self.is_cursor_held, event) {
+            let now: f64 = self.now();
+            self.program.captured_mouse_moved(delta.0 as f32, delta.1 as f32, now, self.mods);
+            self.redraw();
+        }
+    }
+
     /// Page's file was saved (`Program::on_page_file_saved`). Loop sleeps
     /// between events, so still pages draw nothing and use no CPU: this
     /// brings it back. Next frame shows the save.
@@ -212,7 +263,7 @@ pub fn start<A: 'static>(options: WindowOptions<'_>, mut program: Program<A>) ->
     program.on_page_file_saved(move || {
         let _ = proxy.send_event(());
     });
-    let mut window = ProgramWindow { options, program, gfx: None, cursor: (0.0, 0.0), mods: Mods::NONE, started: Instant::now(), last_frame: Instant::now(), failed: None };
+    let mut window = ProgramWindow { options, program, gfx: None, cursor: (0.0, 0.0), mods: Mods::NONE, started: Instant::now(), last_frame: Instant::now(), failed: None, is_cursor_held: false };
     event_loop.run_app(&mut window).map_err(|e| format!("the event loop stopped: {e}"))?;
     match window.failed {
         Some(why) => Err(why),

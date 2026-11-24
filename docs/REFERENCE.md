@@ -1687,6 +1687,27 @@ View main {
   its landing to its lift: the code tells one finger (a stroke) from two
   (a zoom). Any other box holds one finger at a time. A Surface with
   neither word lets a finger through to what is under it.
+- **`capture_mouse=true`** gives a Surface the mouse with no place: the
+  cursor is hidden and held, and its moves do not stop at the edge of
+  the screen. A game turns its camera that way, a 3D editor a model. It
+  is true or false like any other such word: the file's line, a `when`
+  or the code writes it (true when play starts, false at a pause). It
+  is in effect only while three things hold: the word is true, the
+  Surface's page is the top page, and the window has the keyboard. A
+  page that opens over it (a pause menu) has the cursor with no code,
+  and the Surface has the mouse again when that page leaves. While it
+  is in effect, everything the mouse does goes to that Surface with no
+  search for the node under it: a move with no button down to its
+  `on:hover=`, a move with one down and each button to its
+  `on:pointer=`, the wheel to its `on:wheel=`. A sample's `x` and `y`
+  stay where the mouse was when it was captured; its `dx` and `dy` are
+  the mouse's own counts, before the system speeds a cursor up, and the
+  program multiplies them by its own sensitivity. Every move the mouse
+  reports is one event: none is summed, and none allocates. One Surface
+  of a page at a time: when two say true, the first in the file has the
+  mouse, and a debug build of a TurboDot program says so. On a device
+  with no mouse the word does nothing. With no cursor the user can
+  press no button of the page: give them a key that ends it.
 - **A typed name.** The build writes a Surface's name with a type by its
   `draw=`: `NAMES.painting` is a `PictureSurface`, `NAMES.chart` a
   `CommandSurface`, `NAMES.model` a `GpuSurface`. `Runtime::set_picture` takes the first and nothing
@@ -2961,6 +2982,7 @@ glide freezes mid-flight until the next input.
 | `page.surface_commands(node)` | A Surface's commands as written last. A renderer reads them where it meets `Draw::Surface { rect, surface, alpha }` in a draw list, and draws each moved by the rect's corner and faded by `alpha` (`Draw::posed`). `gogo-wgpu` does. |
 | `PictureSurface::find(&page, name)`, `CommandSurface::find`, `GpuSurface::find` | A Surface of a page compiled while the program runs, by its name and its `draw=`. A built page has its Surfaces in `NAMES`. |
 | `Draw::GpuSurface { rect, surface, alpha }` | The place of a `Surface draw=gpu` in a draw list. A renderer makes the program's own draw calls there. `gogo-wgpu`: `UiRenderer::render_with(&mut pass, &mut \|place, pass\| ..)` calls the host once for each, with the viewport and the scissor set (`SurfacePlace`: `rect_px`, `visible_px`, `epx`, `opacity`, `target_format`, `depth_format`, `has_depth`, `is_of(&page)`); plain `render` is for a host with no such Surface. |
+| `rt.mouse_capture()`, `rt.set_capture_mouse(surface, bool)`, `input.captured_mouse(&page, &mut rt, frame, surface, at, what, buttons, t, mods)` | The Surface of a page whose `capture_mouse=` is true, as the last frame found it; the word written from code; and what a captured mouse did (`CapturedMouse::Move { dx, dy }`, `Press(phase)`, `Wheel { notches }`), handed to that Surface. gogo has no window: while `mouse_capture` names a Surface, its page is the top one and the window has the keyboard, the HOST hides the cursor and holds it, and hands the mouse's own moves on. TurboDot does: `Program::is_mouse_captured()`, `captured_mouse_moved(dx, dy, t, mods)` and `set_window_focused(bool)` for a host with its own window, and `start`'s window by itself; a page writes the word with `host.ui.set_capture_mouse(surface, bool)`. |
 | `ui::HAS_DEPTH_SURFACE`, `page.has_depth_surface()`, `page.is_depth_surface(node)` | Whether a `Surface` of the build (of one page; this node) says `depth=true`. `gogo-wgpu`: a host hands `UiRenderer::new(&device, target_format, depth_format)` its depth buffer's format when the constant is true and `None` when it is false, and gives its pass a depth buffer of that format, cleared to 1.0 when the pass starts. TurboDot does both by itself (`turbodot::DEPTH_FORMAT`, 32-bit float). |
 | `reload::Reloader` (`open`, `refresh`), `reload::Sources` | Hot reload (below). |
 

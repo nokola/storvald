@@ -238,6 +238,20 @@ impl PointerSample {
     }
 }
 
+/// What a captured mouse did (`Input::captured_mouse`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CapturedMouse {
+    /// It moved by (`dx`, `dy`), in the mouse's own counts: what the
+    /// device reported, before the system speeds a cursor up.
+    Move { dx: f32, dy: f32 },
+    /// A button went down or lifted. `Down`: the first button went down.
+    /// `Up`: the last one lifted. `Move`: one changed while another is
+    /// held. The buttons down now come beside it.
+    Press(Phase),
+    /// The wheel turned. Above 0: away from the user.
+    Wheel { notches: f32 },
+}
+
 /// The mouse's `Touch.id`: touch ids are the platform's, the one mouse
 /// rides this fixed id. Mouse-only behaviors key off it — a mouse drag
 /// in a field SELECTS, a finger's drag pans the Scroll instead (D75
@@ -2217,6 +2231,46 @@ impl Input {
         if new != input_text(page, rt, f) {
             rt.set_text(page, f, &new);
             self.push_event(page, rt, &mut events, f, EventKind::Edit(text_value(page, rt, f)), event_action(page, f, "edit"));
+        }
+        events
+    }
+
+    /// What a captured mouse did, handed to `surface` with no search for
+    /// the node under it: the cursor is hidden and has no place. `surface`
+    /// is the page's `Runtime::mouse_capture`.
+    ///
+    /// A move with no button down goes to the Surface's `on:hover=`, as
+    /// `Over`; a move with one down and every change of a button to its
+    /// `on:pointer=`; the wheel to its `on:wheel=`. A Surface that does
+    /// not write the word hears nothing of that kind.
+    ///
+    /// `at`: where the mouse was when it was captured, in the page's
+    /// space; every sample's `x` and `y` say that place inside the
+    /// Surface. `dx` and `dy` are the move, in the mouse's own counts: the
+    /// program multiplies them by its own sensitivity. Every move the
+    /// device reported is one call and one event; none is summed.
+    ///
+    /// Needed apart from `touch` and `hover_sample`: those look for the
+    /// node under a place, and keep a press and a hovered look, none of
+    /// which a mouse with no place has.
+    ///
+    /// Returns the event, or none. Allocates nothing.
+    #[allow(clippy::too_many_arguments)]
+    pub fn captured_mouse(&self, page: &Page, rt: &mut Runtime, f: Frame<'_>, surface: NodeId, at: (f32, f32), what: CapturedMouse, buttons: Buttons, t: f64, mods: Mods) -> EventList {
+        let mut events: EventList = EventList::new();
+        let Some(rect) = f.rects().get(surface.index()).copied() else { return events };
+        if rt.disabled(page, surface) {
+            return events;
+        }
+        let sample = |dx: f32, dy: f32| PointerSample::of(&Touch { mods, ..Touch::mouse(Phase::Move, at.0, at.1, t, buttons) }, rect, dx, dy);
+        let (word, kind): (&str, EventKind) = match what {
+            CapturedMouse::Move { dx, dy } if buttons.is_none() => ("hover", EventKind::Hover(HoverPhase::Over, sample(dx, dy))),
+            CapturedMouse::Move { dx, dy } => ("pointer", EventKind::Pointer(Phase::Move, sample(dx, dy))),
+            CapturedMouse::Press(phase) => ("pointer", EventKind::Pointer(phase, sample(0.0, 0.0))),
+            CapturedMouse::Wheel { notches } => ("wheel", EventKind::Wheel { x: at.0 - rect.x, y: at.1 - rect.y, notches, mods }),
+        };
+        if let Some(action) = event_action(page, surface, word) {
+            self.push_event(page, rt, &mut events, surface, kind, Some(action));
         }
         events
     }

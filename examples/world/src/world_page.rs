@@ -1,20 +1,31 @@
 //! Page with a 3D world under its nodes: a cube the page draws with GPU
-//! calls of its own, tested against a depth buffer.
+//! calls of its own, tested against a depth buffer. The world takes the
+//! mouse: a drag turns the cube, the wheel moves the camera, and "Look
+//! around" captures the mouse.
 //! Picture: `ui/world_page.gogo`.
 
 use turbodot::prelude::*;
 use turbodot::wgpu;
 
 use crate::AppState;
+use crate::pause_page::PausePage;
 use crate::ui::world_page::{Handler, NAMES, PAGE};
 
 /// How fast the cube turns while it spins.
 pub const SPIN_RAD_PER_SEC: f32 = 0.8;
 /// Camera's angle of view, top to bottom.
 const FIELD_OF_VIEW_RAD: f32 = std::f32::consts::FRAC_PI_4;
-/// Camera's distance from the cube's center. The cube's faces are 1 from
-/// its center.
-const CAMERA_DISTANCE: f32 = 5.0;
+/// Camera's distance from the cube's center when the program starts. The
+/// cube's faces are 1 from its center.
+pub const START_CAMERA_DISTANCE: f32 = 5.0;
+/// Nearest and farthest the wheel moves the camera.
+pub const NEAREST_CAMERA_DISTANCE: f32 = 3.0;
+pub const FARTHEST_CAMERA_DISTANCE: f32 = 12.0;
+/// How far one notch of the wheel moves the camera.
+pub const CAMERA_STEP_PER_NOTCH: f32 = 0.5;
+/// How far the cube turns for a move of 1: one epx of a drag, or one
+/// count of a captured mouse.
+pub const TURN_RAD_PER_MOVE: f32 = 0.005;
 /// Nearest and farthest distance from the camera that is drawn.
 const NEAR: f32 = 0.5;
 const FAR: f32 = 20.0;
@@ -136,7 +147,42 @@ impl Page<AppState> for WorldPage {
                 host.app.is_spinning = !host.app.is_spinning;
                 host.ui.set_text(NAMES.spin, if host.app.is_spinning { "Stop" } else { "Spin" });
             }
+            Handler::Look => self.set_looking(host, true),
+            // The world's `on:pointer=` and `on:hover=`.
+            Handler::Turn => match event.kind {
+                // A button is down: a drag turns the cube, with a free
+                // mouse (the move is in epx) and with a captured one.
+                EventKind::Pointer(phase, sample) => {
+                    host.app.is_mouse_down = matches!(phase, Phase::Down | Phase::Move);
+                    if phase == Phase::Move {
+                        turn(host.app, sample.dx, sample.dy);
+                    }
+                }
+                // No button is down. A free mouse only passes over the
+                // world; a captured one turns the cube with every move,
+                // and its move is in the mouse's own counts.
+                EventKind::Hover(HoverPhase::Over, sample) if host.app.is_looking => turn(host.app, sample.dx, sample.dy),
+                _ => {}
+            },
+            // The world's `on:wheel=`: away from the user moves the
+            // camera nearer.
+            Handler::Zoom => {
+                if let EventKind::Wheel { notches, .. } = event.kind {
+                    host.app.camera_distance = (host.app.camera_distance - notches * CAMERA_STEP_PER_NOTCH).clamp(NEAREST_CAMERA_DISTANCE, FARTHEST_CAMERA_DISTANCE);
+                }
+            }
         }
+    }
+
+    /// Esc while the mouse is captured: the pause page opens over the
+    /// world, and the mouse is free there with nothing done here. With
+    /// a free mouse Esc is the plain back request.
+    fn back(&mut self, host: &mut Host<AppState>) -> Back {
+        if !host.app.is_looking {
+            return Back::Leave;
+        }
+        host.nav.go(PausePage);
+        Back::Stay
     }
 
     /// Turns the cube while it spins, and asks for frames only then.
@@ -165,7 +211,7 @@ impl Page<AppState> for WorldPage {
         }
         // The engine puts the viewport on the Surface, so the picture's
         // shape is the Surface's.
-        let transform: [f32; 16] = cube_transform(host.app.spin_rad, host.app.tilt_rad, rect.w / rect.h);
+        let transform: [f32; 16] = cube_transform(host.app.spin_rad, host.app.tilt_rad, host.app.camera_distance, rect.w / rect.h);
         let mut bytes: [u8; 64] = [0; 64];
         for (number, four_bytes) in transform.iter().zip(bytes.chunks_exact_mut(4)) {
             four_bytes.copy_from_slice(&number.to_ne_bytes());
@@ -188,6 +234,26 @@ impl Page<AppState> for WorldPage {
     }
 }
 
+impl WorldPage {
+    /// Captures the mouse for the world, or frees it: the cursor goes,
+    /// and every move of the mouse comes to the world's `on:hover=`.
+    ///
+    /// With no cursor no button can be pressed, so the hint names the
+    /// key that pauses.
+    pub fn set_looking(&mut self, host: &mut Host<AppState>, is_looking: bool) {
+        host.app.is_looking = is_looking;
+        host.ui.set_capture_mouse(NAMES.world.node(), is_looking);
+        host.ui.set_visible(NAMES.hint, is_looking);
+    }
+}
+
+/// Turns the cube by a move of (`dx`, `dy`): sideways about its upright
+/// axis, up and down toward the camera and away, never past flat.
+fn turn(app: &mut AppState, dx: f32, dy: f32) {
+    app.spin_rad = (app.spin_rad + dx * TURN_RAD_PER_MOVE) % std::f32::consts::TAU;
+    app.tilt_rad = (app.tilt_rad + dy * TURN_RAD_PER_MOVE).clamp(-std::f32::consts::FRAC_PI_2, std::f32::consts::FRAC_PI_2);
+}
+
 /// A 4 x 4 matrix, column by column.
 type Matrix = [f32; 16];
 
@@ -204,17 +270,17 @@ fn times(a: &Matrix, b: &Matrix) -> Matrix {
 
 /// From the cube's own space to clip space: turned `spin_rad` about its
 /// upright axis, tipped `tilt_rad` toward the camera, seen from
-/// `CAMERA_DISTANCE` in perspective. `width_over_height`: the shape of
+/// `camera_distance` in perspective. `width_over_height`: the shape of
 /// the Surface it is drawn in.
 ///
 /// Depth runs from 0 at `NEAR` to 1 at `FAR`, as a depth buffer cleared
 /// to 1 and a pipeline that keeps what is `Less` want it.
-pub fn cube_transform(spin_rad: f32, tilt_rad: f32, width_over_height: f32) -> Matrix {
+pub fn cube_transform(spin_rad: f32, tilt_rad: f32, camera_distance: f32, width_over_height: f32) -> Matrix {
     let (spin_sin, spin_cos) = spin_rad.sin_cos();
     let (tilt_sin, tilt_cos) = tilt_rad.sin_cos();
     let spin: Matrix = [spin_cos, 0.0, -spin_sin, 0.0, 0.0, 1.0, 0.0, 0.0, spin_sin, 0.0, spin_cos, 0.0, 0.0, 0.0, 0.0, 1.0];
     let tilt: Matrix = [1.0, 0.0, 0.0, 0.0, 0.0, tilt_cos, tilt_sin, 0.0, 0.0, -tilt_sin, tilt_cos, 0.0, 0.0, 0.0, 0.0, 1.0];
-    let away: Matrix = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -CAMERA_DISTANCE, 1.0];
+    let away: Matrix = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -camera_distance, 1.0];
     let zoom: f32 = 1.0 / (FIELD_OF_VIEW_RAD / 2.0).tan();
     let lens: Matrix = [zoom / width_over_height, 0.0, 0.0, 0.0, 0.0, zoom, 0.0, 0.0, 0.0, 0.0, FAR / (NEAR - FAR), -1.0, 0.0, 0.0, NEAR * FAR / (NEAR - FAR), 0.0];
     times(&lens, &times(&away, &times(&tilt, &spin)))

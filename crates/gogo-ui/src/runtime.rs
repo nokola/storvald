@@ -683,6 +683,16 @@ pub struct Runtime {
     /// `frame_retained` found them, less the ones taken since
     /// (`next_surface_to_draw`).
     surface_asks: Vec<crate::surface::SurfaceAsk>,
+    /// The page's Surfaces that may ask for the mouse: their line or a
+    /// `when` of theirs writes `capture_mouse=`, or code wrote it
+    /// (`set_capture_mouse`). Found with `command_surfaces`.
+    capture_surfaces: Vec<NodeId>,
+    /// The Surface that asks for the mouse, as the last `frame_retained`
+    /// found it (`mouse_capture`).
+    mouse_capture: Option<NodeId>,
+    /// True when two Surfaces asked for the mouse in that frame
+    /// (`has_two_mouse_captures`).
+    has_two_mouse_captures: bool,
 }
 
 impl Runtime {
@@ -756,6 +766,9 @@ impl Runtime {
             command_surfaces: Vec::new(),
             command_surfaces_for: usize::MAX,
             surface_asks: Vec::new(),
+            capture_surfaces: Vec::new(),
+            mouse_capture: None,
+            has_two_mouse_captures: false,
             glide_start: None,
             glide_node_rules: Vec::new(),
             rect_tweens: Vec::new(),
@@ -831,6 +844,9 @@ impl Runtime {
             command_surfaces: _,
             command_surfaces_for: _,
             surface_asks: _,
+            capture_surfaces: _,
+            mouse_capture: _,
+            has_two_mouse_captures: _,
             shown: _,
             last_rects: _,
             vis_seen: _,
@@ -3028,8 +3044,20 @@ impl Runtime {
         if self.command_surfaces_for != page.nodes.len() {
             self.command_surfaces_for = page.nodes.len();
             self.command_surfaces.clear();
-            self.command_surfaces.extend(page.node_ids().filter(|node| crate::surface::SurfaceDraw::of(page, *node) == Some(crate::surface::SurfaceDraw::Commands)));
+            self.capture_surfaces.clear();
+            for node in page.node_ids() {
+                if page.nodes[node].kind != Kind::Surface {
+                    continue;
+                }
+                if crate::surface::SurfaceDraw::of(page, node) == Some(crate::surface::SurfaceDraw::Commands) {
+                    self.command_surfaces.push(node);
+                }
+                if crate::surface::may_capture_mouse(page, node) || self.resolved.override_of(node, PropKey::CaptureMouse).is_some() {
+                    self.capture_surfaces.push(node);
+                }
+            }
         }
+        self.find_mouse_capture(page);
         self.surface_asks.clear();
         for i in 0..self.command_surfaces.len() {
             let node: NodeId = self.command_surfaces[i];
@@ -3044,6 +3072,67 @@ impl Runtime {
                 }
             }
         }
+    }
+
+    /// Fills `mouse_capture`: the first Surface in the file that shows
+    /// and whose `capture_mouse=` is true now.
+    ///
+    /// Needed in the frame road, where the words a `when` writes are
+    /// resolved: a host reads the answer every frame, and a frame in
+    /// which nothing changed has nothing to find again.
+    fn find_mouse_capture(&mut self, page: &Page) {
+        let mut found: Option<NodeId> = None;
+        let mut has_two: bool = false;
+        for i in 0..self.capture_surfaces.len() {
+            let node: NodeId = self.capture_surfaces[i];
+            if self.resolved.bool(page, node, PropKey::CaptureMouse) != Some(true) || self.resolved.gone(page, node) || self.resolved.hidden(page, node) {
+                continue;
+            }
+            found = match found {
+                None => Some(node),
+                Some(other) => {
+                    has_two = true;
+                    // The first of the two in the file, which the node
+                    // table's order does not say.
+                    self.resolved.tree.subtree(NodeId::new(0)).find(|n| *n == other || *n == node)
+                }
+            };
+        }
+        self.mouse_capture = found;
+        self.has_two_mouse_captures = has_two;
+    }
+
+    /// The Surface that asks for the mouse: the first in the file that
+    /// shows and whose `capture_mouse=` is true, as the last
+    /// `frame_retained` found it. `None`: no Surface of the page asks.
+    ///
+    /// Needed by a host, each frame: while this names a Surface, the
+    /// page is the top page and the window has the keyboard, the host
+    /// hides the cursor, holds it in place and hands what the mouse does
+    /// to `Input::captured_mouse`. gogo has no window, so it cannot.
+    pub fn mouse_capture(&self) -> Option<NodeId> {
+        self.mouse_capture
+    }
+
+    /// True when two Surfaces of the page asked for the mouse in the
+    /// last frame: the first in the file has it. For a host to say so in
+    /// a debug build.
+    pub fn has_two_mouse_captures(&self) -> bool {
+        self.has_two_mouse_captures
+    }
+
+    /// Writes `capture_mouse=` on `surface` from code: true when play
+    /// starts, false at a pause. The next frame finds it
+    /// (`mouse_capture`).
+    ///
+    /// Needed as a call of its own, beside `set_prop`: a Surface whose
+    /// file never writes the word is not among those a frame asks, and
+    /// this call adds it.
+    pub fn set_capture_mouse(&mut self, surface: NodeId, is_captured: bool) {
+        if !self.capture_surfaces.contains(&surface) {
+            self.capture_surfaces.push(surface);
+        }
+        self.set_prop(surface, PropKey::CaptureMouse, Value::VBool(is_captured));
     }
 
     /// Takes the next `Surface draw=commands` whose draw commands code

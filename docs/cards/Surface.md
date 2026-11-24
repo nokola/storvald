@@ -37,6 +37,9 @@ that lands on it, each with a press of its own, so the code tells one
 finger (a stroke) from two (a zoom). Without them a finger goes through
 to what is under it.
 
+`capture_mouse=true` hides the cursor and hands every move of the mouse
+to the Surface: a game turns its camera that way.
+
 Its name in the code has a type by its `draw=` (`PictureSurface`,
 `CommandSurface`, `GpuSurface`): code that fills it another way than
 the file says does not compile.

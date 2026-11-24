@@ -139,6 +139,23 @@ impl PageUi {
         self.runtime.surface_changed(&mut self.page, surface);
     }
 
+    /// Writes `capture_mouse=` on `surface`, a Surface of page's file:
+    /// true when play starts, false at a pause.
+    ///
+    /// While it is true, page is the top page and the window has the
+    /// keyboard, the cursor is hidden and held in place, and everything
+    /// the mouse does goes to `surface`: a move with no button down to
+    /// its `on:hover=`, a move with one down and each button to its
+    /// `on:pointer=`, the wheel to its `on:wheel=`. `dx` and `dy` of a
+    /// sample are then the mouse's own counts.
+    ///
+    /// WARNING: with no cursor the user cannot press a button of the
+    /// page. Give them a key that ends it: Esc is the back request
+    /// (`Page::back`).
+    pub fn set_capture_mouse(&mut self, surface: NodeId, is_captured: bool) {
+        self.runtime.set_capture_mouse(surface, is_captured);
+    }
+
     /// Shows or hides `node`. Hidden node takes no space and no touch.
     pub fn set_visible(&mut self, node: NodeId, is_visible: bool) {
         self.runtime.set_visible(&mut self.page, node, is_visible);

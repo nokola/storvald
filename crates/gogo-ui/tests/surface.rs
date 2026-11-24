@@ -601,3 +601,143 @@ fn a_reload_refuses_a_surface_with_another_depth() {
     let deep: Page = page("View v { Surface world draw=gpu, depth=true, width=100, height=50 }");
     assert_eq!(same_shape(&deep, &built), Err(ShapeChange::Depth { name: "world".to_string() }), "and the other way");
 }
+
+// ---------------------------------------------------------------- capture_mouse=
+
+/// `capture_mouse=` goes on a Surface, of any `draw=`, and is true or
+/// false like any other such word: a `when` may write it. On another
+/// node it is an error that says whose word it is.
+#[test]
+fn capture_mouse_belongs_to_a_surface() {
+    for draw in ["picture", "commands", "gpu"] {
+        let src = format!("View v {{ Surface world draw={draw}, capture_mouse=true, width=10, height=10 }}");
+        assert!(codes(&src).is_empty(), "{src}: {:?}", codes(&src));
+    }
+    assert!(codes("View v { Surface world draw=gpu, width=10, height=10 {\n when screen.landscape capture_mouse=true\n} }").is_empty());
+    let on_a_box: String = message("View v { Panel p capture_mouse=true, width=10, height=10 }", "G2002");
+    assert!(on_a_box.contains("`capture_mouse=` hides the cursor") && on_a_box.contains("`Surface`"), "{on_a_box}");
+    assert_eq!(codes("View v { Surface world draw=gpu, capture_mouse=maybe, width=10, height=10 }"), ["G0078"]);
+}
+
+/// A frame finds the Surface that asks for the mouse: one that shows and
+/// whose `capture_mouse=` is true. A host reads it each frame.
+#[test]
+fn a_surface_whose_capture_mouse_is_true_asks_for_the_mouse() {
+    let mut fx = Fx::new("View v { Layers l width=fill, height=fill {\n Surface world draw=gpu, capture_mouse=true, width=fill, height=fill\n} }");
+    assert_eq!(fx.rt.mouse_capture(), None, "before the first frame nothing is known");
+    fx.frame(400.0, 800.0);
+    assert_eq!(fx.rt.mouse_capture(), Some(fx.id("world")));
+    assert!(!fx.rt.has_two_mouse_captures());
+
+    for src in [
+        "View v { Surface world draw=gpu, capture_mouse=false, width=fill, height=fill }",
+        "View v { Surface world draw=gpu, width=fill, height=fill }",
+        "View v { Surface world draw=gpu, capture_mouse=true, visibility=gone, width=fill, height=fill }",
+        "View v { Surface world draw=gpu, capture_mouse=true, visibility=space_only, width=fill, height=fill }",
+    ] {
+        let mut fx = Fx::new(src);
+        fx.frame(400.0, 800.0);
+        assert_eq!(fx.rt.mouse_capture(), None, "{src}");
+    }
+}
+
+/// Code writes the word while the program runs (true when play starts,
+/// false at a pause), also on a Surface whose file never wrote it; and a
+/// `when` writes it. The next frame finds the change.
+#[test]
+fn code_and_a_when_write_capture_mouse() {
+    let mut fx = Fx::new("View v { Surface world draw=gpu, width=fill, height=fill }");
+    let world: NodeId = fx.id("world");
+    fx.frame(400.0, 800.0);
+    assert_eq!(fx.rt.mouse_capture(), None);
+    fx.rt.set_capture_mouse(world, true);
+    fx.frame(400.0, 800.0);
+    assert_eq!(fx.rt.mouse_capture(), Some(world), "play starts");
+    fx.rt.set_capture_mouse(world, false);
+    fx.frame(400.0, 800.0);
+    assert_eq!(fx.rt.mouse_capture(), None, "a pause");
+
+    // A `when` of the Surface: the mouse is captured on a wide screen only.
+    let mut fx = Fx::new("View v { Surface world draw=gpu, width=fill, height=fill {\n when screen.landscape capture_mouse=true\n} }");
+    let world: NodeId = fx.id("world");
+    fx.frame(400.0, 800.0);
+    assert_eq!(fx.rt.mouse_capture(), None, "an upright screen");
+    fx.rt.set_screen(&fx.page, gogo_ui::Orientation::from_view(800.0, 400.0), gogo_ui::ScreenClass::from_view(800.0, 400.0));
+    fx.frame(800.0, 400.0);
+    assert_eq!(fx.rt.mouse_capture(), Some(world), "a wide screen");
+}
+
+/// One Surface at a time has the mouse. When two of a page ask, the first
+/// in the file has it, and the page says that two asked.
+#[test]
+fn the_first_surface_in_the_file_has_the_mouse_when_two_ask() {
+    // `late` stands before `first` in the node table (a box's children
+    // come before their own children there), and after it in the file.
+    let mut fx = Fx::new("View v { Layers l width=fill, height=fill {\n Panel box width=fill, height=fill {\n  Surface first draw=gpu, capture_mouse=true, width=fill, height=fill\n }\n Surface late draw=gpu, capture_mouse=true, width=fill, height=fill\n} }");
+    assert!(fx.id("late").index() < fx.id("first").index(), "the table's order is not the file's");
+    fx.frame(400.0, 800.0);
+    assert_eq!(fx.rt.mouse_capture(), Some(fx.id("first")));
+    assert!(fx.rt.has_two_mouse_captures());
+}
+
+/// What a captured mouse does goes to its Surface with no search for the
+/// node under it: a move with no button down to `on:hover=`, a move with
+/// one down and a button's change to `on:pointer=`, the wheel to
+/// `on:wheel=`. The place stays where the mouse was captured; the move is
+/// in the mouse's own counts, and every move is one event.
+#[test]
+fn a_captured_mouse_s_events_go_to_its_surface() {
+    use gogo_ui::input::{Buttons, HoverPhase, MOUSE_ID, Mods, Tool};
+    use gogo_ui::{CapturedMouse, Event};
+    // The Surface is the right half; a button covers the left half, where
+    // the mouse was when it was captured.
+    let mut fx = Fx::new("View v { Row r width=fill, height=fill {\n Button other text=\"x\"/_, width=200, height=fill\n Surface world draw=gpu, capture_mouse=true, interactive=true, on:pointer=look, on:hover=look, on:wheel=zoom, width=200, height=fill\n} }");
+    fx.frame(400.0, 800.0);
+    let world: NodeId = fx.rt.mouse_capture().expect("the Surface asks for the mouse");
+    assert_eq!(fx.rect("world"), Rect::new(200.0, 0.0, 200.0, 800.0));
+    let input: Input = Input::new();
+    let at: (f32, f32) = (50.0, 300.0);
+    let hand = |fx: &mut Fx, what: CapturedMouse, buttons: Buttons| -> Vec<Event> { input.captured_mouse(&fx.page, &mut fx.rt, fx.kept.frame(), world, at, what, buttons, 7.5, Mods::SHIFT).into_iter().collect() };
+    let handler = |fx: &Fx, event: &Event| -> String {
+        match event.action {
+            Some(gogo_ui::page::Action::Named(name)) => fx.page.str(name).to_string(),
+            other => panic!("{other:?}"),
+        }
+    };
+
+    // No button down: `on:hover=` hears each move, with its counts.
+    let moved: Vec<Event> = hand(&mut fx, CapturedMouse::Move { dx: 12.0, dy: -3.0 }, Buttons::NONE);
+    assert_eq!(moved.len(), 1);
+    assert_eq!((moved[0].node, handler(&fx, &moved[0]).as_str()), (world, "look"));
+    let EventKind::Hover(HoverPhase::Over, sample) = moved[0].kind else { panic!("{:?}", moved[0].kind) };
+    assert_eq!((sample.dx, sample.dy), (12.0, -3.0));
+    assert_eq!((sample.x, sample.y), (-150.0, 300.0), "where the mouse was captured, in the Surface's own space");
+    assert_eq!((sample.finger, sample.tool, sample.buttons, sample.time, sample.mods), (MOUSE_ID, Tool::Mouse, Buttons::NONE, 7.5, Mods::SHIFT));
+
+    // A button goes down, the mouse moves, the button lifts: `on:pointer=`.
+    let down: Vec<Event> = hand(&mut fx, CapturedMouse::Press(Phase::Down), Buttons::PRIMARY);
+    assert!(matches!(down[..], [Event { kind: EventKind::Pointer(Phase::Down, sample), .. }] if sample.buttons == Buttons::PRIMARY && (sample.dx, sample.dy) == (0.0, 0.0)), "{down:?}");
+    let dragged: Vec<Event> = hand(&mut fx, CapturedMouse::Move { dx: 1.0, dy: 2.0 }, Buttons::PRIMARY);
+    assert!(matches!(dragged[..], [Event { kind: EventKind::Pointer(Phase::Move, sample), .. }] if (sample.dx, sample.dy) == (1.0, 2.0)), "{dragged:?}");
+    let up: Vec<Event> = hand(&mut fx, CapturedMouse::Press(Phase::Up), Buttons::NONE);
+    assert!(matches!(up[..], [Event { kind: EventKind::Pointer(Phase::Up, _), .. }]), "{up:?}");
+
+    // The wheel.
+    let turned: Vec<Event> = hand(&mut fx, CapturedMouse::Wheel { notches: -2.0 }, Buttons::NONE);
+    assert_eq!(handler(&fx, &turned[0]), "zoom");
+    assert_eq!(turned[0].kind, EventKind::Wheel { x: -150.0, y: 300.0, notches: -2.0, mods: Mods::SHIFT });
+
+    // The button under the place heard nothing and shows nothing.
+    assert!(!fx.rt.has(fx.id("other"), gogo_ui::runtime::HOVERED));
+
+    // A Surface that writes no `on:hover=` hears no move with no button
+    // down; one that is disabled hears nothing.
+    let mut quiet = Fx::new("View v { Surface world draw=gpu, capture_mouse=true, interactive=true, on:pointer=look, width=fill, height=fill }");
+    quiet.frame(400.0, 800.0);
+    let world: NodeId = quiet.id("world");
+    assert!(input.captured_mouse(&quiet.page, &mut quiet.rt, quiet.kept.frame(), world, at, CapturedMouse::Move { dx: 1.0, dy: 1.0 }, Buttons::NONE, 0.0, Mods::NONE).is_empty());
+    assert_eq!(input.captured_mouse(&quiet.page, &mut quiet.rt, quiet.kept.frame(), world, at, CapturedMouse::Press(Phase::Down), Buttons::PRIMARY, 0.0, Mods::NONE).len(), 1);
+    quiet.rt.set_prop(world, PropKey::Disabled, Value::VBool(true));
+    quiet.frame(400.0, 800.0);
+    assert!(input.captured_mouse(&quiet.page, &mut quiet.rt, quiet.kept.frame(), world, at, CapturedMouse::Press(Phase::Down), Buttons::PRIMARY, 0.0, Mods::NONE).is_empty());
+}

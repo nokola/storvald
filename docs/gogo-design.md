@@ -1375,7 +1375,7 @@ A `ListItem` takes these less `valign`, `aspect`, `overlay`.
 | `Circle` | `color`, `color.a`, `border_thickness`, `border_color`, `border_dash` |
 | `Arc` | `color`, `color.a`, `from`, `sweep`, `thickness`, `dash` |
 | `Gradient` | `stops`, `fill`, `angle`, `repeat`, `from`, `to`, `corner_radius` |
-| `Surface` | `draw`, `fit`, `window`, `sampling`, `clip_contents`, `depth` |
+| `Surface` | `draw`, `fit`, `window`, `sampling`, `clip_contents`, `depth`, `capture_mouse` |
 | `Slider` | `background`, `corner_radius`, `color`, `value`, `min`, `max`, `step` |
 | `Input` | `background`, `corner_radius`, `corner_radius_top_left`, `corner_radius_top_right`, `corner_radius_bottom_right`, `corner_radius_bottom_left`, `border_thickness`, `border_color`, `border_dash`, `clip_contents`, `padding`, `padding_left`, `padding_top`, `padding_right`, `padding_bottom`, `text`, `font_size`, `font_color`, `placeholder_text`, `max_length`, `selection_color` |
 | `Check` | `background`, `corner_radius`, `corner_radius_top_left`, `corner_radius_top_right`, `corner_radius_bottom_right`, `corner_radius_bottom_left`, `border_thickness`, `border_color`, `border_dash`, `clip_contents`, `padding`, `padding_left`, `padding_top`, `padding_right`, `padding_bottom`, `text`, `font_size`, `font_color`, `wrap`, `horizontal_alignment`, `vertical_alignment`, `tap_pulse`, `selected` |
@@ -1417,6 +1417,16 @@ A `ListItem` takes these less `valign`, `aspect`, `overlay`.
   Before the draw calls of a `depth=true` Surface that is not the first
   code to draw in the frame, the renderer writes depth 1.0 over the part
   of the Surface that shows.
+- **`capture_mouse=`**: the frame road finds the Surface that asks for
+  the mouse (`Runtime::mouse_capture`), among the Surfaces whose file
+  writes the word or that code named, so a page with none pays nothing.
+  gogo has no window: the host holds the cursor, and hands a captured
+  mouse's moves to `Input::captured_mouse`, which looks for no node and
+  keeps no press.
+- **A new property word goes last** in `PropKey` and in `WORDS`, before
+  `Other`, and `PropKey::word` is never folded into its callers: a word
+  in the middle, and that function folded into the check of a list's
+  rows, each cost 0.2 to 0.4 % of a list's open in instructions.
 
 ## Checks for G1's successors
 

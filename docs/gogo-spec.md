@@ -1692,7 +1692,11 @@ to the goals rather than to muscle memory from WPF or an engine (`Label`,
   (`PictureSurface`, `CommandSurface`, `GpuSurface`): code that fills it another way
   does not compile. With `interactive=true` and `on:pointer=` it takes
   every finger that lands on it, each with its own press; any other box
-  holds one finger at a time. An `Image` names a picture FILE: any other
+  holds one finger at a time. `capture_mouse=true` (a bool: the line, a
+  `when` or code writes it) hides the cursor and hands everything the
+  mouse does to the Surface, with moves in the mouse's own counts, while
+  the Surface's page is the top page and the window has the keyboard.
+  An `Image` names a picture FILE: any other
   `source=` name is G2023, toward `Surface draw=picture`.
 - **`choice` / `Radio` / `Check`** — one-of-N with a lexical home: `choice`
   is erased structure (children parent flat); every `Radio` descendant joins

@@ -1,0 +1,14 @@
+// What both pages of the example share: their font and their colors.
+//
+// The font is the repository's own, two folders up. A program of your own
+// keeps its font in its own folder and writes `res://assets/<file>.ttf`.
+theme {
+    font = "res://../../assets/Fonts/Roboto Regular.ttf"
+}
+
+$back = #101218
+$ink = #E8E8EC
+$dim = #9A9CA8
+$plate = #2C2F38
+
+style Plain background=$plate, font_color=$ink, padding=10, corner_radius=6

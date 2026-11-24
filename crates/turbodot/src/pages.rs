@@ -286,18 +286,40 @@ pub struct UiAssets {
     /// runtime and handed to the renderer. `None` = the texts as the
     /// files have them.
     pub locale: Option<Arc<Locale>>,
-    /// True from a layout that left a page with a `Surface
-    /// draw=commands` to write, until `take_surface_asks`.
+    /// What layouts left a frame to do, as bits: `SURFACE_ASKS` from a
+    /// layout that left a page with a `Surface draw=commands` to write,
+    /// `MOUSE_CAPTURE_NEWS` from one after which another Surface of its
+    /// page asks for the mouse, or none does.
     ///
-    /// Needed here, in what every page lays out against, so a frame in
-    /// which no page is laid out asks no page for it: a still frame costs
-    /// one read. In a `Cell` because layout has a shared reference.
-    has_surface_asks: std::cell::Cell<bool>,
+    /// Needed here, in what every page lays out against, and as one
+    /// number: a frame in which no page is laid out asks no page for
+    /// either, and costs one read for both. In a `Cell` because layout
+    /// has a shared reference.
+    layout_news: std::cell::Cell<u8>,
 }
+
+/// `UiAssets::layout_news`: a page has a `Surface draw=commands` to write.
+pub(crate) const SURFACE_ASKS: u8 = 1;
+/// `UiAssets::layout_news`: who asks for the mouse may have changed.
+pub(crate) const MOUSE_CAPTURE_NEWS: u8 = 2;
 
 impl UiAssets {
     pub fn new(text: TextEngine, images: ImageTable) -> UiAssets {
-        UiAssets { text: RefCell::new(text), images, locale: None, has_surface_asks: std::cell::Cell::new(false) }
+        UiAssets { text: RefCell::new(text), images, locale: None, layout_news: std::cell::Cell::new(0) }
+    }
+
+    /// Takes what layouts since the last call left a frame to do:
+    /// `SURFACE_ASKS`, `MOUSE_CAPTURE_NEWS`, or 0 when no page was laid
+    /// out.
+    pub(crate) fn take_layout_news(&self) -> u8 {
+        self.layout_news.replace(0)
+    }
+
+    /// Says that who asks for the mouse may have changed, for a reason
+    /// no layout knows: another page is on top, the window lost the
+    /// keyboard.
+    pub(crate) fn note_mouse_capture_news(&self) {
+        self.layout_news.set(self.layout_news.get() | MOUSE_CAPTURE_NEWS);
     }
 
     /// True when a layout since the last call left a page with a
@@ -305,7 +327,9 @@ impl UiAssets {
     /// A host with pages of its own that have such Surfaces calls it
     /// once a frame, and asks its pages only on true.
     pub fn take_surface_asks(&self) -> bool {
-        self.has_surface_asks.replace(false)
+        let news: u8 = self.layout_news.get();
+        self.layout_news.set(news & !SURFACE_ASKS);
+        news & SURFACE_ASKS != 0
     }
 
     /// Sets the language: `bcp47` for the text engine (where a line
@@ -479,6 +503,10 @@ pub struct PageUi {
     /// The rectangle the page lays out in, in epx; `None` = the whole
     /// window.
     pub viewport: Option<Rect>,
+    /// Surface of the page that asked for the mouse at its last layout
+    /// (`Runtime::mouse_capture`). Kept so a layout tells the program
+    /// only when it changed.
+    pub(crate) mouse_capture_seen: Option<NodeId>,
     /// Pictures page's code made (`set_picture`), one per Surface.
     pub(crate) code_pictures: Vec<CodePicture>,
     /// Textures page's code handed over (`set_picture_texture`), one per
@@ -544,6 +572,7 @@ impl PageUi {
             is_modal: false,
             pose: None,
             viewport: None,
+            mouse_capture_seen: None,
             code_pictures: Vec::new(),
             #[cfg(feature = "gpu")]
             picture_textures: Vec::new(),
@@ -596,7 +625,11 @@ impl PageUi {
         let measure: EpxMeasure<'_> = assets.measure(epx);
         self.kept.frame_retained(&mut self.runtime, &self.page, viewport, &measure, &mut self.draws, self.above_children.map(|top| (top, &mut self.top_draws)));
         if self.runtime.has_surface_to_draw() {
-            assets.has_surface_asks.set(true);
+            assets.layout_news.set(assets.layout_news.get() | SURFACE_ASKS);
+        }
+        if self.runtime.mouse_capture() != self.mouse_capture_seen {
+            self.mouse_capture_seen = self.runtime.mouse_capture();
+            assets.note_mouse_capture_news();
         }
         self.laid_out_for = (size, epx, self.viewport);
     }

@@ -1,0 +1,16 @@
+// Overlay page over the world: the pause. Its root is see-through, so
+// the world stays in view under it. While it is the top page the mouse
+// is free, though the world's Surface still says `capture_mouse=true`:
+// a Surface has the mouse only while its own page is on top. "Resume"
+// leaves this page, and the world has the mouse again with no code.
+uses "look.gogo"
+
+View pausePage background=black/0.6 {
+    Column box halign=center, valign=center, spacing=12, padding=16, background=$back, corner_radius=8 {
+        Label title text="Paused", font_size=24, font_color=$ink, halign=center
+        Row spacing=8 {
+            Button resume .Plain text="Resume"
+            Button stopLooking .Plain text="Stop looking"
+        }
+    }
+}

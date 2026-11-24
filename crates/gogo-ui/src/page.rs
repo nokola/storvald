@@ -959,6 +959,12 @@ pub enum PropKey {
     /// asked for each field of each row a list fills, and no row and no
     /// `when` feeds this word. The compiler checks its value itself.
     Depth,
+    /// `capture_mouse=true` on a Surface: the cursor is hidden and
+    /// everything the mouse does goes to this Surface, for as long as
+    /// the word is true (`Runtime::mouse_capture`). A game turns its
+    /// camera that way. True or false like any other such word: the
+    /// file's line, a `when` or code writes it.
+    CaptureMouse,
     Other(StrId),
 }
 
@@ -1069,6 +1075,7 @@ pub const WORDS: &[(&str, PropKey)] = &[
     ("min_size", PropKey::MinSize),
     ("draw", PropKey::Draw),
     ("depth", PropKey::Depth),
+    ("capture_mouse", PropKey::CaptureMouse),
 ];
 
 impl PropKey {
@@ -1102,7 +1109,7 @@ impl PropKey {
     /// Keys that are true or false: `overlay=maybe` is refused (G0078)
     /// where it would read as "not an overlay" with a clean build.
     pub fn is_bool(self) -> bool {
-        matches!(self, PropKey::Overlay | PropKey::Interactive | PropKey::Wrap | PropKey::ClipText | PropKey::ClipContents | PropKey::Disabled | PropKey::SelectedProp | PropKey::FullRow | PropKey::ToggleMode)
+        matches!(self, PropKey::Overlay | PropKey::Interactive | PropKey::Wrap | PropKey::ClipText | PropKey::ClipContents | PropKey::Disabled | PropKey::SelectedProp | PropKey::FullRow | PropKey::ToggleMode | PropKey::CaptureMouse)
     }
 
     /// The words a word key takes, when the set is closed (`halign=`,
@@ -1296,7 +1303,7 @@ fn kind_row(kind: Kind) -> &'static [&'static [PropKey]] {
         // The three picture words are a `draw=picture` Surface's alone,
         // `clip_contents=` a `draw=commands` one's: the compiler refuses
         // each beside another `draw=`. A `draw=gpu` Surface takes none.
-        Kind::Surface => &[BOX, &[PropKey::Draw, PropKey::Fit, PropKey::Window, PropKey::Sampling, PropKey::ClipContents, PropKey::Depth]],
+        Kind::Surface => &[BOX, &[PropKey::Draw, PropKey::Fit, PropKey::Window, PropKey::Sampling, PropKey::ClipContents, PropKey::Depth, PropKey::CaptureMouse]],
         Kind::Rectangle => &[BOX, &[PropKey::Color, PropKey::ColorA, PropKey::CornerRadius, PropKey::CornerRadiusTopLeft, PropKey::CornerRadiusTopRight, PropKey::CornerRadiusBottomRight, PropKey::CornerRadiusBottomLeft, PropKey::BorderThickness, PropKey::BorderColor, PropKey::BorderDash]],
         Kind::Circle => &[BOX, &[PropKey::Color, PropKey::ColorA, PropKey::BorderThickness, PropKey::BorderColor, PropKey::BorderDash]],
         // `corner_radius` (Q9, user 2026-09-05): a rounded or disc-shaped

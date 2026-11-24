@@ -2014,6 +2014,77 @@ resolution than the UI.
 
 ---
 
+## How do I turn a camera with the mouse (hide the cursor, like a game)?
+
+Say `capture_mouse=true` on the `Surface` that shows the world:
+
+```kdl
+View game {
+    Layers width=fill, height=fill {
+        Surface world draw=gpu, depth=true, width=fill, height=fill,
+            interactive=true, on:pointer=turn, on:hover=turn, on:wheel=zoom,
+            capture_mouse=true
+        Label score text="0", font_size=24, halign=right, valign=top
+    }
+}
+```
+
+While the word is in effect the cursor is hidden and held, and
+everything the mouse does goes to that Surface, with no search for the
+node under it:
+
+| The mouse | Goes to | As |
+|---|---|---|
+| moves, no button down | `on:hover=` | `Over`, with the move in `dx`, `dy` |
+| moves, a button down | `on:pointer=` | `Move`, with the move in `dx`, `dy` |
+| a button goes down or lifts | `on:pointer=` | `Down`, `Up`; `Move` for a second button |
+| the wheel turns | `on:wheel=` | the notches |
+
+`dx` and `dy` are the mouse's own counts, before the system speeds a
+cursor up: multiply them by your own sensitivity. Every move the mouse
+reports is one event; none is summed.
+
+```rust partial
+Handler::Turn => match event.kind {
+    EventKind::Hover(HoverPhase::Over, sample) | EventKind::Pointer(Phase::Move, sample) => {
+        host.app.yaw_rad += sample.dx * TURN_RAD_PER_COUNT;
+        host.app.pitch_rad += sample.dy * TURN_RAD_PER_COUNT;
+    }
+    _ => {}
+},
+```
+
+Most programs do not start captured. The code writes the word when play
+starts and when it stops:
+
+```rust partial
+host.ui.set_capture_mouse(NAMES.world.node(), true);
+```
+
+(`examples/world` is the whole of it: "Look around" captures the mouse,
+Esc opens a pause page.)
+
+Three things to know:
+
+- **The word is in effect only while its page is the top page and the
+  window has the keyboard.** Open a pause menu over the world and the
+  user has their cursor for its buttons, with nothing done in your
+  code; leave it, and the world has the mouse again. The same when the
+  user goes to another window and comes back.
+- **With no cursor the user can press no button of the page.** Give
+  them a key: Esc is the back request (`Page::back`), and the page
+  answers it by opening its pause page or by writing the word false.
+- **One Surface of a page at a time.** When two say true, the first in
+  the file has the mouse.
+
+A host with its own window reads `Program::is_mouse_captured()` after
+each frame: on true it hides and holds the cursor and hands the device's
+own moves to `Program::captured_mouse_moved`; it tells the program when
+its window gains or loses the keyboard (`set_window_focused`). TurboDot's
+own window does all of it.
+
+---
+
 ## How do I pin something to a screen corner or edge?
 
 Say *where* with `halign`/`valign`, push off the edge with margins — on a

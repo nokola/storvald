@@ -40,7 +40,7 @@ pub use compile::{CompileOptions, Compiled, compile, compile_with};
 pub use diag::{Diagnostic, Severity, has_errors};
 pub use draw::{Draw, DrawnShift, Fit, GradientKind, Sampling, TextAlign, draw, drawn_shift, hit};
 pub use frame::{Frame, KeptFrame};
-pub use input::{Behavior, Buttons, Claim, Cx, Event, EventKind, EventList, EventListIntoIter, HoverPhase, Input, Key, KeyAction, MOUSE_ID, Mods, Phase, PointerSample, Tool, Touch};
+pub use input::{Behavior, Buttons, CapturedMouse, Claim, Cx, Event, EventKind, EventList, EventListIntoIter, HoverPhase, Input, Key, KeyAction, MOUSE_ID, Mods, Phase, PointerSample, Tool, Touch};
 pub use layout::{FixedAdvance, LayoutBuffers, Rect, TextMeasure, layout, layout_into};
 pub use locale::{KeyName, Keys, Locale};
 pub use runtime::{AnimName, ArrangementName, HandlerName, Hook, ThemeName};

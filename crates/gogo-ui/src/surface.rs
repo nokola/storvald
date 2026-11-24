@@ -48,6 +48,17 @@ impl SurfaceDraw {
     }
 }
 
+/// True when the file writes `capture_mouse=` for `node`: on its line, or
+/// in a `when` that lands on it.
+///
+/// Needed so a frame asks only these Surfaces whether the word is true
+/// now: a page whose Surfaces never write it pays nothing for the mouse.
+pub(crate) fn may_capture_mouse(page: &Page, node: NodeId) -> bool {
+    let has_the_word = |(first, count): (u32, u32)| page.props[first as usize..(first + count) as usize].iter().any(|prop| prop.key == PropKey::CaptureMouse);
+    let n = &page.nodes[node];
+    has_the_word(n.props) || page.whens[n.whens.0 as usize..(n.whens.0 + n.whens.1) as usize].iter().any(|when| has_the_word(when.props))
+}
+
 /// A `Surface draw=picture` of a page, by its node.
 ///
 /// Needed as a type of its own so a picture cannot be handed to a

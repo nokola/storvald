@@ -2,21 +2,25 @@
 // with GPU calls of its own, in the pass that draws the pages.
 // `depth=true` gives those calls a depth buffer, so the cube's near faces
 // hide its far ones whatever the order they are drawn in. The label and
-// the button are plain nodes over the world.
+// the buttons are plain nodes over the world.
 //
-// The font is the repository's own, two folders up. A program of your own
-// keeps its font in its own folder and writes `res://assets/<file>.ttf`.
-theme {
-    font = "res://../../assets/Fonts/Roboto Regular.ttf"
-}
+// The world takes the mouse too: a drag turns the cube, the wheel moves
+// the camera. "Look around" captures the mouse (`world_page.rs` writes
+// `capture_mouse=` then): the cursor goes, and every move of the mouse
+// turns the cube. Esc opens the pause page.
+uses "look.gogo"
 
-View worldPage background=#101218 {
+View worldPage background=$back {
     Layers width=fill, height=fill {
-        Surface world draw=gpu, depth=true, width=fill, height=fill
+        Surface world draw=gpu, depth=true, width=fill, height=fill,
+            interactive=true, on:pointer=turn, on:hover=turn, on:wheel=zoom
         Column spacing=10, padding=16, halign=center, valign=top {
-            Label title text="World", font_size=24, font_color=#E8E8EC, halign=center
-            Button spin text="Stop", background=#2C2F38, font_color=#E8E8EC, padding=10,
-                corner_radius=6, halign=center
+            Label title text="World", font_size=24, font_color=$ink, halign=center
+            Row spacing=8, halign=center {
+                Button look .Plain text="Look around"
+                Button spin .Plain text="Stop"
+            }
+            Label hint text="Esc pauses", font_color=$dim, halign=center, visibility=gone
         }
     }
 }

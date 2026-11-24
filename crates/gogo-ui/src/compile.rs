@@ -611,6 +611,7 @@ fn wrong_kind(key: PropKey, kind: Kind) -> String {
         PropKey::Background | PropKey::Color | PropKey::ColorA | PropKey::CornerRadius | PropKey::BorderThickness | PropKey::BorderColor if kind == Kind::Surface => format!("`{word}=` on a Surface — gogo draws nothing of a Surface, the program's code does; a plate is a Rectangle or a Panel under it in a `Layers`"),
         PropKey::Draw => format!("`draw=` says how the program's code fills a Surface — gogo draws a {name} itself"),
         PropKey::Depth => format!("`depth=` gives the program's own draw calls a depth buffer, in a `Surface draw=gpu` — gogo draws a {name} itself, in paint order"),
+        PropKey::CaptureMouse => format!("`capture_mouse=` hides the cursor and hands every move of the mouse to a `Surface` — a {name} takes the mouse where the cursor is, with `interactive=true`"),
         PropKey::Background | PropKey::Color | PropKey::ColorA if draws_nothing && kind == Kind::Seat => format!("`{word}=` on a seat — a seat draws nothing: it is an empty socket, and the plate belongs to the node that sits in it"),
         PropKey::Background | PropKey::Color | PropKey::ColorA if draws_nothing => format!("`{word}=` on a {name} — a {name} draws nothing of its own; a plate is a Panel's `background=`, around it or inside it"),
         PropKey::Color if shows_text => format!("`color=` on a {name} — text is `font_color=`, the plate is `background=`"),
