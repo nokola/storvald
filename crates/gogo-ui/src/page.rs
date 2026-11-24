@@ -889,15 +889,6 @@ pub enum PropKey {
     /// the picture's decoded copy once no live page names it, and decode
     /// it again when one does. Default: kept for the whole session.
     Release,
-    /// `draw=picture|commands|gpu` on a Surface: how the program's code fills
-    /// it (`SurfaceDraw`). The file's line alone writes it: the build
-    /// gives the Surface's name a type by it.
-    Draw,
-    /// `depth=true` on a `draw=gpu` Surface: the program's draw calls
-    /// there test and write depth. The file's line alone writes it: one
-    /// such Surface in a build gives every frame of the program a depth
-    /// buffer (`Page::has_depth_surface`).
-    Depth,
     TouchTarget,
     TapPulse,
     AccessibilityName,
@@ -948,6 +939,21 @@ pub enum PropKey {
     Padding,
     Size,
     MinSize,
+    // A Surface's own words come last, after every word that layout and
+    // drawing read for each node.
+    //
+    // Needed because a word added in the middle gives every word after
+    // it another number, which changes the code the compiler makes for
+    // the reads of those words. A new word goes here, before `Other`.
+    /// `draw=picture|commands|gpu` on a Surface: how the program's code fills
+    /// it (`SurfaceDraw`). The file's line alone writes it: the build
+    /// gives the Surface's name a type by it.
+    Draw,
+    /// `depth=true` on a `draw=gpu` Surface: the program's draw calls
+    /// there test and write depth. The file's line alone writes it: one
+    /// such Surface in a build gives every frame of the program a depth
+    /// buffer (`Page::has_depth_surface`).
+    Depth,
     Other(StrId),
 }
 
@@ -1018,8 +1024,6 @@ pub const WORDS: &[(&str, PropKey)] = &[
     ("full_row", PropKey::FullRow),
     ("loading", PropKey::Loading),
     ("release", PropKey::Release),
-    ("draw", PropKey::Draw),
-    ("depth", PropKey::Depth),
     ("touch_target", PropKey::TouchTarget),
     ("tap_pulse", PropKey::TapPulse),
     ("accessibility_name", PropKey::AccessibilityName),
@@ -1058,6 +1062,8 @@ pub const WORDS: &[(&str, PropKey)] = &[
     ("padding", PropKey::Padding),
     ("size", PropKey::Size),
     ("min_size", PropKey::MinSize),
+    ("draw", PropKey::Draw),
+    ("depth", PropKey::Depth),
 ];
 
 impl PropKey {
