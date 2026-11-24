@@ -152,14 +152,24 @@ impl PageUi {
     /// WARNING: with no cursor the user cannot press a button of the
     /// page. Give them a key that ends it: Esc is the back request
     /// (`Page::back`).
+    #[inline]
     pub fn set_capture_mouse(&mut self, surface: impl NodeName, is_captured: bool) {
-        let surface: NodeId = surface.node();
+        self.set_capture_mouse_by_id(surface.node(), is_captured)
+    }
+
+    /// What `set_capture_mouse` does, by the id of the node.
+    fn set_capture_mouse_by_id(&mut self, surface: NodeId, is_captured: bool) {
         self.runtime.set_capture_mouse(surface, is_captured);
     }
 
     /// Shows or hides `node`. Hidden node takes no space and no touch.
+    #[inline]
     pub fn set_visible(&mut self, node: impl NodeName, is_visible: bool) {
-        let node: NodeId = node.node();
+        self.set_visible_by_id(node.node(), is_visible)
+    }
+
+    /// What `set_visible` does, by the id of the node.
+    fn set_visible_by_id(&mut self, node: NodeId, is_visible: bool) {
         self.runtime.set_visible(&mut self.page, node, is_visible);
     }
 
@@ -186,8 +196,13 @@ impl PageUi {
     ///
     /// Needed to tell which item an event belongs to: event names a node,
     /// key names the item.
+    #[inline]
     pub fn row_key(&self, node: impl NodeName) -> Option<&ItemKey> {
-        let node: NodeId = node.node();
+        self.row_key_by_id(node.node())
+    }
+
+    /// What `row_key` does, by the id of the node.
+    fn row_key_by_id(&self, node: NodeId) -> Option<&ItemKey> {
         self.runtime.item_key(&self.page, node)
     }
 
@@ -216,8 +231,13 @@ impl PageUi {
     }
 
     /// Where `node` sat in last frame.
+    #[inline]
     pub fn rect(&self, node: impl NodeName) -> Rect {
-        let node: NodeId = node.node();
+        self.rect_by_id(node.node())
+    }
+
+    /// What `rect` does, by the id of the node.
+    fn rect_by_id(&self, node: NodeId) -> Rect {
         self.kept.rects()[node.index()]
     }
 

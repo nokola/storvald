@@ -1033,8 +1033,13 @@ impl Runtime {
     /// it (shipped: a new play kills the old one). The input layer calls
     /// this on `activate` for every node whose `tap_pulse=true` (the
     /// shipped `button.Pressed` hook).
+    #[inline]
     pub fn tap_pulse(&mut self, node: impl NodeName) {
-        let node: NodeId = node.node();
+        self.tap_pulse_by_id(node.node())
+    }
+
+    /// What `tap_pulse` does, by the id of the node.
+    fn tap_pulse_by_id(&mut self, node: NodeId) {
         self.pulses.retain(|p| p.node != node);
         self.pulses.push(Pulse { node, elapsed: 0.0 });
         self.dirty = true;
@@ -1043,8 +1048,13 @@ impl Runtime {
     /// The `tap_pulse` swing angle on `node` right now, degrees about its
     /// left edge; 0 when no swing is live (a finished swing is disarmed —
     /// the D10 law: a node has a transform only WHILE it animates).
+    #[inline]
     pub fn tap_pulse_angle(&self, node: impl NodeName) -> f32 {
-        let node: NodeId = node.node();
+        self.tap_pulse_angle_by_id(node.node())
+    }
+
+    /// What `tap_pulse_angle` does, by the id of the node.
+    fn tap_pulse_angle_by_id(&self, node: NodeId) -> f32 {
         self.pulses.iter().find(|p| p.node == node).map(|p| p.angle()).unwrap_or(0.0)
     }
 
@@ -1301,8 +1311,13 @@ impl Runtime {
     ///
     /// Needed by host that waits for a page's root: page is in place
     /// once its `on:show` ended.
+    #[inline]
     pub fn is_hook_playing(&self, page: &Page, node: impl NodeName, hook: Hook) -> bool {
-        let node: NodeId = node.node();
+        self.is_hook_playing_by_id(page, node.node(), hook)
+    }
+
+    /// What `is_hook_playing` does, by the id of the node.
+    fn is_hook_playing_by_id(&self, page: &Page, node: NodeId, hook: Hook) -> bool {
         let n = &page.nodes[node];
         let event: StrId = page.intern_lookup(hook.event());
         page.handlers[n.handlers.0 as usize..(n.handlers.0 + n.handlers.1) as usize].iter().any(|h| h.event == event && matches!(h.action, Action::Play(anim) if self.is_playing_id(anim)))
@@ -2033,8 +2048,13 @@ impl Runtime {
     /// Is a prop lane (GP40) an anim's right now — a live player's, or a
     /// finished one's held end pose? The tween spawner asks BEFORE
     /// `compose_anim` has stamped the resolved copy.
+    #[inline]
     pub fn anim_owns_prop_now(&self, node: impl NodeName, key: PropKey) -> bool {
-        let node: NodeId = node.node();
+        self.anim_owns_prop_now_by_id(node.node(), key)
+    }
+
+    /// What `anim_owns_prop_now` does, by the id of the node.
+    fn anim_owns_prop_now_by_id(&self, node: NodeId, key: PropKey) -> bool {
         self.held_props.iter().any(|h| h.0 == node && h.1 == key) || self.players.iter().filter(|p| !p.stopped).any(|p| p.owns_props.contains(&(node, key)))
     }
 
@@ -2501,8 +2521,13 @@ impl Runtime {
     /// locale (`set_locale`). Takes only a build-emitted `Key`, so a key no
     /// page declares is a rustc error. `set_text` is the other write: a
     /// literal shown as given, never translated.
+    #[inline]
     pub fn set_key<K: KeyName>(&mut self, node: impl NodeName, key: K) {
-        let node: NodeId = node.node();
+        self.set_key_by_id(node.node(), key)
+    }
+
+    /// What `set_key` does, by the id of the node.
+    fn set_key_by_id<K: KeyName>(&mut self, node: NodeId, key: K) {
         self.set_prop(node, PropKey::Text, Value::VText { text: NO_STR, key: key.id() });
     }
 
@@ -2702,8 +2727,13 @@ impl Runtime {
         }
     }
 
+    #[inline]
     pub fn has(&self, node: impl NodeName, bit: u8) -> bool {
-        let node: NodeId = node.node();
+        self.has_by_id(node.node(), bit)
+    }
+
+    /// What `has` does, by the id of the node.
+    fn has_by_id(&self, node: NodeId, bit: u8) -> bool {
         self.states[node] & bit != 0
     }
 
@@ -2739,8 +2769,13 @@ impl Runtime {
     ///
     /// The file has the one word `off`, so a write can only switch a node
     /// off; `clear_prop` gives the file's answer back.
+    #[inline]
     pub fn takes_keys(&self, page: &Page, node: impl NodeName) -> bool {
-        let node: NodeId = node.node();
+        self.takes_keys_by_id(page, node.node())
+    }
+
+    /// What `takes_keys` does, by the id of the node.
+    fn takes_keys_by_id(&self, page: &Page, node: NodeId) -> bool {
         page.nodes[node].focusable && !self.writes.iter().any(|(n, w)| *n == node && w.key == PropKey::KeyboardTarget && matches!(w.value, Value::VIdent(word) if page.str(word) == "off"))
     }
 
@@ -2979,7 +3014,12 @@ impl Runtime {
     /// answers dynamic — the safe side.
     #[inline]
     pub fn is_static(&self, node: impl NodeName) -> bool {
-        let node: NodeId = node.node();
+        self.is_static_by_id(node.node())
+    }
+
+    /// What `is_static` does, by the id of the node.
+    #[inline]
+    fn is_static_by_id(&self, node: NodeId) -> bool {
         self.static_mask_on && self.static_node.get(node.index()).copied().unwrap_or(false) && !self.written.get(node.index()).copied().unwrap_or(true)
     }
 
@@ -4117,8 +4157,13 @@ impl Resolved {
     /// longer sits in (todo-bugs B25). Every walk names its tree: hit,
     /// clip, focus, hover, scroll ancestor, disabled, presence, entrances,
     /// inherited props and moved rects want this one.
+    #[inline]
     pub fn placed_parent(&self, page: &Page, n: impl NodeName) -> NodeId {
-        let n: NodeId = n.node();
+        self.placed_parent_by_id(page, n.node())
+    }
+
+    /// What `placed_parent` does, by the id of the node.
+    fn placed_parent_by_id(&self, page: &Page, n: NodeId) -> NodeId {
         placed_parent_in(&self.seat, page, n)
     }
 
@@ -4161,8 +4206,13 @@ impl Resolved {
 
     /// `visibility=space_only` — laid out (the slot holds), not drawn,
     /// no input.
+    #[inline]
     pub fn hidden(&self, page: &Page, node: impl NodeName) -> bool {
-        let node: NodeId = node.node();
+        self.hidden_by_id(page, node.node())
+    }
+
+    /// What `hidden` does, by the id of the node.
+    fn hidden_by_id(&self, page: &Page, node: NodeId) -> bool {
         !self.hiding.contains(&node) && self.ident(page, node, PropKey::Visibility) == Some("space_only")
     }
 }
@@ -4308,14 +4358,24 @@ fn apply_prop_lane(page: &Page, r: &mut Resolved, node: NodeId, key: PropKey, v:
 
 impl Resolved {
     /// Does an anim own this channel on this node right now?
+    #[inline]
     pub fn anim_owns(&self, node: impl NodeName, channel: Channel) -> bool {
-        let node: NodeId = node.node();
+        self.anim_owns_by_id(node.node(), channel)
+    }
+
+    /// What `anim_owns` does, by the id of the node.
+    fn anim_owns_by_id(&self, node: NodeId, channel: Channel) -> bool {
         self.anim_owned.get(node.index()).is_some_and(|b| b & channel.bit() != 0)
     }
 
     /// Does an anim own this PROP lane (GP40) right now?
+    #[inline]
     pub fn anim_owns_prop(&self, node: impl NodeName, key: PropKey) -> bool {
-        let node: NodeId = node.node();
+        self.anim_owns_prop_by_id(node.node(), key)
+    }
+
+    /// What `anim_owns_prop` does, by the id of the node.
+    fn anim_owns_prop_by_id(&self, node: NodeId, key: PropKey) -> bool {
         self.anim_owned_props.contains(&(node, key))
     }
 

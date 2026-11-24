@@ -154,9 +154,12 @@ pub const NO_NODE: NodeId = NodeId(u32::MAX);
 /// of a Label, the value of a Slider) takes a `NodeId`: a Surface is
 /// never one, and the build says so.
 ///
-/// A call that takes a name and is longer than a few lines hands the id
-/// to `<its name>_by_id`, which holds its code. So that code is compiled
-/// once, in its own crate, and not again in every crate that calls it.
+/// A call that takes a name only hands the id to `<its name>_by_id`,
+/// which holds its code. So that code is compiled once, in its own
+/// crate. A call with its code in it would be compiled again in every
+/// crate that calls it, where the functions of this crate it used to
+/// take in are calls: `is_hook_playing` written that way made a frame
+/// of a page slide 23 instructions longer.
 pub trait NodeName: Copy {
     /// The node's id.
     fn node(self) -> NodeId;
@@ -2148,8 +2151,13 @@ impl Cloned {
 
 impl Page {
     /// The `keys` claim on an instance root — 0 when nothing claims.
+    #[inline]
     pub fn key_claim(&self, node: impl NodeName) -> u8 {
-        let node: NodeId = node.node();
+        self.key_claim_by_id(node.node())
+    }
+
+    /// What `key_claim` does, by the id of the node.
+    fn key_claim_by_id(&self, node: NodeId) -> u8 {
         self.key_claims.iter().find(|(n, _)| *n == node).map(|(_, m)| *m).unwrap_or(0)
     }
 
@@ -2329,8 +2337,13 @@ impl Page {
     /// (todo-bugs B25). Every walk names its tree; this one is for the
     /// walks that ask "who authored this node" (a `when <name>` finds its
     /// control root, a row finds its List).
+    #[inline]
     pub fn declared_parent(&self, n: impl NodeName) -> NodeId {
-        let n: NodeId = n.node();
+        self.declared_parent_by_id(n.node())
+    }
+
+    /// What `declared_parent` does, by the id of the node.
+    fn declared_parent_by_id(&self, n: NodeId) -> NodeId {
         self.nodes[n].parent
     }
 
@@ -2358,15 +2371,25 @@ impl Page {
         }
     }
 
+    #[inline]
     pub fn node_props(&self, id: impl NodeName) -> &[Prop] {
-        let id: NodeId = id.node();
+        self.node_props_by_id(id.node())
+    }
+
+    /// What `node_props` does, by the id of the node.
+    fn node_props_by_id(&self, id: NodeId) -> &[Prop] {
         let (first, count) = self.nodes[id].props;
         &self.props[first as usize..(first + count) as usize]
     }
 
     /// The base value of a prop on a node (no states applied).
+    #[inline]
     pub fn prop(&self, id: impl NodeName, key: PropKey) -> Option<Value> {
-        let id: NodeId = id.node();
+        self.prop_by_id(id.node(), key)
+    }
+
+    /// What `prop` does, by the id of the node.
+    fn prop_by_id(&self, id: NodeId, key: PropKey) -> Option<Value> {
         self.node_props(id).iter().rev().find(|p| p.key == key).map(|p| p.value)
     }
 

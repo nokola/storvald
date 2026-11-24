@@ -35,8 +35,13 @@ impl SurfaceDraw {
     /// How the file says `node` is filled.
     ///
     /// Returns `None` for a node that is not a `Surface`.
+    #[inline]
     pub fn of(page: &Page, node: impl NodeName) -> Option<SurfaceDraw> {
-        let node: NodeId = node.node();
+        Self::of_by_id(page, node.node())
+    }
+
+    /// What `of` does, by the id of the node.
+    fn of_by_id(page: &Page, node: NodeId) -> Option<SurfaceDraw> {
         if page.nodes.get(node.index())?.kind != Kind::Surface {
             return None;
         }
@@ -194,8 +199,13 @@ impl Page {
     /// Surface's own space. Empty before the first write.
     ///
     /// A renderer reads them where it meets `Draw::Surface`.
+    #[inline]
     pub fn surface_commands(&self, surface: impl NodeName) -> &[Draw] {
-        let surface: NodeId = surface.node();
+        self.surface_commands_by_id(surface.node())
+    }
+
+    /// What `surface_commands` does, by the id of the node.
+    fn surface_commands_by_id(&self, surface: NodeId) -> &[Draw] {
         self.surface_lists.iter().find(|list| list.node == surface).map_or(&[], |list| list.draws.as_slice())
     }
 
@@ -220,8 +230,13 @@ impl Page {
     /// Needed by a renderer, where it meets `Draw::GpuSurface`: the
     /// program's draw calls there test and write depth. The file's line
     /// alone says it, so the page is asked and no frame's state.
+    #[inline]
     pub fn is_depth_surface(&self, node: impl NodeName) -> bool {
-        let node: NodeId = node.node();
+        self.is_depth_surface_by_id(node.node())
+    }
+
+    /// What `is_depth_surface` does, by the id of the node.
+    fn is_depth_surface_by_id(&self, node: NodeId) -> bool {
         self.nodes.get(node.index()).is_some_and(|n| n.kind == Kind::Surface) && self.prop(node, PropKey::Depth) == Some(Value::VBool(true))
     }
 
