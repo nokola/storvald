@@ -13,14 +13,24 @@
 //!   are held by the test of `expected_counts.txt`.
 //! - `functions-moved`: prints the functions whose instructions differ
 //!   between two of `record`'s lists of one scenario.
+//!
+//! Its own modules, kept out of the measured crate:
+//!
+//! - `history`: rows kept from run to run, and the page made from them.
+//! - `functions`: a scenario's instructions by function, and the
+//!   functions that differ between two such lists.
+
+mod functions;
+mod history;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Output};
 
 use storvald_perf::counts::{INSTRUCTIONS, MEASURED_SYMBOL};
-use storvald_perf::functions::{self, FunctionCount, FunctionMove};
-use storvald_perf::history::{self, Move, Row};
 use storvald_perf::scenarios::{self, SCENARIOS, Scenario};
+
+use crate::functions::{FunctionCount, FunctionMove};
+use crate::history::{Move, Row};
 
 const USAGE: &str = "usage: storvald-perf list | run <scenario> | counts | write-expected | record --history <file> --page <file> --functions <directory> --date <utc> --commit <hash> --rustc <version> --machine <name> | check-latest --history <file> | functions-moved --before <file> --after <file>";
 

@@ -4,16 +4,19 @@
 //! - `scenarios`: what is measured, one function each.
 //! - `counts`: counts of one scenario, and the part of it that is counted.
 //! - `pages`: the three pages' code. Their pictures are in `ui/`.
-//! - `history`: rows kept from run to run, and the page made from them.
-//! - `functions`: a scenario's instructions by function, and the
-//!   functions that differ between two such lists.
 //!
 //! `storvald-perf` (`src/main.rs`) runs them. `tests/expected_counts.rs`
 //! holds every exact count to `expected_counts.txt`.
+//!
+//! Only what is measured lives in this crate. What keeps the counts
+//! (`history`, `functions`) is `storvald-perf`'s own: this crate holds
+//! the copies of gogo's and TurboDot's generic code that the scenarios
+//! run, and other code beside them changes how the compiler lays them
+//! out, which moves an instruction count with no change to what is
+//! measured (a slide frame counted 9 more when `functions` was added
+//! here).
 
 pub mod counts;
-pub mod functions;
-pub mod history;
 pub mod pages;
 pub mod scenarios;
 

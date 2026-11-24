@@ -1,8 +1,8 @@
 //! Rows kept from run to run (`history.csv`), and the page made from
 //! them (`README.md` beside it). Both live on the `perf-data` branch.
 
-use crate::counts::INSTRUCTIONS;
-use crate::scenarios::Scenario;
+use storvald_perf::counts::INSTRUCTIONS;
+use storvald_perf::scenarios::Scenario;
 
 /// First line of `history.csv`.
 pub const HEADER: &str = "date,commit,rustc,machine,scenario,metric,value";
@@ -212,7 +212,7 @@ pub fn page(rows: &[Row], scenarios: &[Scenario], repository: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::counts::Counts;
+    use storvald_perf::counts::Counts;
 
     #[test]
     fn a_number_that_fell_is_a_move_and_not_a_rise() {
