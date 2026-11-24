@@ -1,0 +1,17 @@
+[package]
+name = "storvald-perf"
+description = "Measured program of gogo and TurboDot: three pages that scenarios open, move and close while allocations, layout work and, under Valgrind, instructions are counted."
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# `ui` alone: pages with no window and no GPU, so the build that is
+# measured compiles neither.
+[dependencies]
+turbodot = { path = "../crates/turbodot", default-features = false, features = ["ui"] }
+
+# The build script compiles the pages in `ui/`.
+[build-dependencies]
+turbodot = { path = "../crates/turbodot", default-features = false }

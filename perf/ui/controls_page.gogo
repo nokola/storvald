@@ -1,0 +1,150 @@
+// Page of many controls, the shape of a settings page: a scrolling
+// column of 24 sliders, each with its name and its value, and 12 checks.
+// Made new at every open.
+uses "look.gogo"
+uses "sliding_page.gogo"
+
+View controlsPage .SlidingPage background=$back, padding=16 {
+    Column spacing=10, width=fill, height=fill {
+        Row spacing=8 {
+            Button goBack .Plain text="Back"
+            Label title text="Controls", font_size=24, font_color=$ink
+        }
+        Scroll controls width=fill, height=fill {
+            Column spacing=8, width=fill {
+                Row spacing=8, width=fill {
+                    Label text="Brush size", font_color=$ink, width=130
+                    Slider firstSlider min=0, max=100, value=10, width=fill, min_height=44
+                    Label firstValue text="10", font_color=$dim, width=40
+                }
+                Row spacing=8, width=fill {
+                    Label text="Opacity", font_color=$ink, width=130
+                    Slider min=0, max=100, value=17, width=fill, min_height=44
+                    Label text="17", font_color=$dim, width=40
+                }
+                Row spacing=8, width=fill {
+                    Label text="Hardness", font_color=$ink, width=130
+                    Slider min=0, max=100, value=24, width=fill, min_height=44
+                    Label text="24", font_color=$dim, width=40
+                }
+                Row spacing=8, width=fill {
+                    Label text="Spacing", font_color=$ink, width=130
+                    Slider min=0, max=100, value=31, width=fill, min_height=44
+                    Label text="31", font_color=$dim, width=40
+                }
+                Row spacing=8, width=fill {
+                    Label text="Jitter", font_color=$ink, width=130
+                    Slider min=0, max=100, value=38, width=fill, min_height=44
+                    Label text="38", font_color=$dim, width=40
+                }
+                Row spacing=8, width=fill {
+                    Label text="Smoothing", font_color=$ink, width=130
+                    Slider min=0, max=100, value=45, width=fill, min_height=44
+                    Label text="45", font_color=$dim, width=40
+                }
+                Row spacing=8, width=fill {
+                    Label text="Flow", font_color=$ink, width=130
+                    Slider min=0, max=100, value=52, width=fill, min_height=44
+                    Label text="52", font_color=$dim, width=40
+                }
+                Row spacing=8, width=fill {
+                    Label text="Angle", font_color=$ink, width=130
+                    Slider min=0, max=100, value=59, width=fill, min_height=44
+                    Label text="59", font_color=$dim, width=40
+                }
+                Row spacing=8, width=fill {
+                    Label text="Roundness", font_color=$ink, width=130
+                    Slider min=0, max=100, value=66, width=fill, min_height=44
+                    Label text="66", font_color=$dim, width=40
+                }
+                Row spacing=8, width=fill {
+                    Label text="Scatter", font_color=$ink, width=130
+                    Slider min=0, max=100, value=73, width=fill, min_height=44
+                    Label text="73", font_color=$dim, width=40
+                }
+                Row spacing=8, width=fill {
+                    Label text="Texture depth", font_color=$ink, width=130
+                    Slider min=0, max=100, value=80, width=fill, min_height=44
+                    Label text="80", font_color=$dim, width=40
+                }
+                Row spacing=8, width=fill {
+                    Label text="Wet edges", font_color=$ink, width=130
+                    Slider min=0, max=100, value=87, width=fill, min_height=44
+                    Label text="87", font_color=$dim, width=40
+                }
+                Row spacing=8, width=fill {
+                    Label text="Pressure curve", font_color=$ink, width=130
+                    Slider min=0, max=100, value=14, width=fill, min_height=44
+                    Label text="14", font_color=$dim, width=40
+                }
+                Row spacing=8, width=fill {
+                    Label text="Tilt", font_color=$ink, width=130
+                    Slider min=0, max=100, value=21, width=fill, min_height=44
+                    Label text="21", font_color=$dim, width=40
+                }
+                Row spacing=8, width=fill {
+                    Label text="Stabilizer", font_color=$ink, width=130
+                    Slider min=0, max=100, value=28, width=fill, min_height=44
+                    Label text="28", font_color=$dim, width=40
+                }
+                Row spacing=8, width=fill {
+                    Label text="Grain", font_color=$ink, width=130
+                    Slider min=0, max=100, value=35, width=fill, min_height=44
+                    Label text="35", font_color=$dim, width=40
+                }
+                Row spacing=8, width=fill {
+                    Label text="Bleed", font_color=$ink, width=130
+                    Slider min=0, max=100, value=42, width=fill, min_height=44
+                    Label text="42", font_color=$dim, width=40
+                }
+                Row spacing=8, width=fill {
+                    Label text="Dilution", font_color=$ink, width=130
+                    Slider min=0, max=100, value=49, width=fill, min_height=44
+                    Label text="49", font_color=$dim, width=40
+                }
+                Row spacing=8, width=fill {
+                    Label text="Tip count", font_color=$ink, width=130
+                    Slider min=0, max=100, value=56, width=fill, min_height=44
+                    Label text="56", font_color=$dim, width=40
+                }
+                Row spacing=8, width=fill {
+                    Label text="Bristle length", font_color=$ink, width=130
+                    Slider min=0, max=100, value=63, width=fill, min_height=44
+                    Label text="63", font_color=$dim, width=40
+                }
+                Row spacing=8, width=fill {
+                    Label text="Stiffness", font_color=$ink, width=130
+                    Slider min=0, max=100, value=70, width=fill, min_height=44
+                    Label text="70", font_color=$dim, width=40
+                }
+                Row spacing=8, width=fill {
+                    Label text="Paint load", font_color=$ink, width=130
+                    Slider min=0, max=100, value=77, width=fill, min_height=44
+                    Label text="77", font_color=$dim, width=40
+                }
+                Row spacing=8, width=fill {
+                    Label text="Blend", font_color=$ink, width=130
+                    Slider min=0, max=100, value=84, width=fill, min_height=44
+                    Label text="84", font_color=$dim, width=40
+                }
+                Row spacing=8, width=fill {
+                    Label text="Fade", font_color=$ink, width=130
+                    Slider min=0, max=100, value=11, width=fill, min_height=44
+                    Label text="11", font_color=$dim, width=40
+                }
+                Check text="Haptic feedback", min_height=44
+                Check text="Autosave", min_height=44
+                Check text="Show cursor", min_height=44
+                Check text="Snap to grid", min_height=44
+                Check text="Palm rejection", min_height=44
+                Check text="Left handed", min_height=44
+                Check text="Keep screen on", min_height=44
+                Check text="High contrast", min_height=44
+                Check text="Reduce motion", min_height=44
+                Check text="Sync settings", min_height=44
+                Check text="Send reports", min_height=44
+                Check text="Beta features", min_height=44
+            }
+        }
+    }
+}

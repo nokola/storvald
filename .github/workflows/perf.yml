@@ -1,0 +1,66 @@
+# Counts what gogo and TurboDot cost in the measured program (`perf/`), at
+# every push to main and once a day, and keeps the counts on the
+# `perf-data` branch: `history.csv` (a row a number) and `README.md` (the
+# page people read).
+#
+# Needed because a change that makes a page do more work breaks no test,
+# and a time measured on a shared machine swings by more than the changes
+# worth catching. Instructions counted by Valgrind stay the same from run
+# to run within a small spread. The daily run is for what moves a count
+# with no commit: a new compiler, a new machine image.
+#
+# The last step fails the run when a number moved against the run before
+# on the same compiler and machine. The counts are kept before it fails.
+name: perf
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+# The job writes the `perf-data` branch.
+permissions:
+  contents: write
+
+# One run at a time: two runs that end together would both add to the
+# same history, and the second push would be refused.
+concurrency:
+  group: perf-data
+  cancel-in-progress: false
+
+jobs:
+  counts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup update stable --no-self-update
+      - run: sudo apt-get update && sudo apt-get install --yes valgrind
+      - run: cargo build --release -p storvald-perf
+      - name: Take the perf-data branch, or start it
+        run: |
+          if git ls-remote --exit-code --heads origin perf-data > /dev/null; then
+            git fetch --depth=1 origin perf-data
+            git worktree add --detach ../perf-data FETCH_HEAD
+          else
+            git worktree add --detach ../perf-data
+            cd ../perf-data
+            git checkout --orphan perf-data
+            git rm -rf --quiet .
+          fi
+      - name: Count
+        run: |
+          target/release/storvald-perf record \
+            --history ../perf-data/history.csv --page ../perf-data/README.md \
+            --date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --commit "$GITHUB_SHA" \
+            --rustc "$(rustc --version | cut -d ' ' -f 2)" \
+            --machine "github-$ImageOS-$ImageVersion"
+      - name: Keep the counts
+        run: |
+          cd ../perf-data
+          git add history.csv README.md
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit --quiet -m "Counts of ${GITHUB_SHA:0:7}"
+          git push origin HEAD:refs/heads/perf-data
+      - name: Fail when the code moved a number
+        run: target/release/storvald-perf check-latest --history ../perf-data/history.csv

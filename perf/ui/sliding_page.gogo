@@ -1,0 +1,24 @@
+// How a page of the measured program comes and goes: in from the right,
+// out to the right, back in from the left when a page over it leaves.
+style SlidingPage on:show=play(pageIn), on:hide=play(pageOut), on:uncover=play(pageBack)
+
+anim pageIn {
+    each .SlidingPage {
+        translate.x from=60, to=0, duration=0.3, easing=cubic_out
+        and opacity from=0, to=1, duration=0.24
+    }
+}
+
+anim pageOut {
+    each .SlidingPage {
+        translate.x to=60, duration=0.2, easing=cubic_in
+        and opacity to=0, duration=0.2
+    }
+}
+
+anim pageBack {
+    each .SlidingPage {
+        translate.x from=-30, to=0, duration=0.2, easing=cubic_out
+        and opacity from=0, to=1, duration=0.16
+    }
+}

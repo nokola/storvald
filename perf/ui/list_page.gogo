@@ -1,0 +1,24 @@
+// Page of one long list, the shape of a picker: its code writes 100
+// rows each time page comes into view. Made new at every open.
+uses "look.gogo"
+uses "sliding_page.gogo"
+
+View listPage .SlidingPage background=$back, padding=16 {
+    Column spacing=10, width=fill, height=fill {
+        Row spacing=8 {
+            Button goBack .Plain text="Back"
+            Label title text="List", font_size=24, font_color=$ink
+        }
+        List rowList spacing=2, width=fill, height=fill {
+            empty { Label text="No rows", font_color=$dim }
+            repeat rows as $row by $row.key {
+                ListItem padding=8 {
+                    Row spacing=8 {
+                        Label text=$row.name, font_color=$ink
+                        Label text=$row.hint, font_color=$dim
+                    }
+                }
+            }
+        }
+    }
+}

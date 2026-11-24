@@ -1,0 +1,18 @@
+// First page of the measured program: the page the other two open over.
+uses "look.gogo"
+
+// First page comes in over nothing, so it has no `on:show`. It comes
+// back from the left when a page over it leaves.
+anim firstBack {
+    firstPage.translate.x from=-30, to=0, duration=0.2, easing=cubic_out
+    and firstPage.opacity from=0, to=1, duration=0.16
+}
+
+View firstPage background=$back, padding=16, on:uncover=play(firstBack) {
+    Column spacing=10, width=fill {
+        Label title text="Measured program", font_size=24, font_color=$ink
+        Label hint text="Each scenario opens, moves or closes one of these pages.", font_color=$dim
+        Button openControls .Plain text="Controls"
+        Button openList .Plain text="List"
+    }
+}
