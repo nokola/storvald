@@ -1,0 +1,18 @@
+[package]
+name = "turbodot-example-world"
+description = "A 3D world under a page's nodes on TurboDot: a cube the page draws with GPU calls of its own and a depth buffer, with a label and a button over it."
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# The one line a client writes. `hot-reload`: a debug build follows the
+# pages' files in `ui/` while its window is open.
+[dependencies]
+turbodot = { path = "../../crates/turbodot", features = ["hot-reload"] }
+
+# The build script compiles the pages in `ui/`. With no feature on,
+# TurboDot builds gogo's language alone.
+[build-dependencies]
+turbodot = { path = "../../crates/turbodot", default-features = false }

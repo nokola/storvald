@@ -113,6 +113,22 @@ impl PageUi {
         self.target_format
     }
 
+    /// Format of the depth buffer of the pass which draws the pages, as
+    /// `Page::gpu_prepare` finds it. `Some` in a program with a `Surface
+    /// draw=gpu, depth=true` in any of its pages.
+    ///
+    /// Needed by a page with a `Surface draw=gpu`, with `depth=true` or
+    /// without: with `Some`, the pipeline of its own draw calls names
+    /// this format in its `depth_stencil`. The GPU refuses a pipeline
+    /// with no depth format in a pass that has a depth buffer.
+    ///
+    /// Returns `None` when the pass has no depth buffer, and before
+    /// page's first GPU frame.
+    #[cfg(feature = "gpu")]
+    pub fn depth_format(&self) -> Option<wgpu::TextureFormat> {
+        self.depth_format
+    }
+
     /// Says what `surface`, a `Surface draw=commands` of page's file,
     /// shows is out of date: program calls page's `draw_surface` for it
     /// before the next frame is drawn.

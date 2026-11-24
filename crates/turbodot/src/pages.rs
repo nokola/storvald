@@ -489,6 +489,10 @@ pub struct PageUi {
     /// (`PageUi::target_format`). `None` before page's first GPU frame.
     #[cfg(feature = "gpu")]
     pub(crate) target_format: Option<wgpu::TextureFormat>,
+    /// Format of the depth buffer of that pass (`PageUi::depth_format`).
+    /// `None`: the pass has none, or page had no GPU frame yet.
+    #[cfg(feature = "gpu")]
+    pub(crate) depth_format: Option<wgpu::TextureFormat>,
 }
 
 /// Picture a page's code made for one `Surface draw=picture`: its
@@ -545,6 +549,8 @@ impl PageUi {
             picture_textures: Vec::new(),
             #[cfg(feature = "gpu")]
             target_format: None,
+            #[cfg(feature = "gpu")]
+            depth_format: None,
         }
     }
 

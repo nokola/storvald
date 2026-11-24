@@ -40,7 +40,7 @@ use std::cell::RefCell;
 use crate::compile::{BuiltNumbers, CompileOptions, Loader, compile_keeping_numbers};
 use crate::diag::{Diagnostic, Severity, has_errors};
 use crate::locale::Keys;
-use crate::page::{AtlasDecl, AtlasShape, BehaviorSpec, ImageKey, ImageSlice, Images, Kind, NodeId, Page, StaticPage};
+use crate::page::{AtlasDecl, AtlasShape, BehaviorSpec, ImageKey, ImageSlice, Images, Kind, NodeId, Page, PropKey, StaticPage, Value};
 use crate::runtime::Runtime;
 
 /// Everything a reload needs to know about the build an app was made
@@ -221,6 +221,12 @@ pub enum ShapeChange {
     /// program was built: with another `draw=` the code would go on
     /// filling the Surface the old way, and it would show nothing.
     Draw { name: String, old: crate::surface::SurfaceDraw, new: crate::surface::SurfaceDraw },
+    /// The Surface `name` says another `depth=`.
+    ///
+    /// Needed because whether the program has a depth buffer was fixed
+    /// when the program was built: a Surface that starts to say
+    /// `depth=true` would draw into a pass that has none.
+    Depth { name: String },
     /// The row of `repeat` holds other nodes than the rows on screen.
     Row { repeat: String },
     /// `repeat` keys its rows another way than the rows on screen were
@@ -236,6 +242,7 @@ impl std::fmt::Display for ShapeChange {
                 write!(f, "node {index} changed ({old_kind:?} `{old_name}` -> {new_kind:?} `{new_name}`): a changed node list needs a rebuild")
             }
             ShapeChange::Draw { name, old, new } => write!(f, "Surface `{name}` changed its `draw=` ({} -> {}): the program's code names it with a type by its `draw=`, so this needs a rebuild", old.word(), new.word()),
+            ShapeChange::Depth { name } => write!(f, "Surface `{name}` changed its `depth=`: whether the program has a depth buffer is fixed when it is built, so this needs a rebuild"),
             ShapeChange::Row { repeat } => write!(f, "the row of repeat `{repeat}` holds other nodes than the rows on screen: a changed node list needs a rebuild"),
             ShapeChange::RowKey { repeat } => write!(f, "repeat `{repeat}` keys its rows another way than the rows on screen: a changed `by` needs a rebuild"),
         }
@@ -257,6 +264,10 @@ pub(crate) fn first_changed_node(old: &Page, new: &Page, from: usize, to: usize)
                 if old_draw != new_draw {
                     return Some(ShapeChange::Draw { name: old_name.to_string(), old: old_draw, new: new_draw });
                 }
+            }
+            let says_depth = |page: &Page| page.prop(node, PropKey::Depth) == Some(Value::VBool(true));
+            if says_depth(old) != says_depth(new) {
+                return Some(ShapeChange::Depth { name: old_name.to_string() });
             }
         }
     }

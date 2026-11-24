@@ -1953,9 +1953,64 @@ the calls gogo sets its own state again, so the code leaves the pass in
 any state.
 
 A `draw=gpu` Surface cannot be turned: `rotate=` on it or on a node above
-it is an error (G7017). Turn what you draw in your own code. The pass
-has no depth buffer; a scene that needs one draws into a texture of its
-own and shows it with `draw=picture`.
+it is an error (G7017). Turn what you draw in your own code.
+
+### A 3D world needs a depth buffer: `depth=true`
+
+Without one, the triangle drawn last covers the ones drawn before it,
+also the ones in front of it. Say `depth=true` on the Surface:
+
+```kdl
+View game {
+    Layers width=fill, height=fill {
+        Surface world draw=gpu, depth=true, width=fill, height=fill
+        Label score text="0", font_size=24, halign=right, valign=top
+    }
+}
+```
+
+Now the pass has a depth buffer, and the code's pipeline tests against
+it. The depth is 1.0, the far end, when the code is called, so a
+pipeline that keeps what is `Less` is the one to make:
+
+```rust partial
+depth_stencil: host.ui.depth_format().map(|format| wgpu::DepthStencilState {
+    format,
+    depth_write_enabled: Some(true),
+    depth_compare: Some(wgpu::CompareFunction::Less),
+    stencil: wgpu::StencilState::default(),
+    bias: wgpu::DepthBiasState::default(),
+}),
+```
+
+(`examples/world` is the whole of it: a cube that spins under a label
+and a button, read back pixel by pixel in its tests.)
+
+Three things to know:
+
+- **gogo's own drawing takes no part.** The label is drawn over the
+  world, however near the code drew. Nothing of the page is ever hidden
+  by the world's depth.
+- **One such Surface gives every frame of the program a depth buffer**;
+  a program with none never makes one. On a phone it costs memory (about
+  10 MB at 1080 x 2400) and nearly no time. That is why the word cannot
+  be in a `when` (G7018).
+- **With a depth buffer in the pass, every pipeline you draw with in a
+  `draw=gpu` Surface names its format**, also in a Surface without
+  `depth=true`: `host.ui.depth_format()` in `gpu_prepare`,
+  `place.depth_format` at the draw call. The GPU refuses a pipeline with
+  no depth format there. A Surface without `depth=true` leaves depth
+  alone: no depth write, compare `Always`.
+
+A host with its own frame loop does two things when the build's
+`ui::HAS_DEPTH_SURFACE` is true: it hands `UiRenderer::new` the depth
+buffer's format, and gives its pass a depth buffer of that format,
+cleared to 1.0. TurboDot does both by itself.
+
+No stencil, and no smoothing of edges for the whole pass (MSAA): a
+world that needs them draws into a texture of its own and shows it with
+`draw=picture`. That is also the way to draw a world at a lower
+resolution than the UI.
 
 ---
 

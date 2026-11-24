@@ -1,0 +1,22 @@
+// A 3D world under a page's nodes. `world`: the page draws a cube there
+// with GPU calls of its own, in the pass that draws the pages.
+// `depth=true` gives those calls a depth buffer, so the cube's near faces
+// hide its far ones whatever the order they are drawn in. The label and
+// the button are plain nodes over the world.
+//
+// The font is the repository's own, two folders up. A program of your own
+// keeps its font in its own folder and writes `res://assets/<file>.ttf`.
+theme {
+    font = "res://../../assets/Fonts/Roboto Regular.ttf"
+}
+
+View worldPage background=#101218 {
+    Layers width=fill, height=fill {
+        Surface world draw=gpu, depth=true, width=fill, height=fill
+        Column spacing=10, padding=16, halign=center, valign=top {
+            Label title text="World", font_size=24, font_color=#E8E8EC, halign=center
+            Button spin text="Stop", background=#2C2F38, font_color=#E8E8EC, padding=10,
+                corner_radius=6, halign=center
+        }
+    }
+}

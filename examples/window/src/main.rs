@@ -269,7 +269,7 @@ impl ApplicationHandler for App {
             color_space: Default::default(),
         };
         surface.configure(&device, &config);
-        let renderer: UiRenderer = UiRenderer::new(&device, format);
+        let renderer: UiRenderer = UiRenderer::new(&device, format, None);
         window.request_redraw();
         self.gfx = Some(Gfx { window, surface, device, queue, config, renderer });
     }

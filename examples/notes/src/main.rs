@@ -1361,7 +1361,7 @@ mod tests {
         assert_ne!(both.at(x, y), BACK, "the host's page shows its picture");
 
         // Frame by frame, with a renderer of the host's own.
-        let mut renderer: gogo_wgpu::UiRenderer = gogo_wgpu::UiRenderer::new(&gpu.device, turbodot::wgpu::TextureFormat::Rgba8Unorm);
+        let mut renderer: gogo_wgpu::UiRenderer = gogo_wgpu::UiRenderer::new(&gpu.device, turbodot::wgpu::TextureFormat::Rgba8Unorm, None);
         program.assets_mut().images.forget_uploads();
         program.gpu_draw(&mut renderer, &gpu);
         assert!(!program.is_loading_pictures() && program.assets().images.pending_bytes(banner).is_some(), "the program alone asks for no picture of the host's page");

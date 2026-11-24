@@ -27,20 +27,25 @@ pub const MARGIN_WIDTH_EPX: f32 = 2.0;
 /// Stamp's color: sRGB bytes, RGBA.
 pub const STAMP: [u8; 4] = [0x20, 0x80, 0x40, 0xFF];
 
-/// Stamp's shader: one triangle over all of clip space, in one color.
+/// Stamp's shader: one triangle over all of clip space, in `STAMP`.
 /// The viewport is on the stamp's Surface, so it fills that and no more.
-const STAMP_SHADER: &str = "
+fn stamp_shader() -> String {
+    let [red, green, blue, alpha] = STAMP.map(|byte| byte as f32 / 255.0);
+    format!(
+        "
 @vertex
-fn vs_main(@builtin(vertex_index) index: u32) -> @builtin(position) vec4<f32> {
+fn vs_main(@builtin(vertex_index) index: u32) -> @builtin(position) vec4<f32> {{
     let corners = array<vec2<f32>, 3>(vec2<f32>(-1.0, -1.0), vec2<f32>(3.0, -1.0), vec2<f32>(-1.0, 3.0));
     return vec4<f32>(corners[index], 0.0, 1.0);
-}
+}}
 
 @fragment
-fn fs_main() -> @location(0) vec4<f32> {
-    return vec4<f32>(0.1254902, 0.5019608, 0.2509804, 1.0);
+fn fs_main() -> @location(0) vec4<f32> {{
+    return vec4<f32>({red:?}, {green:?}, {blue:?}, {alpha:?});
+}}
+"
+    )
 }
-";
 
 #[derive(Default)]
 pub struct PaperPage {
@@ -112,7 +117,7 @@ impl Page<AppState> for PaperPage {
 /// Pipeline that draws the stamp into a pass whose color target has
 /// `format`.
 fn stamp_pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu::RenderPipeline {
-    let module: wgpu::ShaderModule = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("stamp"), source: wgpu::ShaderSource::Wgsl(STAMP_SHADER.into()) });
+    let module: wgpu::ShaderModule = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("stamp"), source: wgpu::ShaderSource::Wgsl(stamp_shader().into()) });
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("stamp"),
         layout: None,

@@ -167,6 +167,15 @@ impl Page {
         SurfaceCommands::begin(self, ask)
     }
 
+    /// True when a `Surface` of the page says `depth=true`.
+    ///
+    /// Needed by a build to know whether its program needs a depth
+    /// buffer: one such Surface in any page, and every frame has one
+    /// (`build_pages` writes `HAS_DEPTH_SURFACE`).
+    pub fn has_depth_surface(&self) -> bool {
+        (0..self.nodes.len()).any(|index| self.nodes[index].kind == Kind::Surface && self.prop(NodeId::from_index(index), PropKey::Depth) == Some(Value::VBool(true)))
+    }
+
     /// The kept list of `surface`, if code wrote one.
     pub(crate) fn surface_list(&self, surface: NodeId) -> Option<&SurfaceList> {
         self.surface_lists.iter().find(|list| list.node == surface)

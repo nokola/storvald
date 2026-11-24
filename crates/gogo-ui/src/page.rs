@@ -893,6 +893,11 @@ pub enum PropKey {
     /// it (`SurfaceDraw`). The file's line alone writes it: the build
     /// gives the Surface's name a type by it.
     Draw,
+    /// `depth=true` on a `draw=gpu` Surface: the program's draw calls
+    /// there test and write depth. The file's line alone writes it: one
+    /// such Surface in a build gives every frame of the program a depth
+    /// buffer (`Page::has_depth_surface`).
+    Depth,
     TouchTarget,
     TapPulse,
     AccessibilityName,
@@ -1014,6 +1019,7 @@ pub const WORDS: &[(&str, PropKey)] = &[
     ("loading", PropKey::Loading),
     ("release", PropKey::Release),
     ("draw", PropKey::Draw),
+    ("depth", PropKey::Depth),
     ("touch_target", PropKey::TouchTarget),
     ("tap_pulse", PropKey::TapPulse),
     ("accessibility_name", PropKey::AccessibilityName),
@@ -1085,7 +1091,7 @@ impl PropKey {
     /// Keys that are true or false: `overlay=maybe` is refused (G0078)
     /// where it would read as "not an overlay" with a clean build.
     pub fn is_bool(self) -> bool {
-        matches!(self, PropKey::Overlay | PropKey::Interactive | PropKey::Wrap | PropKey::ClipText | PropKey::ClipContents | PropKey::Disabled | PropKey::SelectedProp | PropKey::FullRow | PropKey::ToggleMode)
+        matches!(self, PropKey::Overlay | PropKey::Interactive | PropKey::Wrap | PropKey::ClipText | PropKey::ClipContents | PropKey::Disabled | PropKey::SelectedProp | PropKey::FullRow | PropKey::ToggleMode | PropKey::Depth)
     }
 
     /// The words a word key takes, when the set is closed (`halign=`,
@@ -1272,7 +1278,7 @@ fn kind_row(kind: Kind) -> &'static [&'static [PropKey]] {
         // The three picture words are a `draw=picture` Surface's alone,
         // `clip_contents=` a `draw=commands` one's: the compiler refuses
         // each beside another `draw=`. A `draw=gpu` Surface takes none.
-        Kind::Surface => &[BOX, &[PropKey::Draw, PropKey::Fit, PropKey::Window, PropKey::Sampling, PropKey::ClipContents]],
+        Kind::Surface => &[BOX, &[PropKey::Draw, PropKey::Fit, PropKey::Window, PropKey::Sampling, PropKey::ClipContents, PropKey::Depth]],
         Kind::Rectangle => &[BOX, &[PropKey::Color, PropKey::ColorA, PropKey::CornerRadius, PropKey::CornerRadiusTopLeft, PropKey::CornerRadiusTopRight, PropKey::CornerRadiusBottomRight, PropKey::CornerRadiusBottomLeft, PropKey::BorderThickness, PropKey::BorderColor, PropKey::BorderDash]],
         Kind::Circle => &[BOX, &[PropKey::Color, PropKey::ColorA, PropKey::BorderThickness, PropKey::BorderColor, PropKey::BorderDash]],
         // `corner_radius` (Q9, user 2026-09-05): a rounded or disc-shaped

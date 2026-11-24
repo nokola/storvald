@@ -16,6 +16,8 @@ it. `draw=` is required, and there is no default:
   the scissor to the part that shows, so the drawing moves with a page
   that slides and is cut where the Surface is cut. It cannot be turned:
   `rotate=` on it or on a node above it is an error (G7017).
+  `depth=true` gives the calls a depth buffer, for 3D: what is nearer
+  hides what is farther.
 
 ```
 Layers width=fill, height=fill {

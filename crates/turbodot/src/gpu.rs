@@ -9,6 +9,38 @@ use gogo_wgpu::UiRenderer;
 
 use crate::program::Program;
 
+/// Format of the depth buffer of a program with a `Surface draw=gpu,
+/// depth=true`: 32-bit float.
+///
+/// Needed as one format for every GPU, so a world has the same depth
+/// precision on every phone. Direct3D 12, Vulkan, Metal and OpenGL ES 3.0
+/// all take it.
+pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
+/// A depth buffer of `width` x `height` device pixels for one pass.
+pub(crate) fn depth_buffer(device: &wgpu::Device, format: wgpu::TextureFormat, width: u32, height: u32) -> wgpu::TextureView {
+    let texture: wgpu::Texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("depth"),
+        size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    texture.create_view(&Default::default())
+}
+
+/// How a pass uses its depth buffer `view`: cleared to 1.0, the far end,
+/// when the pass starts, and thrown away when it ends.
+///
+/// Needed thrown away because nothing reads depth after the pass: a
+/// phone's GPU then never writes it out of its tile memory.
+pub(crate) fn depth_attachment(view: &wgpu::TextureView) -> wgpu::RenderPassDepthStencilAttachment<'_> {
+    wgpu::RenderPassDepthStencilAttachment { view, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Discard }), stencil_ops: None }
+}
+
 /// 8-bit sRGB pixels: straight alpha, 4 bytes per pixel, RGBA, row by row
 /// from the top. The same bytes a decoded PNG holds.
 ///
@@ -145,7 +177,8 @@ impl Gpu {
         // A format that stores colors as written: the renderer writes
         // sRGB-encoded values.
         let format: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
-        let mut renderer: UiRenderer = UiRenderer::new(&self.device, format);
+        let depth_format: Option<wgpu::TextureFormat> = program.depth_format();
+        let mut renderer: UiRenderer = UiRenderer::new(&self.device, format, depth_format);
         // Renderer is new: it has no picture yet (the letters it uploads
         // by itself, `TextEngine::atlas_version`). And a picture of the
         // pages shows the lazy ones too.
@@ -164,12 +197,13 @@ impl Gpu {
             view_formats: &[],
         });
         let view = texture.create_view(&Default::default());
+        let depth: Option<wgpu::TextureView> = depth_format.map(|depth_format| depth_buffer(&self.device, depth_format, size.0, size.1));
         let mut encoder = self.device.create_command_encoder(&Default::default());
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("a program's picture"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: &view, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store } })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: depth.as_ref().map(depth_attachment),
                 timestamp_writes: None,
                 occlusion_query_set: None,
                 multiview_mask: None,

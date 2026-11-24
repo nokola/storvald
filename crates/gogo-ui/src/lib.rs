@@ -300,6 +300,10 @@ pub fn build_pages(dir: &Path, out: &Path, options: BuildOptions<'_>) -> Result<
         source.push_str(&format!("    ({m:?}, &{m}::PAGE),\n"));
     }
     source.push_str("];\n\n");
+    // Whether any page has a `Surface draw=gpu, depth=true`: a host makes
+    // a depth buffer for its frames when one has, and none otherwise.
+    let has_depth_surface: bool = compiled_pages.iter().any(|(_, page)| page.has_depth_surface());
+    source.push_str(&format!("/// True when a page of this build has a `Surface draw=gpu, depth=true`: the host gives every frame a depth buffer and makes its renderer with the depth format. False: no depth buffer is made.\npub const HAS_DEPTH_SURFACE: bool = {has_depth_surface};\n\n"));
     // The translation keys every page named, as code — after the runtime
     // keys join (a page's English stands where both name a key).
     {

@@ -1656,7 +1656,25 @@ View main {
   epx, the opacity (gogo cannot fade the drawing: the code applies it if
   it wants) and the target's format (`SurfacePlace`). After the calls
   gogo sets its own state again, so the code leaves the pass in any
-  state. The pass has no depth buffer.
+  state.
+- **`depth=true`** on a `draw=gpu` Surface gives its draw calls a depth
+  buffer: what is nearer hides what is farther, whatever the order of
+  the calls. The build knows every page: with one such Surface in any of
+  them, every frame of the program has a depth buffer (the build writes
+  `HAS_DEPTH_SURFACE`); with none, the program never makes one and pays
+  nothing. The depth is 1.0, the far end, inside the Surface when its
+  code is called, also for the second such Surface of a frame: two of
+  them do not see each other's depth. gogo's own drawing never tests or
+  writes depth: a node after the Surface is drawn over it, however near
+  the code drew. The code is handed the depth buffer's format
+  (`SurfacePlace::depth_format`), and in a program that has a depth
+  buffer EVERY pipeline drawn in a `draw=gpu` Surface names that format,
+  also in a Surface without `depth=true`: the GPU refuses a pipeline
+  with no depth format in a pass that has a depth buffer. Written on the
+  Surface's own line only, never in a `when` (G7018). No stencil, and
+  no smoothing of edges for the whole pass (MSAA): a world that needs
+  them draws into a texture of its own and shows it with
+  `draw=picture`.
 - **A `draw=gpu` Surface cannot be turned.** A viewport is an upright
   rectangle. `rotate=` written on the Surface or on a node above it is a
   build error (G7017); a turn that an anim or the code writes while the
@@ -1677,7 +1695,8 @@ View main {
   Surface's own line only, never in a `when`.
 - The words of another `draw=` are refused (G7016): `fit=`, `window=`
   and `sampling=` are a `draw=picture` Surface's, `clip_contents=` a
-  `draw=commands` one's, and a `draw=gpu` Surface takes none of them.
+  `draw=commands` one's, and a `draw=gpu` Surface takes none of them;
+  `depth=` is a `draw=gpu` Surface's.
 
 COOKBOOK has both recipes: "How do I draw custom visuals from code" and
 "How do I show a picture my code renders".
@@ -2940,7 +2959,8 @@ glide freezes mid-flight until the next input.
 | `rt.surface_changed(&mut page, surface)` | Says what a `draw=commands` Surface shows is out of date: the next frame asks for its commands again. |
 | `page.surface_commands(node)` | A Surface's commands as written last. A renderer reads them where it meets `Draw::Surface { rect, surface, alpha }` in a draw list, and draws each moved by the rect's corner and faded by `alpha` (`Draw::posed`). `gogo-wgpu` does. |
 | `PictureSurface::find(&page, name)`, `CommandSurface::find`, `GpuSurface::find` | A Surface of a page compiled while the program runs, by its name and its `draw=`. A built page has its Surfaces in `NAMES`. |
-| `Draw::GpuSurface { rect, surface, alpha }` | The place of a `Surface draw=gpu` in a draw list. A renderer makes the program's own draw calls there. `gogo-wgpu`: `UiRenderer::render_with(&mut pass, &mut \|place, pass\| ..)` calls the host once for each, with the viewport and the scissor set (`SurfacePlace`: `rect_px`, `visible_px`, `epx`, `opacity`, `target_format`, `is_of(&page)`); plain `render` is for a host with no such Surface. |
+| `Draw::GpuSurface { rect, surface, alpha, has_depth }` | The place of a `Surface draw=gpu` in a draw list. A renderer makes the program's own draw calls there. `gogo-wgpu`: `UiRenderer::render_with(&mut pass, &mut \|place, pass\| ..)` calls the host once for each, with the viewport and the scissor set (`SurfacePlace`: `rect_px`, `visible_px`, `epx`, `opacity`, `target_format`, `depth_format`, `has_depth`, `is_of(&page)`); plain `render` is for a host with no such Surface. |
+| `ui::HAS_DEPTH_SURFACE`, `page.has_depth_surface()` | Whether a `Surface` of the build (of one page) says `depth=true`. `gogo-wgpu`: a host hands `UiRenderer::new(&device, target_format, depth_format)` its depth buffer's format when the constant is true and `None` when it is false, and gives its pass a depth buffer of that format, cleared to 1.0 when the pass starts. TurboDot does both by itself (`turbodot::DEPTH_FORMAT`, 32-bit float). |
 | `reload::Reloader` (`open`, `refresh`), `reload::Sources` | Hot reload (below). |
 
 Options the compiler takes from the host (`CompileOptions`): `behaviors`

@@ -117,7 +117,7 @@ fn a_page_drawn_to_a_texture_shows_its_plate_and_its_text() {
     let draws: Vec<Draw> = draw(&page, kept.frame());
 
     let (device, queue) = device();
-    let mut ui: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm);
+    let mut ui: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
     // A renderer can be built on one thread and used on another, with
     // timings installed or without.
     fn crosses_threads<T: Send + Sync>(_: &T) {}
@@ -200,7 +200,7 @@ fn a_picture_uploaded_again_keeps_its_one_texture_slot() {
     let draws: Vec<Draw> = draw(&page, kept.frame());
 
     let (device, queue) = device();
-    let mut ui: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm);
+    let mut ui: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
     // What the tile shows in the middle and near the top edge of the
     // photo's rect, then of the other picture's rect.
     let shown = |ui: &mut UiRenderer| -> [[u8; 4]; 4] {
@@ -293,7 +293,7 @@ fn a_wedge_is_drawn_where_it_takes_touches() {
     let draws: Vec<Draw> = draw(&page, kept.frame());
 
     let (device, queue) = device();
-    let mut ui: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm);
+    let mut ui: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
     let tile: Tex_Tile_Premul_Srgb_4xU8_RGBA = ui.render_to_texture(&device, &queue, &draws, &page, &mut text.borrow_mut(), None, 1.0, (0.0, 0.0), TILE);
     let pixels: Vec<u8> = read_back(&device, &queue, &tile);
     let at = |x: u32, y: u32| -> [u8; 4] {
@@ -362,12 +362,12 @@ fn white_pixels(pixels: &[u8], rect: Rect) -> usize {
 fn a_second_renderer_over_one_text_engine_draws_its_letters() {
     let text: RefCell<TextEngine> = engine();
     let (device, queue) = device();
-    let mut first: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm);
+    let mut first: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
     let (pixels, label) = drawn_tile(PAGE, &mut first, &device, &queue, &text);
     let first_white: usize = white_pixels(&pixels, label);
     assert!(first_white > 20, "the precondition: the first renderer draws the letters: {first_white} white pixels");
 
-    let mut second: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm);
+    let mut second: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
     let (pixels, label) = drawn_tile(PAGE, &mut second, &device, &queue, &text);
     assert_eq!(white_pixels(&pixels, label), first_white, "the second renderer draws the same letters");
 }
@@ -383,14 +383,14 @@ fn a_second_renderer_over_one_text_engine_draws_its_letters() {
 #[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
 fn a_renderer_handed_another_text_engine_draws_that_engines_letters() {
     let (device, queue) = device();
-    let mut ui: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm);
+    let mut ui: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
     let first_engine: RefCell<TextEngine> = engine();
     drawn_tile(PAGE, &mut ui, &device, &queue, &first_engine);
 
     let second_engine: RefCell<TextEngine> = engine();
     let (pixels, label) = drawn_tile(PAGE_LETTERS_SWAPPED, &mut ui, &device, &queue, &second_engine);
     assert!(white_pixels(&pixels, label) > 20, "the letters are drawn");
-    let mut fresh: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm);
+    let mut fresh: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
     let (want, _) = drawn_tile(PAGE_LETTERS_SWAPPED, &mut fresh, &device, &queue, &second_engine);
     assert!(pixels == want, "the picture of a renderer that only ever saw the second engine");
 }

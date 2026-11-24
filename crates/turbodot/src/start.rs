@@ -84,7 +84,7 @@ impl<A: 'static> ProgramWindow<'_, A> {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("the window"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: &view, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store } })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: gfx.depth.as_ref().map(crate::gpu::depth_attachment),
                 timestamp_writes: None,
                 occlusion_query_set: None,
                 multiview_mask: None,
@@ -108,7 +108,7 @@ impl<A: 'static> ApplicationHandler for ProgramWindow<'_, A> {
             return;
         }
         let attributes = Window::default_attributes().with_title(self.options.title).with_inner_size(LogicalSize::new(self.options.width as f64, self.options.height as f64));
-        let started: Result<Gfx, String> = event_loop.create_window(attributes).map_err(|e| format!("no window: {e}")).and_then(|window| Gfx::new(Arc::new(window)));
+        let started: Result<Gfx, String> = event_loop.create_window(attributes).map_err(|e| format!("no window: {e}")).and_then(|window| Gfx::new(Arc::new(window), self.program.depth_format()));
         match started {
             Ok(gfx) => {
                 gfx.window.request_redraw();
@@ -126,9 +126,7 @@ impl<A: 'static> ApplicationHandler for ProgramWindow<'_, A> {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
                 if let Some(gfx) = self.gfx.as_mut() {
-                    gfx.config.width = size.width.max(1);
-                    gfx.config.height = size.height.max(1);
-                    gfx.surface.configure(&gfx.gpu.device, &gfx.config);
+                    gfx.resize(size.width, size.height);
                     gfx.window.request_redraw();
                 }
             }

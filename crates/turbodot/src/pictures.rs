@@ -412,7 +412,7 @@ mod loader {
         #[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
         fn a_lazy_picture_is_uploaded_by_a_later_frame_and_again_after_it_was_freed() {
             let gpu: crate::gpu::Gpu = crate::gpu::Gpu::new().expect("this test needs a GPU adapter");
-            let mut renderer: UiRenderer = UiRenderer::new(&gpu.device, wgpu::TextureFormat::Rgba8Unorm);
+            let mut renderer: UiRenderer = UiRenderer::new(&gpu.device, wgpu::TextureFormat::Rgba8Unorm, None);
             let keys = gogo_ui::Images::from_names(["res://assets/late.png"]);
             let key: ImageKey = keys.get("res://assets/late.png").expect("the key");
             let mut images: ImageTable = ImageTable::new(keys, vec![Some(png_bytes())], vec![true], vec![Some((2, 2))]);

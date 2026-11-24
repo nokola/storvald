@@ -108,7 +108,7 @@ pub use gogo_wgpu::SurfacePlace;
 pub use wgpu;
 
 #[cfg(feature = "gpu")]
-pub use gpu::{Buf_Straight_Srgb_4xU8_RGBA, Gpu, Picture};
+pub use gpu::{Buf_Straight_Srgb_4xU8_RGBA, DEPTH_FORMAT, Gpu, Picture};
 #[cfg(feature = "ui")]
 #[cfg(all(feature = "ui", not(feature = "gpu")))]
 pub use page::Gpu;

@@ -1375,7 +1375,7 @@ A `ListItem` takes these less `valign`, `aspect`, `overlay`.
 | `Circle` | `color`, `color.a`, `border_thickness`, `border_color`, `border_dash` |
 | `Arc` | `color`, `color.a`, `from`, `sweep`, `thickness`, `dash` |
 | `Gradient` | `stops`, `fill`, `angle`, `repeat`, `from`, `to`, `corner_radius` |
-| `Surface` | `draw`, `fit`, `window`, `sampling`, `clip_contents` |
+| `Surface` | `draw`, `fit`, `window`, `sampling`, `clip_contents`, `depth` |
 | `Slider` | `background`, `corner_radius`, `color`, `value`, `min`, `max`, `step` |
 | `Input` | `background`, `corner_radius`, `corner_radius_top_left`, `corner_radius_top_right`, `corner_radius_bottom_right`, `corner_radius_bottom_left`, `border_thickness`, `border_color`, `border_dash`, `clip_contents`, `padding`, `padding_left`, `padding_top`, `padding_right`, `padding_bottom`, `text`, `font_size`, `font_color`, `placeholder_text`, `max_length`, `selection_color` |
 | `Check` | `background`, `corner_radius`, `corner_radius_top_left`, `corner_radius_top_right`, `corner_radius_bottom_right`, `corner_radius_bottom_left`, `border_thickness`, `border_color`, `border_dash`, `clip_contents`, `padding`, `padding_left`, `padding_top`, `padding_right`, `padding_bottom`, `text`, `font_size`, `font_color`, `wrap`, `horizontal_alignment`, `vertical_alignment`, `tap_pulse`, `selected` |
@@ -1409,6 +1409,13 @@ A `ListItem` takes these less `valign`, `aspect`, `overlay`.
 - **`Draw::Surface`** marks a `draw=commands` Surface's place in a page's
   draw list; the commands stay with the page (`Page::surface_commands`).
   **`Draw::GpuSurface`** marks a `draw=gpu` one's.
+- **`depth=true`** on a `draw=gpu` Surface is per build: `build_pages`
+  writes `HAS_DEPTH_SURFACE`, and a host makes its renderer and its pass
+  with a depth buffer only when it is true. gogo's pipelines then name
+  the depth format and leave depth alone (no write, compare `Always`).
+  Before the draw calls of a `depth=true` Surface that is not the first
+  code to draw in the frame, the renderer writes depth 1.0 over the part
+  of the Surface that shows.
 
 ## Checks for G1's successors
 

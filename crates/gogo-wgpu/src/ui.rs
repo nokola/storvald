@@ -201,6 +201,20 @@ pub struct SurfacePlace {
     /// The format of the pass's color target: what the code's pipelines
     /// are made for.
     pub target_format: wgpu::TextureFormat,
+    /// The format of the pass's depth buffer, when the pass has one
+    /// (`UiRenderer::new`).
+    ///
+    /// WARNING: with `Some`, EVERY pipeline the code draws with here
+    /// names this format in its `depth_stencil`, also the pipeline of a
+    /// Surface that does not say `depth=true`: the GPU refuses a pipeline
+    /// with no depth format in a pass that has a depth buffer. Such a
+    /// Surface leaves depth alone: no depth write, compare `Always`.
+    pub depth_format: Option<wgpu::TextureFormat>,
+    /// True for a Surface that says `depth=true`: the code's draw calls
+    /// test and write depth. The depth inside the Surface's rectangle is
+    /// 1.0 (the far end) when the code is called, whatever was drawn
+    /// before.
+    pub has_depth: bool,
 }
 
 impl SurfacePlace {
@@ -306,6 +320,16 @@ pub struct UiRenderer {
     /// The format of the screen's pass (a `draw=gpu` Surface's pipelines
     /// are made for it).
     target_format: wgpu::TextureFormat,
+    /// The format of the screen pass's depth buffer; `None` = the pass
+    /// has none (a program with no `Surface depth=true`).
+    depth_format: Option<wgpu::TextureFormat>,
+    /// Writes depth 1.0 over the scissor and no color; `Some` with a
+    /// depth format.
+    ///
+    /// Needed because two `depth=true` Surfaces in one frame must not
+    /// see each other's depth, and a pass clears its depth buffer only
+    /// once, when it starts.
+    depth_clear: Option<wgpu::RenderPipeline>,
     /// The gradient tables: a row per gradient on screen, cached by
     /// content across frames.
     gradients: GradientTable,
@@ -333,13 +357,35 @@ const KIND_RECT4: f32 = 8.0;
 const KIND_IMAGE: f32 = 5.0;
 const NO_UV: [f32; 4] = [0.0; 4];
 
+/// One triangle over all of the viewport, at depth 1.0, the far end. The
+/// pipeline it is drawn with writes no color (`make_depth_clear`).
+const DEPTH_CLEAR_SHADER: &str = "
+@vertex
+fn vs_main(@builtin(vertex_index) index: u32) -> @builtin(position) vec4<f32> {
+    let corners = array<vec2<f32>, 3>(vec2<f32>(-1.0, -1.0), vec2<f32>(3.0, -1.0), vec2<f32>(-1.0, 3.0));
+    return vec4<f32>(corners[index], 1.0, 1.0);
+}
+
+@fragment
+fn fs_main() -> @location(0) vec4<f32> {
+    return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+}
+";
+
 impl UiRenderer {
     /// A renderer whose screen pass draws into `target_format`.
+    ///
+    /// `depth_format`: the format of the pass's depth buffer, for a
+    /// program with a `Surface draw=gpu, depth=true` (the build's
+    /// `HAS_DEPTH_SURFACE`); `None` for a pass with no depth buffer.
+    /// Needed here because the GPU takes a pipeline only in a pass with
+    /// the depth format the pipeline names, so this renderer's pipelines
+    /// are made for it. They never test or write depth.
     ///
     /// WARNING: `target_format` must not be an `*Srgb` format. The shader
     /// writes sRGB-ENCODED values, so such a target would encode them a
     /// second time and every color would come out too bright.
-    pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat) -> UiRenderer {
+    pub fn new(device: &wgpu::Device, target_format: wgpu::TextureFormat, depth_format: Option<wgpu::TextureFormat>) -> UiRenderer {
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("ui"), source: wgpu::ShaderSource::Wgsl(include_str!("ui.wgsl").into()) });
         let screen_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("ui screen"),
@@ -368,7 +414,8 @@ impl UiRenderer {
         let sampler_pixel = device.create_sampler(&wgpu::SamplerDescriptor { label: Some("ui pixel"), mag_filter: wgpu::FilterMode::Nearest, min_filter: wgpu::FilterMode::Nearest, ..Default::default() });
         let gradients = GradientTable::new(device, GRAD_ROWS_INITIAL);
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("ui"), bind_group_layouts: &[Some(&screen_layout), Some(&tex_layout), Some(&gradients.layout)], immediate_size: 0 });
-        let pipelines = Self::make_pipelines(device, &module, &pipeline_layout, target_format);
+        let pipelines = Self::make_pipelines(device, &module, &pipeline_layout, target_format, depth_format);
+        let depth_clear: Option<wgpu::RenderPipeline> = depth_format.map(|depth_format| Self::make_depth_clear(device, target_format, depth_format));
         let quad_capacity = 1024;
         let quad_buffer = Self::make_quad_buffer(device, quad_capacity);
         let mut r = UiRenderer {
@@ -413,6 +460,8 @@ impl UiRenderer {
             gpu_places: Vec::new(),
             max_viewport_px: device.limits().max_texture_dimension_2d as f32,
             target_format,
+            depth_format,
+            depth_clear,
             gradients,
             skipped: 0,
             cull: true,
@@ -431,14 +480,34 @@ impl UiRenderer {
     }
 
     /// The pipeline pair for one target format — the screen's swapchain
-    /// format, or a tile's.
-    fn make_pipelines(device: &wgpu::Device, module: &wgpu::ShaderModule, layout: &wgpu::PipelineLayout, format: wgpu::TextureFormat) -> PipelinePair {
-        PipelinePair { full: Self::make_pipeline(device, module, layout, format, "fs_main"), plain: Self::make_pipeline(device, module, layout, format, "fs_plain") }
+    /// format, or a tile's — and the depth format of its pass (`None`:
+    /// the pass has no depth buffer).
+    fn make_pipelines(device: &wgpu::Device, module: &wgpu::ShaderModule, layout: &wgpu::PipelineLayout, format: wgpu::TextureFormat, depth_format: Option<wgpu::TextureFormat>) -> PipelinePair {
+        PipelinePair { full: Self::make_pipeline(device, module, layout, format, depth_format, "fs_main"), plain: Self::make_pipeline(device, module, layout, format, depth_format, "fs_plain") }
+    }
+
+    /// A pipeline that writes depth 1.0, the far end, over all of the
+    /// viewport and no color, for a pass with `target_format` and
+    /// `depth_format`. The scissor says where.
+    fn make_depth_clear(device: &wgpu::Device, target_format: wgpu::TextureFormat, depth_format: wgpu::TextureFormat) -> wgpu::RenderPipeline {
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("ui depth clear"), source: wgpu::ShaderSource::Wgsl(DEPTH_CLEAR_SHADER.into()) });
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("ui depth clear"),
+            layout: None,
+            vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_main"), compilation_options: Default::default(), buffers: &[] },
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(wgpu::DepthStencilState { format: depth_format, depth_write_enabled: Some(true), depth_compare: Some(wgpu::CompareFunction::Always), stencil: wgpu::StencilState::default(), bias: wgpu::DepthBiasState::default() }),
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_main"), compilation_options: Default::default(), targets: &[Some(wgpu::ColorTargetState { format: target_format, blend: None, write_mask: wgpu::ColorWrites::empty() })] }),
+            multiview_mask: None,
+            cache: None,
+        })
     }
 
     /// One UI pipeline for one target format, with `fragment_entry` of
-    /// ui.wgsl as its fragment stage.
-    fn make_pipeline(device: &wgpu::Device, module: &wgpu::ShaderModule, layout: &wgpu::PipelineLayout, format: wgpu::TextureFormat, fragment_entry: &str) -> wgpu::RenderPipeline {
+    /// ui.wgsl as its fragment stage. With a `depth_format` it names
+    /// that format and leaves depth alone: gogo draws in paint order.
+    fn make_pipeline(device: &wgpu::Device, module: &wgpu::ShaderModule, layout: &wgpu::PipelineLayout, format: wgpu::TextureFormat, depth_format: Option<wgpu::TextureFormat>, fragment_entry: &str) -> wgpu::RenderPipeline {
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("ui"),
             layout: Some(layout),
@@ -453,7 +522,7 @@ impl UiRenderer {
                 })],
             },
             primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
+            depth_stencil: depth_format.map(|format| wgpu::DepthStencilState { format, depth_write_enabled: Some(false), depth_compare: Some(wgpu::CompareFunction::Always), stencil: wgpu::StencilState::default(), bias: wgpu::DepthBiasState::default() }),
             multisample: wgpu::MultisampleState::default(),
             fragment: Some(wgpu::FragmentState {
                 module,
@@ -527,6 +596,14 @@ impl UiRenderer {
     /// Surface is drawn with are made for it.
     pub fn target_format(&self) -> wgpu::TextureFormat {
         self.target_format
+    }
+
+    /// The format of the screen pass's depth buffer, as `new` was told;
+    /// `None` = the pass has none. With `Some`, every pipeline a
+    /// `draw=gpu` Surface is drawn with names it
+    /// (`SurfacePlace::depth_format`).
+    pub fn depth_format(&self) -> Option<wgpu::TextureFormat> {
+        self.depth_format
     }
 
     /// The texture slot `key` shows, if it has pixels.
@@ -1082,7 +1159,8 @@ impl UiRenderer {
                     let y = r[1] + (r[3] - h) / 2.0;
                     self.push_quad(current, Quad { rect: [x, y, (1.5 * epx).max(1.0), h], color: color.to_f32(), border_color: [0.0; 4], params: [0.0, 0.0, KIND_RECT, 0.0], uv: NO_UV, rot, wedge, swing, eye });
                 }
-                Draw::GpuSurface { rect, surface, alpha } => {
+                Draw::GpuSurface { rect, surface, alpha, has_depth } => {
+                    debug_assert!(!*has_depth || self.depth_format.is_some(), "Surface `{}` says `depth=true`, and this renderer was made for a pass with no depth buffer: hand `UiRenderer::new` the depth format when the build's `HAS_DEPTH_SURFACE` is true, and give the pass a depth buffer of that format", page.str(page.nodes[*surface].name));
                     // The program's own draw calls run here, between what
                     // was drawn before and what comes after: a batch of
                     // no quads marks the place.
@@ -1103,7 +1181,7 @@ impl UiRenderer {
                     let bottom: f32 = (r[1] + r[3]).min(clip_bottom).min(screen.1 as f32).ceil();
                     let is_viewport_legal: bool = r[2] <= self.max_viewport_px && r[3] <= self.max_viewport_px;
                     if right > left && bottom > top && is_viewport_legal {
-                        self.gpu_places.push(SurfacePlace { page: page as *const Page as usize, surface: *surface, rect_px: r, visible_px: [left as u32, top as u32, (right - left) as u32, (bottom - top) as u32], epx, opacity: *alpha, target_format: self.target_format });
+                        self.gpu_places.push(SurfacePlace { page: page as *const Page as usize, surface: *surface, rect_px: r, visible_px: [left as u32, top as u32, (right - left) as u32, (bottom - top) as u32], epx, opacity: *alpha, target_format: self.target_format, depth_format: self.depth_format, has_depth: *has_depth && self.depth_format.is_some() });
                         self.batches.push(Batch { first: batch_first, count: 0, scissor: current, tex: ATLAS, pixel: false, plain: false, gpu_surface: Some((self.gpu_places.len() - 1) as u32) });
                     }
                 }
@@ -1432,6 +1510,9 @@ impl UiRenderer {
             pass.set_vertex_buffer(0, self.quad_buffer.slice(..));
         };
         bind(pass);
+        // True once the program's own draw calls ran in this pass: they
+        // may have written depth.
+        let mut has_code_drawn: bool = false;
         for b in &self.batches {
             if let Some(index) = b.gpu_surface {
                 if let Some(draw_gpu) = draw_gpu.as_deref_mut() {
@@ -1439,6 +1520,16 @@ impl UiRenderer {
                     let [x, y, w, h] = place.visible_px;
                     pass.set_viewport(place.rect_px[0], place.rect_px[1], place.rect_px[2], place.rect_px[3], 0.0, 1.0);
                     pass.set_scissor_rect(x, y, w, h);
+                    // The pass cleared its depth when it started, so the
+                    // first code to draw finds it clear. Later code with
+                    // `depth=true` gets its part of it cleared again: it
+                    // must not see what other code left there.
+                    if let (true, true, Some(depth_clear)) = (place.has_depth, has_code_drawn, &self.depth_clear) {
+                        pass.set_pipeline(depth_clear);
+                        pass.draw(0..3, 0..1);
+                        draw_calls += 1;
+                    }
+                    has_code_drawn = true;
                     draw_gpu(place, pass);
                     draw_calls += 1;
                     // The code left the pass in a state of its own: the
@@ -1497,7 +1588,7 @@ impl UiRenderer {
         let size: (u32, u32) = (size_px.0.max(1), size_px.1.max(1));
         self.prepare_pages(device, queue, &[(shifted.as_slice(), page)], epx, size, text, locale);
         if self.tile_pipelines.is_none() {
-            self.tile_pipelines = Some(Self::make_pipelines(device, &self.module, &self.pipeline_layout, Self::TILE_FORMAT));
+            self.tile_pipelines = Some(Self::make_pipelines(device, &self.module, &self.pipeline_layout, Self::TILE_FORMAT, None));
         }
         let tex = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("ui tile"),

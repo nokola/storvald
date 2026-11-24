@@ -47,18 +47,22 @@ pub(crate) struct Gfx {
     pub(crate) gpu: Gpu,
     pub(crate) config: wgpu::SurfaceConfiguration,
     pub(crate) renderer: UiRenderer,
+    /// Depth buffer of the window's size, for a program with a `Surface
+    /// depth=true`; `None` for every other program.
+    pub(crate) depth: Option<wgpu::TextureView>,
 }
 
 impl Gfx {
-    /// Brings up a device that can draw into `window`.
+    /// Brings up a device that can draw into `window`. `depth_format`:
+    /// `Program::depth_format`.
     ///
     /// Returns why the last start that was tried gave no device.
-    pub(crate) fn new(window: Arc<Window>) -> Result<Gfx, String> {
+    pub(crate) fn new(window: Arc<Window>, depth_format: Option<wgpu::TextureFormat>) -> Result<Gfx, String> {
         let tries: Vec<Option<wgpu::Backends>> = backends_to_try(wgpu::Backends::from_env(), cfg!(windows));
         let mut why: String = String::new();
         for (i, backends) in tries.iter().enumerate() {
             let is_last: bool = i + 1 == tries.len();
-            match Gfx::start(window.clone(), *backends, is_last) {
+            match Gfx::start(window.clone(), *backends, is_last, depth_format) {
                 Ok(gfx) => return Ok(gfx),
                 Err(e) => why = e,
             }
@@ -69,7 +73,7 @@ impl Gfx {
     /// One start on `backends`. `takes_a_software_adapter`: whether an
     /// adapter that draws on the CPU is good enough, which it is only
     /// when no later start can find a real one.
-    fn start(window: Arc<Window>, backends: Option<wgpu::Backends>, takes_a_software_adapter: bool) -> Result<Gfx, String> {
+    fn start(window: Arc<Window>, backends: Option<wgpu::Backends>, takes_a_software_adapter: bool, depth_format: Option<wgpu::TextureFormat>) -> Result<Gfx, String> {
         let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
         if let Some(backends) = backends {
             desc.backends = backends;
@@ -102,8 +106,20 @@ impl Gfx {
             color_space: Default::default(),
         };
         surface.configure(&device, &config);
-        let renderer: UiRenderer = UiRenderer::new(&device, format);
-        Ok(Gfx { window, surface, gpu: Gpu { instance, adapter, device, queue }, config, renderer })
+        let renderer: UiRenderer = UiRenderer::new(&device, format, depth_format);
+        let depth: Option<wgpu::TextureView> = depth_format.map(|depth_format| crate::gpu::depth_buffer(&device, depth_format, config.width, config.height));
+        Ok(Gfx { window, surface, gpu: Gpu { instance, adapter, device, queue }, config, renderer, depth })
+    }
+
+    /// Window has `width` x `height` device pixels now: the surface and
+    /// the depth buffer are made for that size.
+    pub(crate) fn resize(&mut self, width: u32, height: u32) {
+        self.config.width = width.max(1);
+        self.config.height = height.max(1);
+        self.surface.configure(&self.gpu.device, &self.config);
+        if let Some(depth_format) = self.renderer.depth_format() {
+            self.depth = Some(crate::gpu::depth_buffer(&self.gpu.device, depth_format, self.config.width, self.config.height));
+        }
     }
 }
 

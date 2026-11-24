@@ -1682,7 +1682,10 @@ to the goals rather than to muscle memory from WPF or an engine (`Label`,
   code makes its own GPU draw calls inside the pass that draws the
   pages, at the Surface's place in paint order, in a viewport on the
   Surface's rectangle with the scissor on the part that shows; no
-  `rotate=` on it or above it, G7017). A leaf: no
+  `rotate=` on it or above it, G7017; `depth=true` gives those calls a
+  depth buffer, and one such Surface in a build gives every frame of the
+  program one, so the word is written on the Surface's own line only,
+  G7018). A leaf: no
   child (G7014), no size of its own, no plate. The words of the other
   `draw=` are refused (G7016). `draw=` is written on the Surface's own
   line only, because the build types the Surface's name by it

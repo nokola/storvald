@@ -30,6 +30,10 @@ pub struct Built {
     pub release_unused: &'static [ImageKey],
     /// Folder the pages' files were in at build.
     pub folder: &'static str,
+    /// True when a page of the build has a `Surface draw=gpu,
+    /// depth=true` (the build's `HAS_DEPTH_SURFACE`): every frame of the
+    /// program then has a depth buffer. False: none is ever made.
+    pub has_depth_surface: bool,
 }
 
 /// What a page on its way does.
@@ -133,6 +137,9 @@ pub struct Program<A = ()> {
     /// the `release=unused` pictures no live page names.
     #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
     has_freed_a_page: bool,
+    /// `Built::has_depth_surface` of the build program started from.
+    #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
+    has_depth_surface: bool,
     /// Draw commands of what is drawn off its laid-out place (a page
     /// placed in a node that moves, a page's own pictures under a root
     /// that moves), moved to where they are now. Filled and read within
@@ -191,6 +198,7 @@ impl<A: 'static> Program<A> {
             #[cfg(feature = "gpu")]
             pictures: crate::pictures::PictureLoader::default(),
             has_freed_a_page: false,
+            has_depth_surface: built.has_depth_surface,
             posed: RefCell::new(Vec::new()),
         };
         program.open(first.into_page_object().0);
@@ -221,6 +229,18 @@ impl<A: 'static> Program<A> {
     /// page.
     pub fn assets_mut(&mut self) -> &mut UiAssets {
         &mut self.assets
+    }
+
+    /// Format of the depth buffer every frame of program has: `Some` for
+    /// a program with a `Surface draw=gpu, depth=true` in any page,
+    /// `None` for every other program, which makes no depth buffer.
+    ///
+    /// Needed by a host that draws program's pages in a pass of its own:
+    /// it makes its renderer with this format (`UiRenderer::new`) and
+    /// gives its pass a depth buffer of it, cleared to 1.0.
+    #[cfg(feature = "gpu")]
+    pub fn depth_format(&self) -> Option<wgpu::TextureFormat> {
+        self.has_depth_surface.then_some(crate::gpu::DEPTH_FORMAT)
     }
 
     /// Page on screen: its nodes, texts, rows, rectangles.
@@ -1089,6 +1109,7 @@ impl<A: 'static> Program<A> {
             let Some(mut object) = self.objects[id.index()].take() else { continue };
             self.nav.caller = Some(id);
             self.stack.get_mut(id).target_format = Some(renderer.target_format());
+            self.stack.get_mut(id).depth_format = renderer.depth_format();
             let mut host: Host<'_, A> = Host { app: &mut self.app, ui: self.stack.get_mut(id), nav: &mut self.nav };
             object.gpu_prepare(&mut host, gpu);
             self.nav.caller = None;

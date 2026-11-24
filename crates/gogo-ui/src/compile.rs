@@ -610,6 +610,7 @@ fn wrong_kind(key: PropKey, kind: Kind) -> String {
         PropKey::Source | PropKey::Loading | PropKey::Release if kind == Kind::Surface => format!("`{word}=` is for a picture file, an Image's — a Surface's picture comes from the program's code (`Runtime::set_picture`)"),
         PropKey::Background | PropKey::Color | PropKey::ColorA | PropKey::CornerRadius | PropKey::BorderThickness | PropKey::BorderColor if kind == Kind::Surface => format!("`{word}=` on a Surface — gogo draws nothing of a Surface, the program's code does; a plate is a Rectangle or a Panel under it in a `Layers`"),
         PropKey::Draw => format!("`draw=` says how the program's code fills a Surface — gogo draws a {name} itself"),
+        PropKey::Depth => format!("`depth=` gives the program's own draw calls a depth buffer, in a `Surface draw=gpu` — gogo draws a {name} itself, in paint order"),
         PropKey::Background | PropKey::Color | PropKey::ColorA if draws_nothing && kind == Kind::Seat => format!("`{word}=` on a seat — a seat draws nothing: it is an empty socket, and the plate belongs to the node that sits in it"),
         PropKey::Background | PropKey::Color | PropKey::ColorA if draws_nothing => format!("`{word}=` on a {name} — a {name} draws nothing of its own; a plate is a Panel's `background=`, around it or inside it"),
         PropKey::Color if shows_text => format!("`color=` on a {name} — text is `font_color=`, the plate is `background=`"),
@@ -4570,6 +4571,10 @@ impl<'a> Compiler<'a> {
             self.error("G7015", line, "`draw=` in a `when` — how the program's code fills a Surface is fixed when the page is built (its name in the code has a type by it); write it on the Surface's own line");
             return false;
         }
+        if in_when && key == PropKey::Depth && kind == Kind::Surface {
+            self.error("G7018", line, "`depth=` in a `when` — whether the program has a depth buffer is fixed when the program is built; write `depth=true` on the Surface's own line");
+            return false;
+        }
         if in_when && key == PropKey::Value && kind == Kind::Toggle {
             self.error("G0054", line, "`value=` in a `when` — a `when` does not flip a Toggle; its value changes by a tap, a drag, a key or code (`Runtime::set_value`), and `value=1` on the Toggle's own line is where it starts");
             return false;
@@ -5834,7 +5839,7 @@ impl<'a> Compiler<'a> {
             if draw.is_none() && !n.props.iter().any(|p| p.key == "draw") {
                 self.error("G7015", n.line, "a Surface says how the program's code fills it — write `draw=picture` (code hands over one picture), `draw=commands` (code writes gogo draw commands) or `draw=gpu` (code makes its own GPU draw calls); there is no default");
             }
-            for (key, of) in [(PropKey::Fit, crate::surface::SurfaceDraw::Picture), (PropKey::Window, crate::surface::SurfaceDraw::Picture), (PropKey::Sampling, crate::surface::SurfaceDraw::Picture), (PropKey::ClipContents, crate::surface::SurfaceDraw::Commands)] {
+            for (key, of) in [(PropKey::Fit, crate::surface::SurfaceDraw::Picture), (PropKey::Window, crate::surface::SurfaceDraw::Picture), (PropKey::Sampling, crate::surface::SurfaceDraw::Picture), (PropKey::ClipContents, crate::surface::SurfaceDraw::Commands), (PropKey::Depth, crate::surface::SurfaceDraw::Gpu)] {
                 if let (Some(draw), true) = (draw, tmp.props.iter().any(|pr| pr.key == key)) {
                     if draw != of {
                         self.error("G7016", n.line, format!("`{}=` belongs to a `draw={}` Surface — this one says `draw={}`", key.word(), of.word(), draw.word()));

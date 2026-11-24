@@ -347,7 +347,7 @@ fn an_upload_lands_its_size_and_only_an_unmarked_releasable_picture_is_freed() {
     static FILE_B: [u8; 4] = [5, 6, 7, 8];
     static FILE_KEPT: [u8; 4] = [9, 9, 9, 9];
     let gpu: turbodot::Gpu = turbodot::Gpu::new().expect("this test needs a GPU adapter");
-    let mut renderer: gogo_wgpu::UiRenderer = gogo_wgpu::UiRenderer::new(&gpu.device, wgpu::TextureFormat::Rgba8Unorm);
+    let mut renderer: gogo_wgpu::UiRenderer = gogo_wgpu::UiRenderer::new(&gpu.device, wgpu::TextureFormat::Rgba8Unorm, None);
     let keys: Images = Images::from_names(["res://a.png", "res://b.png", "res://kept.png"]);
     let mut table: ImageTable = ImageTable::new(keys, vec![Some(&FILE_A[..]), Some(&FILE_B[..]), Some(&FILE_KEPT[..])], vec![false; 3], vec![Some((1, 1)); 3]);
     let (a, b, kept): (ImageKey, ImageKey, ImageKey) = (ImageKey::from_index(0), ImageKey::from_index(1), ImageKey::from_index(2));

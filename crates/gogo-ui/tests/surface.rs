@@ -471,13 +471,13 @@ fn a_gpu_surface_puts_its_place_in_the_draw_list() {
     assert_eq!(SurfaceDraw::of(&fx.page, world.node()), Some(SurfaceDraw::Gpu));
     fx.frame(400.0, 800.0);
     let marks: Vec<&Draw> = fx.draws.iter().filter(|d| matches!(d, Draw::GpuSurface { .. })).collect();
-    assert_eq!(marks, [&Draw::GpuSurface { rect: Rect::new(20.0, 30.0, 200.0, 100.0), surface: world.node(), alpha: 0.5 }], "one place: a Surface that does not show has none");
+    assert_eq!(marks, [&Draw::GpuSurface { rect: Rect::new(20.0, 30.0, 200.0, 100.0), surface: world.node(), alpha: 0.5, has_depth: false }], "one place: a Surface that does not show has none");
     let at: usize = fx.draws.iter().position(|d| matches!(d, Draw::GpuSurface { .. })).unwrap();
     assert!(matches!(fx.draws[at - 1], Draw::Quad { .. }) && matches!(fx.draws[at + 1], Draw::Text { .. }), "over what comes before it, under what comes after: {:?}", fx.draws);
     // gogo asks for no commands of it: the code draws when the frame is drawn.
     assert_eq!(fx.rt.next_surface_to_draw(), None);
     // The place moves and fades with a page that slides.
-    assert_eq!(fx.draws[at].posed(10.0, -5.0, 0.5), Draw::GpuSurface { rect: Rect::new(30.0, 25.0, 200.0, 100.0), surface: world.node(), alpha: 0.25 });
+    assert_eq!(fx.draws[at].posed(10.0, -5.0, 0.5), Draw::GpuSurface { rect: Rect::new(30.0, 25.0, 200.0, 100.0), surface: world.node(), alpha: 0.25, has_depth: false });
 }
 
 /// The build writes a `draw=gpu` Surface's name as a `GpuSurface`.
@@ -487,4 +487,116 @@ fn the_build_writes_a_gpu_surface_s_name_with_its_type() {
     assert!(!gogo_ui::has_errors(&c.diags), "{:#?}", c.diags);
     let code: String = gogo_ui::emit::emit_rust(&c.page, "m").unwrap();
     assert!(code.contains("pub world: gogo_ui::GpuSurface,"), "{code}");
+}
+
+// ---------------------------------------------------------------- depth=true
+
+/// `depth=true` goes with `draw=gpu` alone: the program's own draw calls
+/// test and write depth, and gogo's drawing never does. On a Surface of
+/// another `draw=` it is G7016, on any other node G2002, with a message
+/// that says whose word it is.
+#[test]
+fn depth_belongs_to_a_gpu_surface() {
+    assert!(codes("View v { Surface world draw=gpu, depth=true, width=10, height=10 }").is_empty());
+    assert!(codes("View v { Surface world draw=gpu, depth=false, width=10, height=10 }").is_empty());
+    for draw in ["picture", "commands"] {
+        let src = format!("View v {{ Surface s draw={draw}, depth=true, width=10, height=10 }}");
+        assert_eq!(codes(&src), ["G7016"], "{src}");
+        let said: String = message(&src, "G7016");
+        assert!(said.contains("`depth=` belongs to a `draw=gpu` Surface") && said.contains(&format!("`draw={draw}`")), "{said}");
+    }
+    let on_a_shape: String = message("View v { Rectangle r 10x10, depth=true, color=#FF0000FF }", "G2002");
+    assert!(on_a_shape.contains("`depth=` gives the program's own draw calls a depth buffer") && on_a_shape.contains("`Surface draw=gpu`"), "{on_a_shape}");
+    // True or false, and no other word.
+    assert_eq!(codes("View v { Surface world draw=gpu, depth=maybe, width=10, height=10 }"), ["G0078"]);
+}
+
+/// Whether the program has a depth buffer is fixed when the program is
+/// built: one Surface that says `depth=true` gives every frame one. A
+/// `when` cannot change it.
+#[test]
+fn depth_is_written_on_the_surface_s_own_line() {
+    let src = "View v { Surface world draw=gpu, width=10, height=10 {\n when screen.landscape depth=true\n} }";
+    assert_eq!(codes(src), ["G7018"], "{:?}", codes(src));
+    assert!(message(src, "G7018").contains("fixed when the program is built"));
+}
+
+/// The place of a `draw=gpu` Surface in the draw list says whether the
+/// Surface has depth, so a renderer knows without reading the page.
+#[test]
+fn the_place_in_the_draw_list_says_whether_the_surface_has_depth() {
+    let mut fx = Fx::new("View v { Layers l width=fill, height=fill {\n Surface world draw=gpu, depth=true, width=fill, height=fill\n Surface flat draw=gpu, width=50, height=50, halign=left, valign=top\n Surface off draw=gpu, depth=false, width=50, height=50, halign=right, valign=top\n} }");
+    fx.frame(400.0, 800.0);
+    let depths: Vec<(NodeId, bool)> = fx
+        .draws
+        .iter()
+        .filter_map(|d| match d {
+            Draw::GpuSurface { surface, has_depth, .. } => Some((*surface, *has_depth)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(depths, [(fx.id("world"), true), (fx.id("flat"), false), (fx.id("off"), false)]);
+    // A page that slides keeps it.
+    let world: usize = fx.draws.iter().position(|d| matches!(d, Draw::GpuSurface { has_depth: true, .. })).unwrap();
+    assert!(matches!(fx.draws[world].posed(10.0, 0.0, 0.5), Draw::GpuSurface { has_depth: true, .. }));
+}
+
+/// A page says whether any of its Surfaces has depth: what a build asks
+/// each page to know if the program needs a depth buffer.
+#[test]
+fn a_page_says_whether_a_surface_of_it_has_depth() {
+    let page = |src: &str| -> Page {
+        let c = compile(src, &|_| None);
+        assert!(!gogo_ui::has_errors(&c.diags), "{:#?}", c.diags);
+        c.page
+    };
+    assert!(page("View v { Panel p width=fill, height=fill {\n Surface world draw=gpu, depth=true, width=fill, height=fill\n} }").has_depth_surface());
+    assert!(!page("View v { Surface world draw=gpu, width=fill, height=fill }").has_depth_surface());
+    assert!(!page("View v { Surface world draw=gpu, depth=false, width=fill, height=fill }").has_depth_surface());
+    assert!(!page("View v { Surface s draw=picture, width=10, height=10 }").has_depth_surface());
+}
+
+/// The build writes `HAS_DEPTH_SURFACE`: true when a Surface of any page
+/// says `depth=true`, false for a build with none. A host makes a depth
+/// buffer by it, so a program with no such Surface never makes one.
+#[test]
+fn a_build_says_whether_a_surface_of_any_page_has_depth() {
+    let build = |tag: &str, pages: &[(&str, &str)]| -> String {
+        let dir = std::env::temp_dir().join(format!("gogo_depth_{tag}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let ui = dir.join("ui");
+        std::fs::create_dir_all(&ui).unwrap();
+        for (file, text) in pages {
+            std::fs::write(ui.join(file), text).unwrap();
+        }
+        let out = dir.join("pages.rs");
+        gogo_ui::build_pages(&ui, &out, gogo_ui::BuildOptions::new(&dir)).unwrap();
+        let source: String = std::fs::read_to_string(&out).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        source
+    };
+    let flat: &str = "View root { Surface stamp draw=gpu, width=48, height=48 }\n";
+    let deep: &str = "View root { Surface world draw=gpu, depth=true, width=fill, height=fill }\n";
+    assert!(build("none", &[("a.gogo", flat)]).contains("pub const HAS_DEPTH_SURFACE: bool = false;"));
+    // One page of two is enough.
+    assert!(build("one", &[("a.gogo", flat), ("b.gogo", deep)]).contains("pub const HAS_DEPTH_SURFACE: bool = true;"));
+}
+
+/// A saved file that changes a Surface's `depth=` is not shown: whether
+/// the program has a depth buffer was fixed when it was built.
+#[test]
+fn a_reload_refuses_a_surface_with_another_depth() {
+    use gogo_ui::reload::{ShapeChange, same_shape};
+    let page = |src: &str| -> Page {
+        let c = compile(src, &|_| None);
+        assert!(!gogo_ui::has_errors(&c.diags), "{:#?}", c.diags);
+        c.page
+    };
+    let built: Page = page("View v { Surface world draw=gpu, width=100, height=50 }");
+    assert_eq!(same_shape(&built, &page("View v { Surface world draw=gpu, depth=false, width=200, height=80 }")), Ok(()), "`depth=false` is what no word says");
+    let changed: ShapeChange = same_shape(&built, &page("View v { Surface world draw=gpu, depth=true, width=100, height=50 }")).unwrap_err();
+    assert_eq!(changed, ShapeChange::Depth { name: "world".to_string() });
+    assert!(changed.to_string().contains("Surface `world` changed its `depth=`") && changed.to_string().contains("needs a rebuild"), "{changed}");
+    let deep: Page = page("View v { Surface world draw=gpu, depth=true, width=100, height=50 }");
+    assert_eq!(same_shape(&deep, &built), Err(ShapeChange::Depth { name: "world".to_string() }), "and the other way");
 }

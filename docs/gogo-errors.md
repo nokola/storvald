@@ -1516,8 +1516,10 @@ built: write it on the Surface's own line.
 `fit=`, `window=` and `sampling=` place a picture: they belong to a
 `draw=picture` Surface. `clip_contents=` cuts draw commands at the
 Surface's edge: it belongs to a `draw=commands` one. A `draw=gpu` Surface
-takes none of the four: the code draws all of it. Written beside another
-`draw=`, the word would build and change nothing.
+takes none of the four: the code draws all of it. `depth=` gives the
+code's own GPU draw calls a depth buffer: it belongs to a `draw=gpu`
+Surface. Written beside another `draw=`, the word would build and change
+nothing.
 
 Wrong:
 
@@ -1560,6 +1562,33 @@ View page {
     Layers card rotate=8, width=fill, height=fill {
         Surface model draw=picture, width=fill, height=fill
     }
+}
+```
+
+## G7018 — `depth=` in a `when`
+
+One `Surface` that says `depth=true` gives every frame of the program a
+depth buffer, and a program with none never makes one. So whether there
+is one is fixed when the program is built: the renderer's pipelines are
+made for it at start. A `when` changes a word while the program runs,
+which is too late.
+
+Wrong:
+
+```kdl error=G7018
+View page {
+    Surface world draw=gpu, width=fill, height=fill {
+        when screen.landscape depth=true
+    }
+}
+```
+
+Fix: write it on the Surface's own line. Code that wants no depth test
+in some state draws with a pipeline that does not test.
+
+```kdl
+View page {
+    Surface world draw=gpu, depth=true, width=fill, height=fill
 }
 ```
 
