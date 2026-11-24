@@ -146,7 +146,8 @@ impl Gpu {
         // sRGB-encoded values.
         let format: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
         let mut renderer: UiRenderer = UiRenderer::new(&self.device, format);
-        // Renderer is new: it has no picture yet. And a picture of the
+        // Renderer is new: it has no picture yet (the letters it uploads
+        // by itself, `TextEngine::atlas_version`). And a picture of the
         // pages shows the lazy ones too.
         program.forget_uploads();
         program.gpu_draw_as(&mut renderer, self, crate::pictures::LazyPictures::Now, host_pages.map(|pages| pages as &dyn crate::pages::HostPages));

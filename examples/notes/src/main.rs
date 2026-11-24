@@ -1318,6 +1318,30 @@ mod tests {
         assert!(program.ui().outline().starts_with("View homePage x=0 y=0 w=480 h=640"), "{}", program.ui().outline());
     }
 
+    /// Second picture of one program shows its letters, as first does.
+    ///
+    /// Needed because `Gpu::draw_program` makes a renderer for each
+    /// picture, and each renderer must upload the letters by itself: a
+    /// second picture came out with every plate and no letters.
+    ///
+    /// Ignored unless asked for: needs a GPU adapter.
+    #[test]
+    #[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
+    fn a_second_picture_of_a_program_shows_its_letters() {
+        const INK: [u8; 4] = [0xE8, 0xE8, 0xEC, 0xFF];
+        let mut program: Program<AppState> = started(AppState::default());
+        let gpu: turbodot::Gpu = turbodot::Gpu::new().expect("this test needs a GPU adapter");
+        let title: Rect = program.ui().rect(HOME.title);
+        let ink_in_title = |picture: &turbodot::Picture| -> usize { (title.y as u32..(title.y + title.h) as u32).flat_map(|y| (title.x as u32..(title.x + title.w) as u32).map(move |x| (x, y))).filter(|&(x, y)| picture.at(x, y) == INK).count() };
+
+        let first: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
+        let first_ink: usize = ink_in_title(&first);
+        assert!(first_ink > 20, "the precondition: first picture shows the title: {first_ink} ink-colored pixels");
+        let second: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
+        assert_eq!(ink_in_title(&second), first_ink, "second picture shows the title too");
+        assert!(second == first, "and is the first, pixel for pixel");
+    }
+
     /// Pages drawn on a real GPU at two device pixels per epx: twice the
     /// pixels, page's own colors where page says, same bytes in a PNG read
     /// back from disk.

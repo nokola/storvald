@@ -2,13 +2,15 @@
 //! real text measures, drawn into a texture by `UiRenderer`, read back.
 //! One test draws a plate and its text. Another uploads pictures the
 //! way a host does, several times over, and reads them back. A third
-//! draws the wedge of a dial and checks it against the hit test.
+//! draws the wedge of a dial and checks it against the hit test. Two
+//! more draw one text engine's letters with a second renderer, and a
+//! second engine's letters with the same renderer.
 //!
 //! Needed because nothing else in this repository runs the shader: the
 //! unit tests cover the gradient tables only, and a renderer whose quads
 //! are right but whose pipeline draws nothing would pass them all.
 //!
-//! Ignored unless asked for: all three need a GPU adapter, which a hosted
+//! Ignored unless asked for: all of them need a GPU adapter, which a hosted
 //! test machine may not have, and a test that returned early there would
 //! count as passed without having run. On a machine with a GPU:
 //!
@@ -302,4 +304,93 @@ fn a_wedge_is_drawn_where_it_takes_touches() {
     assert_eq!(QUARTERS.map(|(x, y)| at(x, y)), [GREEN, CLEAR, CLEAR, CLEAR], "only the upper right quarter is drawn");
     let touched: [bool; 4] = QUARTERS.map(|(x, y)| gogo_ui::hit(&page, kept.frame(), x as f32, y as f32, true).is_some_and(|n| kept.look().placed_is_under(&page, n, wedge)));
     assert_eq!(touched, [true, false, false, false], "and only that quarter takes a touch");
+}
+
+/// The plate of `PAGE` with its two letters the other way round: an
+/// engine packs this text's glyphs into its atlas in the other order.
+const PAGE_LETTERS_SWAPPED: &str = r#"
+View card {
+    Panel plate width=120, height=60, halign=left, valign=top, background=#E51400 {
+        Label hello text="iH", font_size=32, font_color=#FFFFFF, halign=center, valign=center
+    }
+}
+"#;
+
+/// A text engine with the one font these tests draw with.
+fn engine() -> RefCell<TextEngine> {
+    let font: Vec<u8> = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/Fonts/Roboto Regular.ttf")).expect("the font");
+    RefCell::new(TextEngine::new(&[(FONT_KEY, font)]))
+}
+
+/// `source` laid out on a tile and drawn by `ui` with the letters of
+/// `text`.
+///
+/// Returns the tile's pixels and the rect of the Label named `hello`.
+fn drawn_tile(source: &str, ui: &mut UiRenderer, device: &wgpu::Device, queue: &wgpu::Queue, text: &RefCell<TextEngine>) -> (Vec<u8>, Rect) {
+    let compiled: Compiled = compile(source, &|_| None);
+    assert!(!has_errors(&compiled.diags), "{:?}", compiled.diags);
+    let page: Page = compiled.page;
+    let runtime: Runtime = Runtime::new(&page);
+    let screen: Rect = Rect::new(0.0, 0.0, TILE.0 as f32, TILE.1 as f32);
+    let measure = EpxMeasure { engine: text, epx: 1.0, font: None, images: &[] };
+    let kept: KeptFrame = KeptFrame::fresh(&page, resolve(&page, &runtime), screen, &measure);
+    let label: Rect = kept.frame().rects()[page.find("hello").expect("the label").index()];
+    let draws: Vec<Draw> = draw(&page, kept.frame());
+    let tile: Tex_Tile_Premul_Srgb_4xU8_RGBA = ui.render_to_texture(device, queue, &draws, &page, &mut text.borrow_mut(), None, 1.0, (0.0, 0.0), TILE);
+    (read_back(device, queue, &tile), label)
+}
+
+/// How many pixels of a tile inside `rect` are opaque white.
+fn white_pixels(pixels: &[u8], rect: Rect) -> usize {
+    let (x0, y0, x1, y1) = (rect.x as u32, rect.y as u32, (rect.x + rect.w) as u32, (rect.y + rect.h) as u32);
+    let is_white = |x: u32, y: u32| -> bool {
+        let i: usize = ((y * TILE.0 + x) * 4) as usize;
+        pixels[i..i + 4] == [0xFF; 4]
+    };
+    (y0..y1).flat_map(|y| (x0..x1).map(move |x| (x, y))).filter(|&(x, y)| is_white(x, y)).count()
+}
+
+/// A renderer made after another has drawn with the same text engine
+/// draws that engine's letters too.
+///
+/// Needed because one text engine may meet several renderers over its
+/// life: one per picture a host takes, a new one after the GPU was lost.
+/// Each must upload the glyph atlas by itself, or its picture has every
+/// plate and no letters.
+#[test]
+#[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
+fn a_second_renderer_over_one_text_engine_draws_its_letters() {
+    let text: RefCell<TextEngine> = engine();
+    let (device, queue) = device();
+    let mut first: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm);
+    let (pixels, label) = drawn_tile(PAGE, &mut first, &device, &queue, &text);
+    let first_white: usize = white_pixels(&pixels, label);
+    assert!(first_white > 20, "the precondition: the first renderer draws the letters: {first_white} white pixels");
+
+    let mut second: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm);
+    let (pixels, label) = drawn_tile(PAGE, &mut second, &device, &queue, &text);
+    assert_eq!(white_pixels(&pixels, label), first_white, "the second renderer draws the same letters");
+}
+
+/// A renderer handed another text engine draws that engine's letters.
+///
+/// Needed because a renderer keeps the version of the atlas it uploaded
+/// (`TextEngine::atlas_version`). Two engines that each packed two glyphs
+/// would share a count kept per engine: the renderer would keep the first
+/// engine's atlas and draw the second engine's letters from the wrong
+/// places in it.
+#[test]
+#[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
+fn a_renderer_handed_another_text_engine_draws_that_engines_letters() {
+    let (device, queue) = device();
+    let mut ui: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm);
+    let first_engine: RefCell<TextEngine> = engine();
+    drawn_tile(PAGE, &mut ui, &device, &queue, &first_engine);
+
+    let second_engine: RefCell<TextEngine> = engine();
+    let (pixels, label) = drawn_tile(PAGE_LETTERS_SWAPPED, &mut ui, &device, &queue, &second_engine);
+    assert!(white_pixels(&pixels, label) > 20, "the letters are drawn");
+    let mut fresh: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm);
+    let (want, _) = drawn_tile(PAGE_LETTERS_SWAPPED, &mut fresh, &device, &queue, &second_engine);
+    assert!(pixels == want, "the picture of a renderer that only ever saw the second engine");
 }

@@ -97,20 +97,21 @@ fn color_texel_of(e: &TextEngine, q: &GlyphQuad) -> [u8; 4] {
 
 /// An emoji of a color face lands in the COLOR atlas with its own
 /// colors (`color: true`, texels that are not gray), a letter beside
-/// it in the coverage atlas; both atlases report dirty. Red when the
+/// it in the coverage atlas; both atlases get a new version. Red when the
 /// rasterizer keeps coverage masks only: every other glyph is dropped,
 /// and the user sees a box for each emoji.
 #[test]
 #[ignore = "needs Windows' Segoe UI Emoji font: run with --include-ignored on Windows"]
 fn an_emoji_lands_in_the_color_atlas_beside_the_letters() {
     let mut e: TextEngine = engine_with_emoji();
-    assert!(!e.take_color_dirty(), "nothing packed yet");
+    assert_eq!(e.color_atlas_version(), 0, "nothing packed yet");
+    let letters_before: u64 = e.atlas_version();
     let quads: Vec<GlyphQuad> = e.shape("a😀", px(40.0), None, None, 0.0, 0.0, 0.0, 0);
     assert_eq!(quads.len(), 2, "{quads:?}");
     assert!(!quads[0].color, "the letter: coverage atlas");
     assert!(quads[1].color, "the emoji: color atlas");
     assert!(quads[1].w > 20.0 && quads[1].h > 20.0, "an emoji at 40 px is a real box: {:?}", quads[1]);
-    assert!(e.take_dirty() && e.take_color_dirty());
+    assert!(e.atlas_version() != letters_before && e.color_atlas_version() != 0);
     // Somewhere in the emoji's slot a texel is opaque and colored.
     let (atlas, side) = e.color_atlas();
     let (x0, y0, x1, y1) = ((quads[1].uv[0] * side as f32) as usize, (quads[1].uv[1] * side as f32) as usize, (quads[1].uv[2] * side as f32) as usize, (quads[1].uv[3] * side as f32) as usize);
@@ -229,14 +230,24 @@ fn measures_wraps_and_rasterizes() {
     assert_eq!(m.font_height(20.0), 24.0);
     let (_, h2) = e.measure("one two three four five six seven", px(20.0), Some(100.0), None);
     assert!(h2 >= 48.0, "{h2}");
+    let before: u64 = e.atlas_version();
     let quads = e.shape("Hi", px(20.0), None, None, 10.0, 5.0, 0.0, 0);
     assert_eq!(quads.len(), 2);
     assert!(quads[0].x >= 10.0 && quads[1].x > quads[0].x);
     let (atlas, size) = e.atlas();
     assert!(atlas.iter().any(|b| *b > 128), "atlas has ink");
     assert_eq!(size, 1024);
-    assert!(e.take_dirty());
-    assert!(!e.take_dirty());
+    // The atlas has a new version when glyphs are packed into it, the
+    // same one when a text's glyphs are in it already, and never one
+    // another engine has.
+    let packed: u64 = e.atlas_version();
+    assert_ne!(packed, before, "two glyphs were packed");
+    e.shape("Hi", px(20.0), None, None, 40.0, 5.0, 0.0, 0);
+    assert_eq!(e.atlas_version(), packed, "nothing new was packed");
+    let mut other = engine();
+    assert_ne!(other.atlas_version(), before, "a second engine's blank atlas");
+    other.shape("Hi", px(20.0), None, None, 10.0, 5.0, 0.0, 0);
+    assert_ne!(other.atlas_version(), packed, "a second engine with the same two glyphs");
 }
 
 /// A style suffix on the font key is a faux style: bold grows the

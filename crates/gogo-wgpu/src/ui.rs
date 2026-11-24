@@ -238,9 +238,15 @@ pub struct UiRenderer {
     free_slots: Vec<TexId>,
     atlas_texture: Option<wgpu::Texture>,
     atlas_size: u32,
+    /// The `TextEngine::atlas_version` of the atlas in slot 0; 0 = none
+    /// uploaded yet.
+    atlas_version_uploaded: u64,
     /// Slot 1: the engine's emoji atlas (rebuilt when it changes size).
     color_atlas_texture: Option<wgpu::Texture>,
     color_atlas_size: u32,
+    /// The `TextEngine::color_atlas_version` of the atlas in slot 1; 0 =
+    /// none uploaded yet.
+    color_atlas_version_uploaded: u64,
     /// Texture slot by `ImageKey` (the `source=` id); `None` = no pixels
     /// yet. Grows as the host interns pictures past the build's table.
     images: Vec<Option<TexId>>,
@@ -352,8 +358,10 @@ impl UiRenderer {
             free_slots: Vec::new(),
             atlas_texture: None,
             atlas_size: 0,
+            atlas_version_uploaded: 0,
             color_atlas_texture: None,
             color_atlas_size: 0,
+            color_atlas_version_uploaded: 0,
             images: Vec::new(),
             externals: Vec::new(),
             host_layers: Vec::new(),
@@ -691,9 +699,17 @@ impl UiRenderer {
         }
     }
 
-    /// Uploads the glyph atlases when the engine changed them.
-    fn sync_atlas(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &mut TextEngine) {
-        if text.take_dirty() {
+    /// Uploads each glyph atlas of `text` that is not the one this
+    /// renderer uploaded last.
+    ///
+    /// Needed per renderer, by the atlas's version: a text engine may
+    /// meet several renderers (one per picture a host takes, a new one
+    /// after the GPU was lost), and a renderer may be handed another
+    /// engine. Each of them must end up with the atlas its glyph quads
+    /// point into.
+    fn sync_atlas(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &TextEngine) {
+        if text.atlas_version() != self.atlas_version_uploaded {
+            self.atlas_version_uploaded = text.atlas_version();
             let (data, size) = text.atlas();
             if size != self.atlas_size {
                 let (tex, entry) = self.make_texture(device, size, size, wgpu::TextureFormat::R8Unorm);
@@ -705,7 +721,8 @@ impl UiRenderer {
                 Self::write(queue, tex, data, size, size, 1);
             }
         }
-        if text.take_color_dirty() {
+        if text.color_atlas_version() != self.color_atlas_version_uploaded {
+            self.color_atlas_version_uploaded = text.color_atlas_version();
             let (data, size) = text.color_atlas();
             if size != self.color_atlas_size {
                 let (tex, entry) = self.make_texture(device, size, size, wgpu::TextureFormat::Rgba8Unorm);

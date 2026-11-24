@@ -35,6 +35,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use cosmic_text::fontdb;
 use cosmic_text::{Align, Attrs, Buffer, CacheKey, CacheKeyFlags, Family, FontSystem, Metrics, Shaping, SwashCache, SwashContent, Weight, Wrap};
@@ -203,6 +204,16 @@ pub struct HostColorGlyph {
 /// host draws nothing for it (the engine then tries swash).
 pub type HostColorGlyphPainter = Box<dyn FnMut(&str, f32) -> Option<HostColorGlyph>>;
 
+/// An atlas version no atlas of this process has had, never 0.
+///
+/// Needed for the whole process, not per engine, so a renderer that drew
+/// with one engine and is handed another never takes the second engine's
+/// atlas for the one it uploaded (`TextEngine::atlas_version`).
+fn next_atlas_version() -> u64 {
+    static NEXT_ATLAS_VERSION: AtomicU64 = AtomicU64::new(1);
+    NEXT_ATLAS_VERSION.fetch_add(1, Ordering::Relaxed)
+}
+
 /// The color atlas's first side; it doubles when it fills (`grow_color`).
 const COLOR_ATLAS_START: u32 = 512;
 
@@ -275,14 +286,14 @@ pub struct TextEngine {
     color_faces: HashMap<fontdb::ID, bool>,
     /// The host's emoji painter, when it has one (Android).
     host_color_glyph_painter: Option<HostColorGlyphPainter>,
-    /// The color atlas changed since the last `take_color_dirty`.
-    color_dirty: bool,
+    /// What `color_atlas_version` returns.
+    color_atlas_version: u64,
     /// The OS font scan ran (once per engine).
     system_loaded: bool,
     /// Family names the scan found, sorted, each once.
     system_families: Vec<String>,
-    /// The atlas changed since the last `take_dirty`.
-    dirty: bool,
+    /// What `atlas_version` returns.
+    atlas_version: u64,
     /// Set when the atlas grew: every uv handed out before is stale.
     pub generation: u32,
     /// Keyed by a hash of (text, size, width, font) — no String is built
@@ -359,12 +370,13 @@ impl TextEngine {
             host_slots: HashMap::new(),
             color_faces: HashMap::new(),
             host_color_glyph_painter: None,
-            // Not dirty: nothing points into it until the first emoji
-            // packs, so a boot without one uploads nothing.
-            color_dirty: false,
+            // 0, where a renderer starts too: nothing points into it
+            // until the first emoji packs, so a boot without one uploads
+            // nothing.
+            color_atlas_version: 0,
             system_loaded: false,
             system_families: Vec::new(),
-            dirty: true,
+            atlas_version: next_atlas_version(),
             generation: 0,
             measure_cache: HashMap::new(),
             shape_cache: HashMap::new(),
@@ -525,8 +537,12 @@ impl TextEngine {
         (&self.color_atlas, self.color_shelf.size)
     }
 
-    pub fn take_color_dirty(&mut self) -> bool {
-        std::mem::replace(&mut self.color_dirty, false)
+    /// `atlas_version`, for the emoji atlas.
+    ///
+    /// Returns 0 until the first emoji packs: a renderer starts at 0
+    /// too, so a start without an emoji uploads no emoji atlas.
+    pub fn color_atlas_version(&self) -> u64 {
+        self.color_atlas_version
     }
 
     /// Installs (or removes) the host's emoji painter. A load-time call:
@@ -574,8 +590,19 @@ impl TextEngine {
         self.shape_cache.clear();
     }
 
-    pub fn take_dirty(&mut self) -> bool {
-        std::mem::replace(&mut self.dirty, false)
+    /// A number that is new each time the letters' atlas changes: a
+    /// glyph packed into it, or the atlas grown.
+    ///
+    /// Needed so each renderer knows by itself whether the atlas it
+    /// uploaded is still this one: it keeps the number it uploaded at
+    /// and uploads again when the number differs. With one flag that the
+    /// first reader cleared, a second renderer over the same engine drew
+    /// every plate and picture and no letters.
+    ///
+    /// No two engines of a process return the same number, so a renderer
+    /// handed another engine uploads that engine's atlas.
+    pub fn atlas_version(&self) -> u64 {
+        self.atlas_version
     }
 
     /// The face `font` names (its style suffix ignored), else the default.
@@ -871,7 +898,7 @@ impl TextEngine {
                 let dst = ((py + row) * self.atlas_size + px) as usize;
                 self.atlas[dst..dst + w as usize].copy_from_slice(src);
             }
-            self.dirty = true;
+            self.atlas_version = next_atlas_version();
             let s = self.atlas_size as f32;
             Some(Slot { u0: px as f32 / s, v0: py as f32 / s, u1: (px + w) as f32 / s, v1: (py + h) as f32 / s, left, top, width: w, height: h, color: false })
         });
@@ -904,7 +931,7 @@ impl TextEngine {
                 }
             }
         }
-        self.color_dirty = true;
+        self.color_atlas_version = next_atlas_version();
         let s = side as f32;
         Some(Slot { u0: px as f32 / s, v0: py as f32 / s, u1: (px + w) as f32 / s, v1: (py + h) as f32 / s, left, top, width: w, height: h, color: true })
     }
@@ -926,7 +953,7 @@ impl TextEngine {
         self.shelf = Shelf::new(self.atlas_size);
         self.slots.clear();
         self.generation += 1;
-        self.dirty = true;
+        self.atlas_version = next_atlas_version();
     }
 
     /// The color atlas doubles: every emoji slot handed out is stale, the
@@ -940,7 +967,7 @@ impl TextEngine {
         self.color_slots.clear();
         self.host_slots.clear();
         self.generation += 1;
-        self.color_dirty = true;
+        self.color_atlas_version = next_atlas_version();
     }
 
     /// Rasterizes every glyph of `chars` at `font_size`.
