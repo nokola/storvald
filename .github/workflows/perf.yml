@@ -9,8 +9,9 @@
 # to run within a small spread. The daily run is for what moves a count
 # with no commit: a new compiler, a new machine image.
 #
-# The last step fails the run when a number moved against the run before
-# on the same compiler and machine. The counts are kept before it fails.
+# The last step fails the run when an instruction count rose against the
+# run before on the same compiler and machine. A count that fell is
+# listed on the page and passes. The counts are kept before it fails.
 name: perf
 
 on:
@@ -68,5 +69,5 @@ jobs:
           git add history.csv README.md
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit --quiet -m "Counts of ${GITHUB_SHA:0:7}"
           git push origin HEAD:refs/heads/perf-data
-      - name: Fail when the code moved a number
+      - name: Fail when the code made an instruction count rise
         run: target/release/storvald-perf check-latest --history ../perf-data/history.csv

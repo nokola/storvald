@@ -18,7 +18,7 @@ Branch [`perf-data`](https://github.com/nokola/storvald/tree/perf-data):
 - `README.md`: the page to read. The last run, and every number that moved, with its commit.
 - `history.csv`: every run as rows: date, commit, compiler, machine, scenario, metric, value.
 
-`.github/workflows/perf.yml` adds a run at every push to `main` and once a day. A run fails when a number moved against the run before on the same compiler and machine.
+`.github/workflows/perf.yml` adds a run at every push to `main` and once a day. A run fails when an instruction count rose against the run before on the same compiler and machine. A count that fell is listed on the page and passes. The exact counts are held by the test, so a run does not judge them again.
 
 ## Commands
 

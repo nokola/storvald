@@ -6,8 +6,10 @@
 //! - `write-expected`: writes those counts to `expected_counts.txt`.
 //! - `record`: runs each under Valgrind, adds a run to `history.csv` and
 //!   writes the page made from it. Linux, with `valgrind` installed.
-//! - `check-latest`: fails when the last run in `history.csv` moved a
-//!   number and neither compiler nor machine changed with it.
+//! - `check-latest`: fails when an instruction count of the last run
+//!   in `history.csv` rose and neither compiler nor machine changed
+//!   with it. A count that fell is printed and passes; the exact counts
+//!   are held by the test of `expected_counts.txt`.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Output};
@@ -153,12 +155,14 @@ fn check_latest(args: &[String]) -> Result<(), String> {
     let csv: String = std::fs::read_to_string(history_file).map_err(|error| format!("{history_file}: {error}"))?;
     let moved: Vec<Move> = history::latest_moves(&history::rows_from_csv(&csv)?);
     for one in &moved {
-        println!("{} {}: {} to {}{}", one.scenario, one.metric, one.before, one.after, if one.also_changed.is_empty() { String::new() } else { format!(" ({})", one.also_changed) });
+        println!("{} {} {}: {} to {}{}", one.scenario, one.metric, if one.is_rise() { "rose" } else { "fell" }, one.before, one.after, if one.also_changed.is_empty() { String::new() } else { format!(" ({})", one.also_changed) });
     }
-    let by_the_code: usize = moved.iter().filter(|one| one.also_changed.is_empty()).count();
-    if by_the_code > 0 {
-        return Err(format!("{by_the_code} numbers moved against the run before, on the same compiler and machine"));
+    // An exact count that moved is in `expected_counts.txt` already: the
+    // commit that moved it wrote the file again, or the test failed.
+    let risen_by_the_code: usize = moved.iter().filter(|one| one.metric == INSTRUCTIONS && one.is_rise() && one.also_changed.is_empty()).count();
+    if risen_by_the_code > 0 {
+        return Err(format!("{risen_by_the_code} instruction counts rose against the run before, on the same compiler and machine"));
     }
-    println!("no number moved by the code alone");
+    println!("no instruction count rose by the code alone");
     Ok(())
 }

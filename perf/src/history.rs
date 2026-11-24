@@ -76,6 +76,18 @@ pub struct Move {
     pub also_changed: String,
 }
 
+impl Move {
+    /// Whether the number went up: more instructions, allocations or
+    /// nodes than the run before.
+    ///
+    /// Needed because the job that counts fails on a rise alone. A
+    /// change that makes a scenario cheaper moves its numbers too, and
+    /// a job red for that teaches its reader to pass over red.
+    pub fn is_rise(&self) -> bool {
+        self.after > self.before
+    }
+}
+
 /// Rows of each run, oldest run first. A run is the rows of one date
 /// and commit.
 fn runs(rows: &[Row]) -> Vec<&[Row]> {
@@ -200,6 +212,20 @@ pub fn page(rows: &[Row], scenarios: &[Scenario], repository: &str) -> String {
 mod tests {
     use super::*;
     use crate::counts::Counts;
+
+    #[test]
+    fn a_number_that_fell_is_a_move_and_not_a_rise() {
+        let rows: Vec<Row> = vec![
+            row("2026-11-24T05:00:00Z", "aaaaaaaaaaaa", "1.91.0", "scroll_step", INSTRUCTIONS, 17_339_924),
+            row("2026-11-24T05:00:00Z", "aaaaaaaaaaaa", "1.91.0", "text_change", INSTRUCTIONS, 163_128),
+            row("2026-11-25T05:00:00Z", "bbbbbbbbbbbb", "1.91.0", "scroll_step", INSTRUCTIONS, 13_303_823),
+            row("2026-11-25T05:00:00Z", "bbbbbbbbbbbb", "1.91.0", "text_change", INSTRUCTIONS, 170_000),
+        ];
+        let moved: Vec<Move> = latest_moves(&rows);
+        let risen: Vec<&str> = moved.iter().filter(|one| one.is_rise()).map(|one| one.scenario.as_str()).collect();
+        assert_eq!(moved.len(), 2, "both numbers moved: {moved:?}");
+        assert_eq!(risen, ["text_change"], "one of them rose");
+    }
 
     fn row(date: &str, commit: &str, rustc: &str, scenario: &str, metric: &str, value: u64) -> Row {
         Row { date: date.to_string(), commit: commit.to_string(), rustc: rustc.to_string(), machine: "github-ubuntu24".to_string(), scenario: scenario.to_string(), metric: metric.to_string(), value }
