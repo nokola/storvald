@@ -9,7 +9,10 @@ pub const HEADER: &str = "date,commit,rustc,machine,scenario,metric,value";
 
 /// How far an instruction count may differ from the run before and not
 /// be listed as moved, in percent. Exact counts have no such room.
-pub const INSTRUCTIONS_SPREAD_PERCENT: f64 = 1.0;
+///
+/// Two runs of the same code on GitHub (2026-11-24) differed by 0.013 %
+/// at most, and nine scenarios of sixteen not at all.
+pub const INSTRUCTIONS_SPREAD_PERCENT: f64 = 0.2;
 
 /// At most this many moved numbers on the page, newest first.
 const MOVES_ON_PAGE: usize = 60;
@@ -209,7 +212,7 @@ mod tests {
         vec![
             row("2026-11-24T05:00:00Z", "aaaaaaaaaaaa", "1.91.0", "still_frame", INSTRUCTIONS, 1_000_000),
             row("2026-11-24T05:00:00Z", "aaaaaaaaaaaa", "1.91.0", "still_frame", "allocations", 0),
-            row("2026-11-25T05:00:00Z", "bbbbbbbbbbbb", "1.91.0", "still_frame", INSTRUCTIONS, 1_005_000),
+            row("2026-11-25T05:00:00Z", "bbbbbbbbbbbb", "1.91.0", "still_frame", INSTRUCTIONS, 1_001_000),
             row("2026-11-25T05:00:00Z", "bbbbbbbbbbbb", "1.91.0", "still_frame", "allocations", 2),
             row("2026-11-26T05:00:00Z", "bbbbbbbbbbbb", "1.92.0", "still_frame", INSTRUCTIONS, 1_100_000),
             row("2026-11-26T05:00:00Z", "bbbbbbbbbbbb", "1.92.0", "still_frame", "allocations", 2),
@@ -232,7 +235,7 @@ mod tests {
         let rows: Vec<Row> = three_runs();
         let all: Vec<Move> = moves(&rows);
         let said: Vec<(&str, &str, u64, u64, &str)> = all.iter().map(|moved| (moved.commit.as_str(), moved.metric.as_str(), moved.before, moved.after, moved.also_changed.as_str())).collect();
-        assert_eq!(said, vec![("bbbbbbbbbbbb", "allocations", 0, 2, ""), ("bbbbbbbbbbbb", INSTRUCTIONS, 1_005_000, 1_100_000, "rustc 1.91.0 to 1.92.0")], "0.5 % of instructions is inside the spread; an exact count has none");
+        assert_eq!(said, vec![("bbbbbbbbbbbb", "allocations", 0, 2, ""), ("bbbbbbbbbbbb", INSTRUCTIONS, 1_001_000, 1_100_000, "rustc 1.91.0 to 1.92.0")], "0.1 % of instructions is inside the spread; an exact count has none");
         assert_eq!(latest_moves(&rows), all[1..].to_vec());
         assert_eq!(latest_moves(&rows[..2]), Vec::new(), "a first run has no run before it");
     }
@@ -242,8 +245,8 @@ mod tests {
         let scenarios: [Scenario; 1] = [Scenario { name: "still_frame", what: "frame while nothing changes", run: Counts::default }];
         let text: String = page(&three_runs(), &scenarios, "https://example.org/repo");
         assert!(text.contains("2026-11-26T05:00:00Z, commit [bbbbbbb](https://example.org/repo/commit/bbbbbbbbbbbb), rustc 1.92.0, machine `github-ubuntu24`. 3 runs so far."), "{text}");
-        assert!(text.contains("| `still_frame` | frame while nothing changes | 1,100,000 | +9.5 % | 2 |  |  |\n"), "{text}");
-        let newest: usize = text.find("| 2026-11-26T05:00:00Z | [bbbbbbb](https://example.org/repo/commit/bbbbbbbbbbbb) | `still_frame` | instructions | 1,005,000 | 1,100,000 | +9.5 % | rustc 1.91.0 to 1.92.0 |").expect("the newest move");
+        assert!(text.contains("| `still_frame` | frame while nothing changes | 1,100,000 | +9.9 % | 2 |  |  |\n"), "{text}");
+        let newest: usize = text.find("| 2026-11-26T05:00:00Z | [bbbbbbb](https://example.org/repo/commit/bbbbbbbbbbbb) | `still_frame` | instructions | 1,001,000 | 1,100,000 | +9.9 % | rustc 1.91.0 to 1.92.0 |").expect("the newest move");
         let older: usize = text.find("| `still_frame` | allocations | 0 | 2 | new |  |").expect("the older move");
         assert!(newest < older, "newest first");
         assert!(page(&[], &scenarios, "https://example.org/repo").contains("No run yet."));
