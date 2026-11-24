@@ -30,6 +30,17 @@ View homePage background=$back, padding=16, on:uncover=play(homeBack) {
             Button openSettings .Plain text="Settings"
             Button clearNotes .Plain text="Drop all"
             Button openPaper .Plain text="Paper"
+            // A menu: the Popup shows while its Check is checked, above
+            // the Check, right edges in line. Back closes it first.
+            Check more .Plain {
+                Label text="More", font_color=$ink
+                Popup moreMenu side=top, align=end, visibility=gone {
+                    Column background=$plate, padding=6, spacing=4 {
+                        Button aboutNotes .Plain text="About"
+                    }
+                }
+                when selected moreMenu.visibility = visible
+            }
         }
         // Empty place: `home_page.rs` places the footer page in it.
         Panel footer width=fill, height=40

@@ -682,7 +682,7 @@ fn walk(page: &Page, res: &Resolved, rects: &[Rect], id: NodeId, opacity: f32, s
     let text_rect = rect.inset(pad[0] + border, pad[1] + border, pad[2] + border, pad[3] + border);
     // A templated Check/Radio/Toggle (a body of its own) is a blank toggle
     // surface: no chrome unless the file paints it.
-    let templated = node.kind.is_press_surface() && node.kind != Kind::Button && node.children.1 > 0;
+    let templated = node.kind.is_press_surface() && node.kind != Kind::Button && page.has_body(id);
     let clip = clips(page, res, rects, id);
     if let Some(p) = patch.as_deref_mut() {
         p.clip[id.index()] = clip;

@@ -1672,6 +1672,21 @@ to the goals rather than to muscle memory from WPF or an engine (`Label`,
   step), and under mirror stop at 0.5. One stop = G2003 (a solid is a
   `Rectangle`). Stops stay live as `stop_N_color`/`stop_N_offset`
   properties — whens/anims drive them.
+- **`Popup`** — what a control opens beside itself: a menu, a strip of
+  choices (design: `docs/design/2026-11-24-popup.md`). Written inside
+  the node it belongs to. gogo draws it above the whole page, gives it
+  the size of what it holds, places it against that node's rectangle
+  and keeps it inside the page's safe area. `side=top|bottom|left|right`
+  is required (G7020); `align=start|center|end` is where it sits along
+  that side, centered when unwritten. It shows and hides with
+  `visibility=`, like any node: `when selected menu.visibility =
+  visible` in a Check ties the two with no code. A Popup takes the
+  fingers on it, also where it lies outside its parent, and none
+  beside it. No node between it and the root cuts, turns or fades it;
+  it moves and fades with its page. A back request hides the topmost
+  one first (`Input::hide_top_popup`). It is no part of its parent's
+  look: a Check with only a Popup in it keeps its native mark. Not the
+  file's root (G7019).
 - **`Surface`** — a box the program's code draws (design:
   `docs/design/2026-11-24-surface.md`). `draw=` is REQUIRED and has no
   default (G7015): `picture` (the code hands over one picture, drawn as

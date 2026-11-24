@@ -611,6 +611,7 @@ fn wrong_kind(key: PropKey, kind: Kind) -> String {
         PropKey::Background | PropKey::Color | PropKey::ColorA | PropKey::CornerRadius | PropKey::BorderThickness | PropKey::BorderColor if kind == Kind::Surface => format!("`{word}=` on a Surface — gogo draws nothing of a Surface, the program's code does; a plate is a Rectangle or a Panel under it in a `Layers`"),
         PropKey::Draw => format!("`draw=` says how the program's code fills a Surface — gogo draws a {name} itself"),
         PropKey::Depth => format!("`depth=` gives the program's own draw calls a depth buffer, in a `Surface draw=gpu` — gogo draws a {name} itself, in paint order"),
+        PropKey::Side | PropKey::Align => format!("`{word}=` says where a Popup opens against the node it is written in — a {name} is placed by its parent"),
         PropKey::CaptureMouse => format!("`capture_mouse=` hides the cursor and hands every move of the mouse to a `Surface` — a {name} takes the mouse where the cursor is, with `interactive=true`"),
         PropKey::Background | PropKey::Color | PropKey::ColorA if draws_nothing && kind == Kind::Seat => format!("`{word}=` on a seat — a seat draws nothing: it is an empty socket, and the plate belongs to the node that sits in it"),
         PropKey::Background | PropKey::Color | PropKey::ColorA if draws_nothing => format!("`{word}=` on a {name} — a {name} draws nothing of its own; a plate is a Panel's `background=`, around it or inside it"),
@@ -5358,7 +5359,7 @@ impl<'a> Compiler<'a> {
         }
         // A bodied Radio/Check IS its body — the body replaces every
         // native visual, the label included.
-        if matches!(kind, Kind::Radio | Kind::Check) && n.props.iter().any(|p| p.key == "text") && n.children.iter().any(|c| matches!(c, AstItem::Node(k) if !matches!(k.type_word.as_str(), "when" | "transition" | "theme"))) {
+        if matches!(kind, Kind::Radio | Kind::Check) && n.props.iter().any(|p| p.key == "text") && n.children.iter().any(|c| matches!(c, AstItem::Node(k) if !matches!(k.type_word.as_str(), "when" | "transition" | "theme" | "Popup"))) {
             self.error("G0068", n.line, format!("`text=` is the native {}'s label — a bodied {} IS its body; put a `Label` inside instead", n.type_word, n.type_word));
         }
         let signals = n.flags.iter().any(|f| f == "signals");
@@ -5853,6 +5854,38 @@ impl<'a> Compiler<'a> {
                         self.error("G7016", n.line, format!("`{}=` belongs to a `draw={}` Surface — this one says `draw={}`", key.word(), of.word(), draw.word()));
                     }
                 }
+            }
+        }
+        // A Popup says the side it opens on. It sits on the page's root
+        // and sizes nothing there; where the root puts it does not show,
+        // each frame moves it to its place (`popup::seat_popups`).
+        if kind == Kind::Popup {
+            let word_of = |key: PropKey| -> Option<Option<&str>> {
+                tmp.props.iter().rev().find(|pr| pr.key == key).map(|pr| match pr.value {
+                    Value::VIdent(word) => Some(self.page.str(word)),
+                    _ => None,
+                })
+            };
+            let side: Option<Option<&str>> = word_of(PropKey::Side);
+            let align: Option<Option<&str>> = word_of(PropKey::Align);
+            let is_side_known: bool = side.is_some_and(|word| word.and_then(crate::popup::PopupSide::from_word).is_some());
+            let is_align_known: bool = align.is_none_or(|word| word.and_then(crate::popup::PopupAlign::from_word).is_some());
+            if side.is_none() {
+                self.error("G7020", n.line, "a Popup says the side of its parent it opens on — write `side=top`, `side=bottom`, `side=left` or `side=right`; there is no default");
+            } else if !is_side_known {
+                self.error("G7020", n.line, "`side=` takes `top`, `bottom`, `left` or `right` — the side of its parent's rectangle the Popup opens on");
+            }
+            if !is_align_known {
+                self.error("G7020", n.line, "`align=` takes `start`, `center` or `end` — where the Popup sits along the side it opens on; unwritten it is centered");
+            }
+            if tmp.node.placement.halign == Align::AlignUnset {
+                tmp.node.placement.halign = Align::Start;
+            }
+            if tmp.node.placement.valign == Align::AlignUnset {
+                tmp.node.placement.valign = Align::Start;
+            }
+            if !tmp.props.iter().any(|pr| pr.key == PropKey::Overlay) {
+                tmp.props.insert(0, Prop { key: PropKey::Overlay, value: Value::VBool(true) });
             }
         }
         // `aspect=` is a relation: ONE spelled axis drives, the other is
@@ -6559,6 +6592,9 @@ impl<'a> Compiler<'a> {
     /// children (contiguous), then each child's own children — so
     /// `children` is a range and `subtree_end` bounds the descendants.
     fn flatten(&mut self, root: TmpNode) {
+        if root.node.kind == Kind::Popup {
+            self.error("G7019", root.node.line, "a Popup is written inside the node it opens beside (a Button, a Check) — as the file's root it has no such node");
+        }
         let id = self.push_slot(root.node, root.props, root.handlers, root.whens, root.transitions, root.custom_states, root.key_claim, root.wearing, root.driver, root.follows, NO_NODE);
         self.place_children(id, root.children);
     }
@@ -6583,6 +6619,9 @@ impl<'a> Compiler<'a> {
         }
         if key_claim != 0 {
             self.page.key_claims.push((id, key_claim));
+        }
+        if node.kind == Kind::Popup {
+            self.page.popups.push(id);
         }
         for s in wearing {
             self.style_wearers.entry(s).or_default().push(id);

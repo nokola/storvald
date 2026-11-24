@@ -1598,6 +1598,68 @@ A turn that an anim or the code writes while the program runs is not
 seen at build time: a debug build stops at the frame, with the Surface's
 name.
 
+## G7019 — a Popup as the file's root
+
+A `Popup` opens beside the node it is written in: gogo places it against
+that node's rectangle. A Popup that is the file's root is written in no
+node.
+
+Wrong:
+
+```kdl error=G7019
+Popup menu side=top {
+    Button about text="About"
+}
+```
+
+Fix: write it inside the control that opens it.
+
+```kdl
+View page {
+    Check more {
+        Label text="More"
+        Popup menu side=top, visibility=gone {
+            Button about text="About"
+        }
+        when selected menu.visibility = visible
+    }
+}
+```
+
+## G7020 — a Popup with no `side=`, or a word that names no side
+
+A `Popup` says the side of its parent's rectangle it opens on: `top`,
+`bottom`, `left` or `right`. There is no default: a menu that opens over
+the wrong side covers what the user was reading. `align=` says where it
+sits along that side (`start`, `center`, `end`) and may be left out: it
+is centered then.
+
+Wrong:
+
+```kdl error=G7020
+View page {
+    Check more {
+        Label text="More"
+        Popup menu visibility=gone {
+            Button about text="About"
+        }
+    }
+}
+```
+
+Fix: name the side.
+
+```kdl
+View page {
+    Check more {
+        Label text="More"
+        Popup menu side=top, visibility=gone {
+            Button about text="About"
+        }
+    }
+}
+```
+
 ## G8001 — a translation key carries different English
 
 One key, one English string, across the whole build — the message

@@ -1546,12 +1546,54 @@ impl<A: 'static> Program<A> {
     }
 
     /// One back request, without what the asked page asks for in turn.
+    ///
+    /// A Popup that shows on page on screen, or on a page placed in it,
+    /// takes the request first: the topmost one is hidden and the page
+    /// is not asked (`Input::hide_top_popup`).
     fn back_once(&mut self) -> bool {
         let top: PageId = self.top();
+        if self.hide_top_popup(top) {
+            return true;
+        }
         match self.call(top, |page, host| page.back(host)) {
             Back::Stay => true,
             Back::Leave => self.leave(),
         }
+    }
+
+    /// Hides the topmost Popup that shows on `top` or on a page placed
+    /// in it, the page placed last first, and hands that page what
+    /// hiding it raised (a Check's `on:change=`).
+    ///
+    /// Needed so back closes a menu before it leaves the page, on every
+    /// page, with no code in any of them.
+    ///
+    /// Returns true when it hid one.
+    fn hide_top_popup(&mut self, top: PageId) -> bool {
+        let placed_count: usize = self.placed_order.len();
+        for at in (0..=placed_count).rev() {
+            let id: PageId = if at == placed_count {
+                // Asked last: `top` itself, under the pages placed in it.
+                top
+            } else {
+                let placed: PageId = self.placed_order[at];
+                if !self.placed_in[placed.index()].is_some_and(|(parent, _)| parent == top) {
+                    continue;
+                }
+                placed
+            };
+            let PageUi { page, runtime, input, .. } = self.stack.get_mut(id);
+            if page.popups.is_empty() {
+                continue;
+            }
+            if let Some(events) = input.hide_top_popup(page, runtime) {
+                for event in events.iter() {
+                    self.call(id, |page, host| page.handle(host, event));
+                }
+                return true;
+            }
+        }
+        false
     }
 
     /// Page on screen leaves, page before it shows.

@@ -380,8 +380,8 @@ pub const TOGGLE_GLIDE_SEC: f32 = 0.12;
 
 /// Does this Toggle draw its own pill and knob: a built-in Toggle with no
 /// body of its own?
-fn draws_own_knob(node: &crate::page::Node) -> bool {
-    node.kind == Kind::Toggle && node.children.1 == 0
+fn draws_own_knob(page: &Page, node: NodeId) -> bool {
+    page.nodes[node].kind == Kind::Toggle && !page.has_body(node)
 }
 
 #[derive(Clone, Debug)]
@@ -714,7 +714,7 @@ impl Runtime {
             auto_glides: Vec::new(),
             radio_choice: page.nodes.iter().map(|n| if n.kind == Kind::Radio { n.choice } else { NO_CHOICE }).collect(),
             toggle: page.nodes.iter().map(|n| n.kind == Kind::Toggle).collect(),
-            knobs: page.node_ids().filter(|n| draws_own_knob(&page.nodes[*n])).collect(),
+            knobs: page.node_ids().filter(|n| draws_own_knob(page, *n)).collect(),
             instant_flips: Vec::new(),
             pending_settle: None,
             dirty: true,
@@ -1511,7 +1511,7 @@ impl Runtime {
         self.radio_choice.extend(page.nodes[from..].iter().map(|nd| if nd.kind == Kind::Radio { nd.choice } else { NO_CHOICE }));
         let from = self.toggle.len();
         self.toggle.extend(page.nodes[from..].iter().map(|nd| nd.kind == Kind::Toggle));
-        self.knobs.extend((from..page.nodes.len()).map(NodeId::from_index).filter(|n| draws_own_knob(&page.nodes[*n])));
+        self.knobs.extend((from..page.nodes.len()).map(NodeId::from_index).filter(|n| draws_own_knob(page, *n)));
         // The new rows take the static rule like the template did — the
         // clone copies the template's `when`s, shares its props and
         // handlers, and the slot's anims and drivers are already pushed
@@ -3136,6 +3136,9 @@ impl Runtime {
         rects.clear();
         rects.extend_from_slice(self.layout_retained(page, viewport, text));
         self.glide_in_place(rects);
+        if !page.popups.is_empty() {
+            crate::popup::seat_popups(page, &self.resolved, viewport, rects);
+        }
         self.compose_motion();
         match split {
             Some((top, above)) => {
@@ -3147,6 +3150,36 @@ impl Runtime {
         }
         self.find_surface_asks(page, rects);
         self.dirty = false;
+    }
+
+    /// Why `popup` shows, as far as a back request cares. Read from the
+    /// last frame's look.
+    ///
+    /// Needed by `Input::hide_top_popup`: back hides a Popup by ending
+    /// what shows it, and what shows it is a write from code, a `when`
+    /// of a control's `selected`, or something back does not end.
+    ///
+    /// Returns `None` for a Popup that does not show.
+    pub(crate) fn popup_hold(&self, page: &Page, popup: NodeId) -> Option<PopupHold> {
+        if self.resolved.gone(page, popup) || self.resolved.hidden(page, popup) {
+            return None;
+        }
+        // A write from code wins over every `when`.
+        if self.writes.iter().any(|(node, prop)| *node == popup && prop.key == PropKey::Visibility) {
+            return Some(PopupHold::Code);
+        }
+        let n = &page.nodes[popup];
+        let mut hold: PopupHold = PopupHold::NotBacks;
+        // The Popup's `when`s are stored weakest first: the last one
+        // that holds and writes `visibility=` is the one in force.
+        for when in &page.whens[n.whens.0 as usize..(n.whens.0 + n.whens.1) as usize] {
+            let of: NodeId = if when.of == NO_NODE { popup } else { when.of };
+            let writes_visibility: bool = page.props[when.props.0 as usize..(when.props.0 + when.props.1) as usize].iter().any(|prop| prop.key == PropKey::Visibility);
+            if writes_visibility && self.state_active(page, of, when.state) {
+                hold = if when.state == State::Selected { PopupHold::Selected(of) } else { PopupHold::NotBacks };
+            }
+        }
+        Some(hold)
     }
 
     /// Fills `surface_asks`: each `Surface draw=commands` that shows
@@ -3684,6 +3717,19 @@ impl Retained {
             fixes: Vec::new(),
         }
     }
+}
+
+/// What shows a Popup, as far as a back request cares
+/// (`Runtime::popup_hold`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PopupHold {
+    /// Code wrote its `visibility=` (`set_visible`).
+    Code,
+    /// A `when selected` of this control writes its `visibility=`.
+    Selected(NodeId),
+    /// The file's own line, or a `when` of a state back does not end
+    /// (`held`, a screen class, an arrangement).
+    NotBacks,
 }
 
 /// The parent `n` is laid out and drawn under, read from a seat table
@@ -4537,6 +4583,23 @@ fn seat_of(page: &Page, node: NodeId, value: Value) -> NodeId {
 /// table of where every node sits; `outbid` takes each node kept at home
 /// with the seat it asked for. `claims` is scratch.
 fn settle_seats(page: &Page, rt: &Runtime, seat: &mut [NodeId], outbid: &mut Vec<(NodeId, NodeId)>, claims: &mut Vec<(NodeId, NodeId)>) {
+    settle_seat_claims(page, rt, seat, outbid, claims);
+    // Every Popup sits on the page's root, after the root's own
+    // children: drawn above the page, asked first for a finger, cut by
+    // no node between it and the root (`crate::popup`). Written after
+    // the claims are settled: the root is no seat, and any number of
+    // Popups sit on it.
+    for at in 0..page.popups.len() {
+        let popup: NodeId = page.popups[at];
+        if popup.index() < seat.len() {
+            seat[popup] = NodeId::new(0);
+        }
+    }
+}
+
+/// What `settle_seats` does for the nodes a `when` or the code sent to a
+/// `seat`.
+fn settle_seat_claims(page: &Page, rt: &Runtime, seat: &mut [NodeId], outbid: &mut Vec<(NodeId, NodeId)>, claims: &mut Vec<(NodeId, NodeId)>) {
     claims.clear();
     claims.extend(seat.iter().enumerate().filter(|(_, s)| **s != NO_NODE).map(|(i, s)| (*s, NodeId::from_index(i))));
     if claims.len() < 2 {

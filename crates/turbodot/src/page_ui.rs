@@ -173,6 +173,20 @@ impl PageUi {
         self.runtime.set_visible(&mut self.page, node, is_visible);
     }
 
+    /// Checks or unchecks a Check, a Toggle or a Radio, as a tap would
+    /// leave it. Raises no event.
+    ///
+    /// Needed by a page that closes a menu after a pick: the menu is a
+    /// `Popup` the file shows while its Check is `selected`.
+    pub fn set_checked(&mut self, control: NodeId, is_checked: bool) {
+        self.runtime.set_state(control, gogo_ui::runtime::SELECTED, is_checked);
+    }
+
+    /// True while a Check, a Toggle or a Radio is checked.
+    pub fn is_checked(&self, control: NodeId) -> bool {
+        self.runtime.has(control, gogo_ui::runtime::SELECTED)
+    }
+
     /// Writes value of a Slider or of a control that has one.
     pub fn set_value(&mut self, control: NodeId, value: f32) {
         self.runtime.set_value(&mut self.page, control, value);

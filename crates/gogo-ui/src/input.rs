@@ -1535,6 +1535,51 @@ impl Input {
         events.push(Event { node, kind, action });
     }
 
+    /// A back request, asked of the page before its code: hides the
+    /// topmost shown Popup that back can hide.
+    ///
+    /// Needed so every Popup of every page closes on back by one rule,
+    /// and no page writes that rule again. gogo has no back key: a host
+    /// calls this first and asks its page's code only when it returns
+    /// `None`.
+    ///
+    /// Back hides a Popup by ending what shows it. One that code showed
+    /// (`Runtime::set_visible`) is hidden the same way. One that shows
+    /// while a control is `selected` (`when selected menu.visibility =
+    /// visible` in a Check): the control is unselected and its
+    /// `on:change=` raised, as a tap on it would. One the file's own
+    /// line shows, or a `when` of another state, is not back's to hide,
+    /// and the Popup under it is tried.
+    ///
+    /// The topmost Popup is the last one in the file that shows.
+    ///
+    /// Returns the events of what it did (none for a Popup code
+    /// showed), or `None` when it hid nothing: the back request is the
+    /// page's.
+    pub fn hide_top_popup(&self, page: &Page, rt: &mut Runtime) -> Option<EventList> {
+        for at in (0..page.popups.len()).rev() {
+            let popup: NodeId = page.popups[at];
+            match rt.popup_hold(page, popup) {
+                None | Some(crate::runtime::PopupHold::NotBacks) => {}
+                Some(crate::runtime::PopupHold::Code) => {
+                    let gone: StrId = page.intern_lookup("gone");
+                    debug_assert!(gone != NO_STR, "a Popup that code showed, in a page whose file never writes `gone`: write `visibility=gone` on the Popup's line");
+                    if gone != NO_STR {
+                        rt.set_prop(popup, PropKey::Visibility, Value::VIdent(gone));
+                        return Some(EventList::new());
+                    }
+                }
+                Some(crate::runtime::PopupHold::Selected(control)) => {
+                    rt.set_state(control, SELECTED, false);
+                    let mut events: EventList = EventList::new();
+                    self.push_event(page, rt, &mut events, control, EventKind::Change(Value::VBool(false)), event_action(page, control, "change"));
+                    return Some(events);
+                }
+            }
+        }
+        None
+    }
+
     /// Fires the `release` a press still owes. Needed so a hold-to-repeat
     /// host always sees its stop: every end path (lift, cancel, scroll
     /// steal, disable/hide under the finger) comes through here, and the

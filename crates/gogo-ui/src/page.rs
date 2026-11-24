@@ -442,6 +442,12 @@ pub enum Kind {
     /// `Surface`: a box the program's code draws. `draw=` says how
     /// (`SurfaceDraw`). A leaf with no size of its own.
     Surface,
+    /// `Popup`: what a control opens beside itself, a menu or a strip
+    /// of choices. Written inside the node it belongs to; drawn above
+    /// the whole page, sized by what it holds, placed against that
+    /// node's rectangle on `side=` and kept inside the page
+    /// (`crate::popup`). Shown and hidden with `visibility=`.
+    Popup,
 }
 
 /// `automatic=` on a slot line, solved at compile time (no code-behind
@@ -670,6 +676,7 @@ pub const KIND_WORDS: &[(&str, Kind)] = &[
     ("Arc", Kind::Arc),
     ("Gradient", Kind::Gradient),
     ("Surface", Kind::Surface),
+    ("Popup", Kind::Popup),
     ("Slider", Kind::Slider),
     ("Input", Kind::Input),
     ("Check", Kind::Check),
@@ -705,7 +712,7 @@ impl Kind {
 
     /// Children place freely (halign/valign + margins).
     pub fn is_free(self) -> bool {
-        matches!(self, Kind::View | Kind::Layers | Kind::Panel | Kind::Button | Kind::ListItem | Kind::Slot | Kind::Seat | Kind::Empty)
+        matches!(self, Kind::View | Kind::Layers | Kind::Panel | Kind::Button | Kind::ListItem | Kind::Slot | Kind::Seat | Kind::Empty | Kind::Popup)
     }
 
     /// A press surface: `held` / `activate` live here.
@@ -994,6 +1001,12 @@ pub enum PropKey {
     /// camera that way. True or false like any other such word: the
     /// file's line, a `when` or code writes it.
     CaptureMouse,
+    /// `side=top|bottom|left|right` on a Popup: the side of its parent's
+    /// rectangle it opens on.
+    Side,
+    /// `align=start|center|end` on a Popup: where it sits along that
+    /// side. Unwritten: centered.
+    Align,
     Other(StrId),
 }
 
@@ -1105,6 +1118,8 @@ pub const WORDS: &[(&str, PropKey)] = &[
     ("draw", PropKey::Draw),
     ("depth", PropKey::Depth),
     ("capture_mouse", PropKey::CaptureMouse),
+    ("side", PropKey::Side),
+    ("align", PropKey::Align),
 ];
 
 impl PropKey {
@@ -1351,6 +1366,9 @@ fn kind_row(kind: Kind) -> &'static [&'static [PropKey]] {
         Kind::ListItem => &[BOX, PLATE, PADDING, PRESS, &[PropKey::SelectedProp]],
         Kind::Slot => &[BOX, PLATE, PADDING, &[PropKey::Automatic]],
         Kind::Seat | Kind::GridRow => &[BOX],
+        // A Popup has no look of its own: what it holds has. Its size
+        // words cap or fix the box its content sits in.
+        Kind::Popup => &[BOX, &[PropKey::Side, PropKey::Align]],
         // Structure words: their line takes clauses or one size word, no
         // properties (`gap 8`, `repeat … as $item`, `skip`, `empty { }`).
         Kind::Repeat | Kind::Gap | Kind::Skip | Kind::Empty => &[],
@@ -2020,6 +2038,8 @@ pub struct StaticPage {
     /// takes a claimed key as a `Key` event for its code-behind;
     /// traversal never sees it.
     pub key_claims: &'static [(NodeId, u8)],
+    /// Every `Popup` of the file, in the file's order.
+    pub popups: &'static [NodeId],
     pub drivers: &'static [AutoDriver],
     /// See `Behavior` (GP52/GP53).
     pub behaviors: &'static [Behavior],
@@ -2059,6 +2079,13 @@ pub struct Page {
     pub custom_states: Vec<(NodeId, StrId)>,
     /// See `StaticPage::key_claims`.
     pub key_claims: Vec<(NodeId, u8)>,
+    /// Every `Popup` of the page, in the file's order, then those of
+    /// rows cloned since.
+    ///
+    /// Needed as a list so a page with no Popup pays one length check
+    /// where a frame seats them (`crate::popup`), and no walk of its
+    /// nodes.
+    pub popups: Vec<NodeId>,
     pub drivers: Vec<AutoDriver>,
     /// See `Behavior` (GP52/GP53).
     pub behaviors: Vec<Behavior>,
@@ -2181,6 +2208,7 @@ impl Page {
             bind_sites: s.bind_sites.to_vec(),
             custom_states: s.custom_states.to_vec(),
             key_claims: s.key_claims.to_vec(),
+            popups: s.popups.to_vec(),
             drivers: s.drivers.to_vec(),
             behaviors: s.behaviors.to_vec(),
             value_follows: s.value_follows.to_vec(),
@@ -2257,6 +2285,8 @@ impl Page {
         self.custom_states.extend(declared);
         let claims: Vec<(NodeId, u8)> = self.key_claims.iter().filter(|(n, _)| *n >= src && *n < end).map(|(n, m)| (shift(*n), *m)).collect();
         self.key_claims.extend(claims);
+        let popups: Vec<NodeId> = self.popups.iter().filter(|n| **n >= src && **n < end).map(|n| shift(*n)).collect();
+        self.popups.extend(popups);
         let behaviors: Vec<Behavior> = self.behaviors.iter().filter(|b| b.root >= src && b.root < end).map(|b| Behavior { root: shift(b.root), slots: b.slots.map(|n| if n == NO_NODE { NO_NODE } else { shift(n) }), ..*b }).collect();
         self.behaviors.extend(behaviors);
         // A cloned control's driven slots, `$value` readers and its
@@ -2299,6 +2329,16 @@ impl Page {
     pub fn children(&self, id: NodeId) -> impl DoubleEndedIterator<Item = NodeId> + ExactSizeIterator + Clone {
         let (first, count) = self.nodes[id].children;
         (first..first + count).map(NodeId::new)
+    }
+
+    /// True when the file gives `node` a body: a child that is no Popup.
+    ///
+    /// Needed where a Check, a Toggle or a Radio picks its look: with a
+    /// body it draws the body, without one its native mark. A Popup
+    /// written in it is what it opens, no part of its look.
+    pub fn has_body(&self, node: NodeId) -> bool {
+        let (first, count) = self.nodes[node].children;
+        count > 0 && (self.popups.is_empty() || (first..first + count).any(|child| self.nodes[child as usize].kind != Kind::Popup))
     }
 
     /// Every node id in arena order.

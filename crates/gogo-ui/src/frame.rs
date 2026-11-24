@@ -69,7 +69,8 @@ impl KeptFrame {
     /// motion of the frame; this is the plain look, and the host crates'
     /// lint (`frame_road_lint.rs`) keeps them off it.
     pub fn fresh(page: &Page, look: Resolved, viewport: Rect, text: &dyn TextMeasure) -> KeptFrame {
-        let rects: Vec<Rect> = layout(page, &look, viewport, text);
+        let mut rects: Vec<Rect> = layout(page, &look, viewport, text);
+        crate::popup::seat_popups(page, &look, viewport, &mut rects);
         KeptFrame { look, rects }
     }
 

@@ -48,6 +48,14 @@ impl Page<AppState> for HomePage {
             Handler::OpenSettings => host.nav.go(SettingsPage::new(host.app.notes.len())),
             Handler::ClearNotes => host.nav.go(ClearPage),
             Handler::OpenPaper => host.nav.go(PaperPage::default()),
+            // The file shows the menu while this Check is checked.
+            Handler::More => {}
+            // The menu's one line: says what this is, and closes the
+            // menu by unchecking the Check that shows it.
+            Handler::AboutNotes => {
+                host.ui.set_checked(NAMES.more, false);
+                host.nav.tell::<ToastPage>(|toast, host| toast.say(host, "Notes, a TurboDot example"));
+            }
         }
     }
 }

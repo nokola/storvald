@@ -2014,6 +2014,51 @@ resolution than the UI.
 
 ---
 
+## How do I open a menu beside a button?
+
+Write a `Popup` inside the control that opens it, and show it while
+that control is checked:
+
+```kdl
+View page {
+    Check more width=60, height=50 {
+        Label text="More"
+        Popup menu side=top, align=end, visibility=gone {
+            Column background=#2C2F38, padding=6, spacing=4 {
+                Button about text="About"
+                Button help text="Help"
+            }
+        }
+        when selected menu.visibility = visible
+    }
+}
+```
+
+- The Popup is drawn above the whole page and is as big as what it
+  holds. `side=top, align=end` puts it above the Check with their right
+  edges in line; gogo moves it back inside the page when it would reach
+  past an edge.
+- A tap on the Check opens it, a second tap closes it: `when selected`
+  ties the two, and no code runs.
+- Back closes it before it leaves the page. In a TurboDot program that
+  needs no code either.
+- A line of the menu is a Button of the page like any other: its
+  handler is the page's. To close the menu after a pick, the handler
+  unchecks the Check:
+
+```rust partial
+Handler::About => {
+    host.ui.set_checked(NAMES.more, false);
+    host.nav.tell::<ToastPage>(|toast, host| toast.say(host, "Notes, a TurboDot example"));
+}
+```
+
+A dialog is something else: any page can open it and it blocks what is
+under it. That is a page (`PageKind::Overlay`), opened with
+`host.nav.go`.
+
+(`examples/notes` has this menu on its first page, under "More".)
+
 ## How do I turn a camera with the mouse (hide the cursor, like a game)?
 
 Say `capture_mouse=true` on the `Surface` that shows the world:

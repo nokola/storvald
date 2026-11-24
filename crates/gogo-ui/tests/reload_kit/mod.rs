@@ -52,6 +52,7 @@ pub fn as_built(page: &Page, slices: &'static [ImageSlice]) -> &'static StaticPa
         bind_sites: leak(&page.bind_sites),
         custom_states: leak(&page.custom_states),
         key_claims: leak(&page.key_claims),
+        popups: leak(&page.popups),
         drivers: leak(&page.drivers),
         behaviors: leak(&page.behaviors),
         value_follows: leak(&page.value_follows),

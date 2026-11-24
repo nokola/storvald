@@ -950,7 +950,7 @@ impl<'a> Lay<'a> {
             Kind::Button | Kind::Check | Kind::Toggle | Kind::Radio => {
                 // The native mark (spec "Default look"); a templated one (a
                 // body) is a blank surface sized by its body alone.
-                let marked: bool = matches!(node.kind, Kind::Check | Kind::Toggle | Kind::Radio) && node.children.1 == 0;
+                let marked: bool = matches!(node.kind, Kind::Check | Kind::Toggle | Kind::Radio) && !self.page.has_body(id);
                 let (mark_w, mark_h) = if !marked {
                     (0.0, 0.0)
                 } else if node.kind == Kind::Toggle {
@@ -1013,7 +1013,7 @@ impl<'a> Lay<'a> {
             Kind::Row => self.stack_min(id, Axis::X, inner_w),
             Kind::Flow => self.flow_min(id, inner_w),
             Kind::Tiles => self.tiles_min(id, inner_w),
-            Kind::View | Kind::Layers | Kind::Panel | Kind::ListItem | Kind::Repeat | Kind::Custom | Kind::Slot | Kind::Empty => {
+            Kind::View | Kind::Layers | Kind::Panel | Kind::ListItem | Kind::Repeat | Kind::Custom | Kind::Slot | Kind::Empty | Kind::Popup => {
                 let (mut w, mut h) = (0.0f32, 0.0f32);
                 for c in self.sizing_children(id) {
                     let (cw, ch) = self.child_extent(c, inner_w);

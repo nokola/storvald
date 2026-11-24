@@ -198,6 +198,8 @@ pub const REGISTRY: &[(&str, &str)] = &[
     ("G7016", "a word of another `draw=` on a Surface — `fit=`, `window=`, `sampling=` are a `draw=picture` Surface's, `clip_contents=` a `draw=commands` one's, `depth=` a `draw=gpu` one's"),
     ("G7017", "`rotate=` on a `draw=gpu` Surface or on a node above it — a viewport is an upright rectangle"),
     ("G7018", "`depth=` written in a `when`, or not written out as `true` or `false` — whether the program has a depth buffer is fixed when it is built"),
+    ("G7019", "a Popup that is the file's root — a Popup is written inside the node it opens beside"),
+    ("G7020", "a Popup with no `side=`, or a `side=` or `align=` that names none — `side=top|bottom|left|right`, `align=start|center|end`"),
     ("G8001", "a translation key carries different English"),
     ("G8002", "displayed text with no translation key (`CompileOptions::require_keys`)"),
     ("G8003", "`allow` takes one word: `allow untranslated`"),

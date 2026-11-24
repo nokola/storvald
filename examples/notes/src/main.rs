@@ -138,6 +138,41 @@ mod tests {
         assert!(program.is_page_arriving_or_leaving() && !is_count_coming_in(&program), "a later open: page slides in, the count is as it was");
     }
 
+    /// The home page's menu is a `Popup` its file shows while the "More"
+    /// Check is checked. A back request closes it and leaves the page
+    /// where it is; the next one is the page's.
+    #[test]
+    fn back_closes_a_menu_before_it_leaves_the_page() {
+        let is_menu_open = |program: &Program<AppState>| -> bool { !program.ui().kept.look().gone(&program.ui().page, HOME.more_menu) };
+        let mut program: Program<AppState> = started(AppState::default());
+        assert!(!is_menu_open(&program));
+        program.tap(HOME.more, 1.0);
+        frame(&mut program, 0.016);
+        assert!(is_menu_open(&program) && program.ui().is_checked(HOME.more), "a tap on the Check opens its menu");
+        let (check, about): (Rect, Rect) = (program.ui().rect(HOME.more), program.ui().rect(HOME.about_notes));
+        assert!(about.bottom() <= check.y + 0.5 && about.w > 0.0, "above the Check: {about:?} over {check:?}");
+
+        assert!(program.back(), "the menu takes the back request");
+        frame(&mut program, 0.016);
+        assert!(!is_menu_open(&program) && !program.ui().is_checked(HOME.more), "closed, the Check unchecked");
+        assert_eq!(program.depth(), 1, "the page stayed");
+        assert!(!program.back(), "the next back request is the first page's: nothing is before it");
+    }
+
+    /// A tap on the menu's line reaches the page's code, which closes the
+    /// menu by unchecking its Check.
+    #[test]
+    fn a_tap_on_a_menu_s_line_reaches_the_page() {
+        let mut program: Program<AppState> = started(AppState::default());
+        program.tap(HOME.more, 1.0);
+        frame(&mut program, 0.016);
+        program.tap(HOME.about_notes, 2.0);
+        frame(&mut program, 0.016);
+        assert!(!program.ui().is_checked(HOME.more), "the page unchecked the Check");
+        assert!(program.ui().kept.look().gone(&program.ui().page, HOME.more_menu), "and the menu is closed");
+        assert_eq!(program.layer_ui::<ToastPage>().expect("the toast").text_of(TOAST.message), Some("Notes, a TurboDot example"), "and told the toast what to say");
+    }
+
     #[test]
     fn the_program_opens_on_the_notes_with_the_settings_page_made_ahead() {
         let program: Program<AppState> = started(AppState::default());

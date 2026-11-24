@@ -1376,6 +1376,7 @@ A `ListItem` takes these less `valign`, `aspect`, `overlay`.
 | `Arc` | `color`, `color.a`, `from`, `sweep`, `thickness`, `dash` |
 | `Gradient` | `stops`, `fill`, `angle`, `repeat`, `from`, `to`, `corner_radius` |
 | `Surface` | `draw`, `fit`, `window`, `sampling`, `clip_contents`, `depth`, `capture_mouse` |
+| `Popup` | `side`, `align` |
 | `Slider` | `background`, `corner_radius`, `color`, `value`, `min`, `max`, `step` |
 | `Input` | `background`, `corner_radius`, `corner_radius_top_left`, `corner_radius_top_right`, `corner_radius_bottom_right`, `corner_radius_bottom_left`, `border_thickness`, `border_color`, `border_dash`, `clip_contents`, `padding`, `padding_left`, `padding_top`, `padding_right`, `padding_bottom`, `text`, `font_size`, `font_color`, `placeholder_text`, `max_length`, `selection_color` |
 | `Check` | `background`, `corner_radius`, `corner_radius_top_left`, `corner_radius_top_right`, `corner_radius_bottom_right`, `corner_radius_bottom_left`, `border_thickness`, `border_color`, `border_dash`, `clip_contents`, `padding`, `padding_left`, `padding_top`, `padding_right`, `padding_bottom`, `text`, `font_size`, `font_color`, `wrap`, `horizontal_alignment`, `vertical_alignment`, `tap_pulse`, `selected` |
@@ -1392,6 +1393,23 @@ A `ListItem` takes these less `valign`, `aspect`, `overlay`.
 | `seat` | (none of its own) |
 | `empty` | (none — the line takes clauses, not properties) |
 <!-- kind-words:end -->
+
+### Added 2026-11-24 (user): `Popup` (design `docs/design/2026-11-24-popup.md`)
+
+- **`Popup`**: one node kind for what a control opens beside itself, a
+  menu or a strip of choices. Written inside the node it belongs to;
+  drawn above the whole page, sized by what it holds, placed against
+  that node's rectangle on `side=` (required, no default) at `align=`,
+  kept inside the page's safe area.
+- **No word of its own for showing.** It shows and hides with
+  `visibility=`. `when selected menu.visibility = visible` in a Check
+  opens it with no code.
+- **Back hides the topmost one** by ending what shows it
+  (`Input::hide_top_popup`): a Check is unchecked, a write from code is
+  written back. TurboDot calls it before it asks the page.
+- **Not a page.** A dialog is a page: any page opens it, it blocks what
+  is under it, it has code of its own. A Popup belongs to one control of
+  one page and its events go to that page's handlers.
 
 ### Added 2026-11-24 (user): `Surface` (design `docs/design/2026-11-24-surface.md`)
 
