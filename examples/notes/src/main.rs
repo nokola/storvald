@@ -1173,6 +1173,25 @@ mod tests {
         assert!(!program.tell::<EditPage>(|_, _| panic!("no edit page is alive")), "no such page: the host hears it");
     }
 
+    /// Page closed and opened again within its slide out is alive
+    /// twice. A tell reaches the one on screen, not the one leaving.
+    #[test]
+    fn a_tell_reaches_the_page_on_screen_and_not_one_of_its_type_that_is_leaving() {
+        let mut program: Program<AppState> = started(AppState { notes: vec!["Note 1".to_string()], ..AppState::default() });
+        let live_at_home: usize = program.live_page_count();
+        program.tap(HOME.clear_notes, 1.0);
+        let_the_slides_end(&mut program);
+        assert!(program.back(), "the clear page uses the back request");
+        assert!(program.is_page_arriving_or_leaving() && program.is_drawn::<ClearPage>(), "the clear page slides out");
+        program.go(ClearPage);
+        assert_eq!(program.live_page_count(), live_at_home + 2, "two clear pages are alive: one leaving, one new");
+        assert!(program.tell::<ClearPage>(|_, host| host.ui.set_text(CLEAR.clear_all, "told")));
+        assert_eq!(program.ui().text_of(CLEAR.clear_all), Some("told"), "the page on screen was told");
+        let_the_slides_end(&mut program);
+        assert_eq!(program.live_page_count(), live_at_home + 1, "the one that left is freed");
+        assert_eq!(program.ui().text_of(CLEAR.clear_all), Some("told"), "and the page on screen keeps what it was told");
+    }
+
     /// Host with a page of its own beside a program's pages, drawn by
     /// one renderer: the program's picture loader uploads what the
     /// host's page draws, keeps a `release=unused` picture that page

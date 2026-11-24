@@ -242,10 +242,12 @@ impl<A: 'static> Program<A> {
     /// Needed for what comes from outside the pages: a host that got a
     /// file tells a layer to say so.
     ///
+    /// Of several live pages of that type, the one on the back stack is
+    /// told, topmost first (`page_to_tell`).
+    ///
     /// Returns false when no such page is alive: `call` did not run.
     pub fn tell<P: 'static>(&mut self, call: impl FnOnce(&mut P, &mut Host<'_, A>)) -> bool {
-        let told: Option<PageId> = self.stack.iter().map(|(id, _)| id).find(|id| self.page_type(*id) == Some(TypeId::of::<P>()));
-        let Some(id) = told else { return false };
+        let Some(id) = self.page_to_tell(TypeId::of::<P>()) else { return false };
         self.call(id, |page, host| {
             if let Some(page) = page.page_mut().downcast_mut::<P>() {
                 call(page, host);
@@ -1044,14 +1046,26 @@ impl<A: 'static> Program<A> {
                     Request::Layer(page) => self.add_layer_object(page),
                     Request::Place { parent, node, page } => self.place(parent, node, page),
                     Request::Tell { page_type, call } => {
-                        let told: Option<PageId> = self.stack.iter().map(|(id, _)| id).find(|id| self.objects[id.index()].as_ref().is_some_and(|object| object.page_type() == page_type));
-                        if let Some(id) = told {
+                        if let Some(id) = self.page_to_tell(page_type) {
                             self.call(id, |page, host| call(page.page_mut(), host));
                         }
                     }
                 }
             }
         }
+    }
+
+    /// Live page a `tell` for `page_type` reaches: one on the back
+    /// stack, topmost first; else any other live page of that type (a
+    /// layer, a placed page, a cached one, one on its way out).
+    ///
+    /// Needed because a page closed and opened again within its slide
+    /// out is alive twice, the one sliding out and the new one. Found
+    /// by order of making, a host wrote its data into the page that
+    /// was leaving, and the page on screen showed none.
+    fn page_to_tell(&self, page_type: TypeId) -> Option<PageId> {
+        let is_that_type = |id: &PageId| self.page_type(*id) == Some(page_type);
+        self.back_stack.iter().rev().copied().find(is_that_type).or_else(|| self.stack.iter().map(|(id, _)| id).find(is_that_type))
     }
 
     /// Type of client's struct of page `id`.
