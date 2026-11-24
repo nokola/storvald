@@ -98,6 +98,21 @@ impl PageUi {
         }
     }
 
+    /// Format of the color target that the pass which draws the pages
+    /// writes into, as `Page::gpu_prepare` finds it.
+    ///
+    /// Needed by a page with a `Surface draw=gpu`: the pipeline of its
+    /// own draw calls is made for this format, in `gpu_prepare`, before
+    /// `draw_surface_gpu` uses it. A window and a picture of the program
+    /// (`Gpu::draw_program`) may have two formats: a page compares, and
+    /// makes its pipeline again for another one.
+    ///
+    /// Returns `None` before page's first GPU frame.
+    #[cfg(feature = "gpu")]
+    pub fn target_format(&self) -> Option<wgpu::TextureFormat> {
+        self.target_format
+    }
+
     /// Says what `surface`, a `Surface draw=commands` of page's file,
     /// shows is out of date: program calls page's `draw_surface` for it
     /// before the next frame is drawn.

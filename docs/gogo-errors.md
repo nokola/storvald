@@ -1485,9 +1485,10 @@ View page {
 ## G7015 — a Surface without `draw=`
 
 A `Surface` is a box the program's code draws, and its line says how:
-`draw=picture` (the code hands over one picture) or `draw=commands` (the
-code writes gogo draw commands). There is no default, so nobody gets one
-kind of drawing by forgetting to ask for another.
+`draw=picture` (the code hands over one picture), `draw=commands` (the
+code writes gogo draw commands) or `draw=gpu` (the code makes GPU draw
+calls of its own). There is no default, so nobody gets one kind of
+drawing by forgetting to ask for another.
 
 Wrong:
 
@@ -1507,15 +1508,16 @@ View page {
 
 The same code answers `draw=` written in a `when` block. The build gives
 the Surface's name in the code a type by its `draw=` (`PictureSurface`,
-`CommandSurface`), so the word is fixed when the page is built: write it
-on the Surface's own line.
+`CommandSurface`, `GpuSurface`), so the word is fixed when the page is
+built: write it on the Surface's own line.
 
 ## G7016 — a word of another `draw=` on a Surface
 
 `fit=`, `window=` and `sampling=` place a picture: they belong to a
 `draw=picture` Surface. `clip_contents=` cuts draw commands at the
-Surface's edge: it belongs to a `draw=commands` one. Written beside the
-other `draw=`, the word would build and change nothing.
+Surface's edge: it belongs to a `draw=commands` one. A `draw=gpu` Surface
+takes none of the four: the code draws all of it. Written beside another
+`draw=`, the word would build and change nothing.
 
 Wrong:
 
@@ -1532,6 +1534,38 @@ View page {
     Surface board draw=commands, width=fill, height=fill
 }
 ```
+
+## G7017 — a turn on a `draw=gpu` Surface
+
+The program's own draw calls for a `draw=gpu` Surface run in a viewport
+on the Surface's rectangle, and a viewport is an upright rectangle. With
+`rotate=` on the Surface, or on a node above it, everything around the
+drawing would turn and the drawing would not.
+
+Wrong:
+
+```kdl error=G7017
+View page {
+    Layers card rotate=8, width=fill, height=fill {
+        Surface model draw=gpu, width=fill, height=fill
+    }
+}
+```
+
+Fix: turn what you draw in your own code, or draw into a texture of your
+own and show it in a `draw=picture` Surface, which gogo turns.
+
+```kdl
+View page {
+    Layers card rotate=8, width=fill, height=fill {
+        Surface model draw=picture, width=fill, height=fill
+    }
+}
+```
+
+A turn that an anim or the code writes while the program runs is not
+seen at build time: a debug build stops at the frame, with the Surface's
+name.
 
 ## G8001 — a translation key carries different English
 

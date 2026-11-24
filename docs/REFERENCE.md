@@ -36,7 +36,7 @@ WPF spelling is an unknown type: G7011, with the nearest gogo names):
 | `Circle` | discs and rings; radius self-derives from the box |
 | `Arc` | ring segments: `thickness=` strokes, `from=`/`sweep=` degrees |
 | `Gradient` | generated gradient fills (see Gradient) |
-| `Surface` | a box the program's code draws: a picture it hands over, or draw commands it writes (see Surface) |
+| `Surface` | a box the program's code draws: a picture it hands over, draw commands it writes, or GPU draw calls of its own (see Surface) |
 | `Button` | press / toggle |
 | `Radio` | one-of-N inside `choice { }`; a body makes it TEMPLATED (see choice) |
 | `Check` | independent on/off; a body makes it TEMPLATED (see choice) |
@@ -1607,6 +1607,7 @@ for another.
 |---|---|---|---|
 | `picture` | one picture (`Runtime::set_picture`) | none | `fit=`, `sampling=`, `window=`, turn, slide, fade, clip |
 | `commands` | gogo draw commands: rectangles, circles, arcs, text | none: gogo keeps them | turn, slide, fade, clip |
+| `gpu` | its own GPU draw calls, inside the pass that draws the pages | the calls themselves | slide and clip |
 
 ```kdl
 View main {
@@ -1615,6 +1616,8 @@ View main {
             interactive=true, on:pointer=painting_pointer
         Surface chart draw=commands, width=200, height=120,
             halign=right, valign=top
+        Surface model draw=gpu, width=160, height=160,
+            halign=left, valign=top
         Panel toolbar valign=bottom, height=56 { }
     }
 }
@@ -1640,6 +1643,26 @@ View main {
   commands again. Commands may reach past the Surface's edge;
   `clip_contents=true` cuts them there. A `scale=` on the Surface moves
   its corner and does not shrink what the code drew.
+- **`draw=gpu`** is where the code makes GPU draw calls of its own: 3D,
+  a shader of its own. The calls run inside the pass that draws the
+  pages, at the Surface's place among the nodes: over what comes before
+  it, under what comes after. There is no pass of its own and no copy.
+  gogo sets the viewport to the Surface's rectangle and the scissor to
+  the part of it that shows, so the code draws as if the Surface were
+  its whole screen: clip space -1 to 1 is the Surface. A page that
+  slides in carries the Surface with it, and what clips the Surface cuts
+  the drawing, with nothing done in the code. The code is handed the
+  rectangle and the part that shows in device pixels, the pixels per
+  epx, the opacity (gogo cannot fade the drawing: the code applies it if
+  it wants) and the target's format (`SurfacePlace`). After the calls
+  gogo sets its own state again, so the code leaves the pass in any
+  state. The pass has no depth buffer.
+- **A `draw=gpu` Surface cannot be turned.** A viewport is an upright
+  rectangle. `rotate=` written on the Surface or on a node above it is a
+  build error (G7017); a turn that an anim or the code writes while the
+  program runs stops a debug build with the Surface's name. A phone the
+  user turns needs none of this: the window gets a new size and the
+  Surface a new rectangle.
 - **Fingers.** With `interactive=true` and `on:pointer=<name>` a Surface
   takes every finger that lands on it, each with a press of its own from
   its landing to its lift: the code tells one finger (a stroke) from two
@@ -1647,14 +1670,14 @@ View main {
   neither word lets a finger through to what is under it.
 - **A typed name.** The build writes a Surface's name with a type by its
   `draw=`: `NAMES.painting` is a `PictureSurface`, `NAMES.chart` a
-  `CommandSurface`. `Runtime::set_picture` takes the first and nothing
+  `CommandSurface`, `NAMES.model` a `GpuSurface`. `Runtime::set_picture` takes the first and nothing
   else, so code that fills a Surface another way than its file says does
   not compile. `.node()` gives the node, for what every node takes
   (`set_visible`, its rectangle). `draw=` is therefore written on the
   Surface's own line only, never in a `when`.
-- The words of the other `draw=` are refused (G7016): `fit=`, `window=`
-  and `sampling=` on a `draw=commands` Surface, `clip_contents=` on a
-  `draw=picture` one.
+- The words of another `draw=` are refused (G7016): `fit=`, `window=`
+  and `sampling=` are a `draw=picture` Surface's, `clip_contents=` a
+  `draw=commands` one's, and a `draw=gpu` Surface takes none of them.
 
 COOKBOOK has both recipes: "How do I draw custom visuals from code" and
 "How do I show a picture my code renders".
@@ -2916,7 +2939,8 @@ glide freezes mid-flight until the next input.
 | `rt.next_surface_to_draw()`, `page.write_surface(ask)` | After `frame_retained`, until the first returns `None`: takes a `Surface draw=commands` whose commands the code must write (it first shows, has a new size, or had `surface_changed`), and starts its commands anew to write: `out.width()`, `out.height()`, `out.draw(..)`, `out.text(..)`. |
 | `rt.surface_changed(&mut page, surface)` | Says what a `draw=commands` Surface shows is out of date: the next frame asks for its commands again. |
 | `page.surface_commands(node)` | A Surface's commands as written last. A renderer reads them where it meets `Draw::Surface { rect, surface, alpha }` in a draw list, and draws each moved by the rect's corner and faded by `alpha` (`Draw::posed`). `gogo-wgpu` does. |
-| `PictureSurface::find(&page, name)`, `CommandSurface::find` | A Surface of a page compiled while the program runs, by its name and its `draw=`. A built page has its Surfaces in `NAMES`. |
+| `PictureSurface::find(&page, name)`, `CommandSurface::find`, `GpuSurface::find` | A Surface of a page compiled while the program runs, by its name and its `draw=`. A built page has its Surfaces in `NAMES`. |
+| `Draw::GpuSurface { rect, surface, alpha }` | The place of a `Surface draw=gpu` in a draw list. A renderer makes the program's own draw calls there. `gogo-wgpu`: `UiRenderer::render_with(&mut pass, &mut \|place, pass\| ..)` calls the host once for each, with the viewport and the scissor set (`SurfacePlace`: `rect_px`, `visible_px`, `epx`, `opacity`, `target_format`, `is_of(&page)`); plain `render` is for a host with no such Surface. |
 | `reload::Reloader` (`open`, `refresh`), `reload::Sources` | Hot reload (below). |
 
 Options the compiler takes from the host (`CompileOptions`): `behaviors`

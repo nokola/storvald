@@ -89,7 +89,10 @@ impl<A: 'static> ProgramWindow<'_, A> {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            gfx.renderer.render(&mut pass);
+            let program = &self.program;
+            gfx.renderer.render_with(&mut pass, &mut |place, pass| {
+                program.draw_gpu_surface(place, pass);
+            });
         }
         gfx.gpu.queue.submit([encoder.finish()]);
         gfx.gpu.queue.present(frame);

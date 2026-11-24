@@ -5826,12 +5826,13 @@ impl<'a> Compiler<'a> {
             let draw: Option<crate::surface::SurfaceDraw> = match word {
                 Some("picture") => Some(crate::surface::SurfaceDraw::Picture),
                 Some("commands") => Some(crate::surface::SurfaceDraw::Commands),
+                Some("gpu") => Some(crate::surface::SurfaceDraw::Gpu),
                 _ => None,
             };
             // A `draw=` with a word that is none of the set was refused
             // where it was read (G0057): one error for one slip.
             if draw.is_none() && !n.props.iter().any(|p| p.key == "draw") {
-                self.error("G7015", n.line, "a Surface says how the program's code fills it — write `draw=picture` (code hands over one picture) or `draw=commands` (code writes gogo draw commands); there is no default");
+                self.error("G7015", n.line, "a Surface says how the program's code fills it — write `draw=picture` (code hands over one picture), `draw=commands` (code writes gogo draw commands) or `draw=gpu` (code makes its own GPU draw calls); there is no default");
             }
             for (key, of) in [(PropKey::Fit, crate::surface::SurfaceDraw::Picture), (PropKey::Window, crate::surface::SurfaceDraw::Picture), (PropKey::Sampling, crate::surface::SurfaceDraw::Picture), (PropKey::ClipContents, crate::surface::SurfaceDraw::Commands)] {
                 if let (Some(draw), true) = (draw, tmp.props.iter().any(|pr| pr.key == key)) {
@@ -7063,6 +7064,26 @@ impl<'a> Compiler<'a> {
     // ----- finish ---------------------------------------------------------
 
     fn finish(&mut self) {
+        // A `draw=gpu` Surface cannot be turned: the program's own draw
+        // calls run in a viewport, and a viewport is an upright
+        // rectangle. A turn written on the Surface or on a node above it
+        // would turn everything around the drawing and not the drawing.
+        for index in 0..self.page.nodes.len() {
+            let surface: NodeId = NodeId::from_index(index);
+            if crate::surface::SurfaceDraw::of(&self.page, surface) != Some(crate::surface::SurfaceDraw::Gpu) {
+                continue;
+            }
+            let mut at: NodeId = surface;
+            while at != NO_NODE {
+                if matches!(self.page.prop(at, PropKey::Rotate), Some(Value::VNum(angle)) if angle != 0.0) {
+                    let line: u32 = self.page.nodes[surface].line;
+                    let whose: String = if at == surface { "on it".to_string() } else { format!("on `{}`, a node above it", kind_name(self.page.nodes[at].kind)) };
+                    self.error("G7017", line, format!("a `draw=gpu` Surface cannot be turned, and `rotate=` is written {whose} — the program's own draw calls run in a viewport, which is an upright rectangle; turn what you draw in your own code, or draw into a texture and show it with `draw=picture`"));
+                    break;
+                }
+                at = self.page.nodes[at].parent;
+            }
+        }
         // The page's `accent` for the marks gogo draws itself (a Check's
         // box, a Radio's dot, a Toggle's pill), kept as those kinds'
         // default `color` and read back by the draw step.

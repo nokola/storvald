@@ -196,6 +196,7 @@ pub const REGISTRY: &[(&str, &str)] = &[
     ("G7014", "a child inside a shape (Rectangle, Circle, Arc, Gradient, Image) or a Surface"),
     ("G7015", "a Surface without `draw=`, or `draw=` written in a `when`"),
     ("G7016", "a word of another `draw=` on a Surface — `fit=`, `window=`, `sampling=` are a `draw=picture` Surface's, `clip_contents=` a `draw=commands` one's"),
+    ("G7017", "`rotate=` on a `draw=gpu` Surface or on a node above it — a viewport is an upright rectangle"),
     ("G8001", "a translation key carries different English"),
     ("G8002", "displayed text with no translation key (`CompileOptions::require_keys`)"),
     ("G8003", "`allow` takes one word: `allow untranslated`"),

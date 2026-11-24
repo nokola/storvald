@@ -1396,17 +1396,19 @@ A `ListItem` takes these less `valign`, `aspect`, `overlay`.
 ### Added 2026-11-24 (user): `Surface` (design `docs/design/2026-11-24-surface.md`)
 
 - **`Surface`**: one node kind for a box the program's code draws, in
-  place of four ways the file did not show. Built so far: `draw=picture`
-  and `draw=commands`.
+  place of four ways the file did not show. Built so far: `draw=picture`,
+  `draw=commands` and `draw=gpu`.
 - **Gone with it:** an `Image` whose `source=` names no file (G2023; the
   "host picture" of the entries above), and code controls
   (`CompileOptions::code_controls`, G7013): a box code draws is a
-  Surface. The host layer of the 2026-09-28 entry stays until
-  `draw=gpu` is built.
+  Surface. The host layer of the 2026-09-28 entry
+  (`UiRenderer::host_layer`) is gone too: `draw=gpu`, drawn through
+  `UiRenderer::render_with`.
 - **A Surface's name is typed by its `draw=`** (`PictureSurface`,
   `CommandSurface`) in `NAMES`, a repeat's row and a widget's names.
 - **`Draw::Surface`** marks a `draw=commands` Surface's place in a page's
   draw list; the commands stay with the page (`Page::surface_commands`).
+  **`Draw::GpuSurface`** marks a `draw=gpu` one's.
 
 ## Checks for G1's successors
 

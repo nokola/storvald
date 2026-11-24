@@ -174,7 +174,11 @@ impl Gpu {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            renderer.render(&mut pass);
+            // A `draw=gpu` Surface of a page of `host_pages` is not
+            // drawn here: the host makes those calls in its own frame.
+            renderer.render_with(&mut pass, &mut |place, pass| {
+                program.draw_gpu_surface(place, pass);
+            });
         }
         self.queue.submit([encoder.finish()]);
         let mut bytes: Vec<u8> = self.read_back(&texture, size.0, size.1)?;

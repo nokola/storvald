@@ -975,6 +975,27 @@ impl<A: 'static> Program<A> {
         self.gpu_draw_as(renderer, gpu, crate::pictures::LazyPictures::OnThread, None);
     }
 
+    /// Makes the draw calls of one `Surface draw=gpu` of a page of this
+    /// program: finds the page `place` is of and calls its
+    /// `draw_surface_gpu`. What a window hands `UiRenderer::render_with`:
+    /// `renderer.render_with(&mut pass, &mut |place, pass| program.draw_gpu_surface(place, pass))`.
+    ///
+    /// Returns false when the Surface is of no page of this program (a
+    /// host's own page): the host draws that one.
+    #[cfg(feature = "gpu")]
+    pub fn draw_gpu_surface(&self, place: &gogo_wgpu::SurfacePlace, pass: &mut wgpu::RenderPass<'_>) -> bool {
+        for id in &self.stack.order {
+            let page_ui: &PageUi = self.stack.get(*id);
+            if !place.is_of(&page_ui.page) {
+                continue;
+            }
+            let (Some(object), Some(surface)) = (self.objects[id.index()].as_ref(), gogo_ui::GpuSurface::of(&page_ui.page, place.surface)) else { return false };
+            object.draw_surface_gpu(&self.app, surface, pass, place);
+            return true;
+        }
+        false
+    }
+
     /// `gpu_draw` for a host that lays out pages of its own beside the
     /// program's (`turbodot::pages`), drawn by the same renderer.
     ///
@@ -1067,6 +1088,7 @@ impl<A: 'static> Program<A> {
             let id: PageId = self.stack.order[i];
             let Some(mut object) = self.objects[id.index()].take() else { continue };
             self.nav.caller = Some(id);
+            self.stack.get_mut(id).target_format = Some(renderer.target_format());
             let mut host: Host<'_, A> = Host { app: &mut self.app, ui: self.stack.get_mut(id), nav: &mut self.nav };
             object.gpu_prepare(&mut host, gpu);
             self.nav.caller = None;

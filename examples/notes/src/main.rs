@@ -927,6 +927,13 @@ mod tests {
         let on_the_margin: [u8; 4] = picture.at(margin_x.round() as u32, y);
         let beside_it: [u8; 4] = picture.at(margin_x.round() as u32 - 6, y);
         assert!(on_the_margin[0].abs_diff(crate::paper_page::MARGIN[0]) > 15, "the home page shows through the margin line: {on_the_margin:?}");
+        // The stamp is GPU draw calls of the page's own, in a viewport
+        // on its Surface: it moves with the page, whole, where the paper
+        // and the line fade.
+        let stamp: Rect = program.ui().rect(crate::ui::paper_page::NAMES.stamp.node());
+        let stamp_middle: (f32, f32) = (stamp.x + stamp.w / 2.0 + pose.offset_x, stamp.y + stamp.h / 2.0 + pose.offset_y);
+        assert!(stamp_middle.0 >= 0.0 && stamp_middle.1 >= 0.0, "the stamp is inside the picture: {stamp_middle:?}, {pose:?}");
+        assert_eq!(picture.at(stamp_middle.0 as u32, stamp_middle.1 as u32), crate::paper_page::STAMP, "the stamp where the page is now");
         // The line is drawn over the paper, each as clear as the page:
         // redder than the paper beside it, and not yet its own red.
         assert!(on_the_margin[0] > beside_it[0] + 20, "the margin line shows where the page is now: {on_the_margin:?} beside {beside_it:?}");
@@ -962,6 +969,16 @@ mod tests {
         for y in [2, picture.height / 2, picture.height - 3] {
             assert_eq!(picture.at(margin_x, y), crate::paper_page::MARGIN, "the margin line at row {y}");
             assert_ne!(picture.at(margin_x - 2, y), crate::paper_page::MARGIN, "paper left of the margin line at row {y}");
+        }
+        // The stamp, GPU draw calls of the page's own: all of its
+        // Surface and not a pixel beside it, over the paper.
+        let stamp: Rect = program.ui().rect(crate::ui::paper_page::NAMES.stamp.node());
+        let (left, top, right, bottom): (u32, u32, u32, u32) = (stamp.x as u32, stamp.y as u32, (stamp.x + stamp.w) as u32, (stamp.y + stamp.h) as u32);
+        for (x, y) in [(left, top), (right - 1, top), (left, bottom - 1), (right - 1, bottom - 1), ((left + right) / 2, (top + bottom) / 2)] {
+            assert_eq!(picture.at(x, y), crate::paper_page::STAMP, "the stamp at ({x}, {y})");
+        }
+        for (x, y) in [(left - 1, top), (right, top), (left, top - 1), (left, bottom)] {
+            assert_ne!(picture.at(x, y), crate::paper_page::STAMP, "nothing of the stamp at ({x}, {y}), beside its Surface");
         }
         let title: Rect = program.ui().rect(crate::ui::paper_page::NAMES.title);
         let ink: usize = (title.y as u32..(title.y + title.h) as u32).flat_map(|y| (title.x as u32..(title.x + title.w) as u32).map(move |x| (x, y))).filter(|&(x, y)| picture.at(x, y) == [0x20, 0x20, 0x20, 0xFF]).count();

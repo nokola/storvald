@@ -135,6 +135,12 @@ pub enum Draw {
     /// its commands again changes nothing in this list, and a page that
     /// changes does not ask code for the commands again.
     Surface { rect: Rect, surface: NodeId, alpha: f32 },
+    /// The place of a `Surface draw=gpu` in the list: the program's own
+    /// GPU draw calls run here, between what was drawn before and what
+    /// comes after, with the viewport on `rect` and the scissor on the
+    /// part of it that shows. `alpha`: how see-through the Surface is;
+    /// the code applies it if it wants.
+    GpuSurface { rect: Rect, surface: NodeId, alpha: f32 },
 }
 
 impl Draw {
@@ -167,6 +173,7 @@ impl Draw {
             Draw::SwingPush { angle, pivot_x, cx, cy, focal } => Draw::SwingPush { angle: *angle, pivot_x: pivot_x + dx, cx: cx + dx, cy: cy + dy, focal: *focal },
             Draw::SwingPop => Draw::SwingPop,
             Draw::Surface { rect, surface, alpha: own } => Draw::Surface { rect: mv(rect), surface: *surface, alpha: own * alpha },
+            Draw::GpuSurface { rect, surface, alpha: own } => Draw::GpuSurface { rect: mv(rect), surface: *surface, alpha: own * alpha },
         }
     }
 
@@ -971,6 +978,13 @@ fn walk(page: &Page, res: &Resolved, rects: &[Rect], id: NodeId, opacity: f32, s
         Kind::Surface if res.ident(page, id, PropKey::Draw) == Some("commands") => {
             if rect.w > 0.0 && rect.h > 0.0 && opacity > 0.0 {
                 out.push(Draw::Surface { rect, surface: id, alpha: opacity });
+            }
+        }
+        // The mark alone: the program's own GPU calls run at this place
+        // when the frame is drawn (`Draw::GpuSurface`).
+        Kind::Surface if res.ident(page, id, PropKey::Draw) == Some("gpu") => {
+            if rect.w > 0.0 && rect.h > 0.0 && opacity > 0.0 {
+                out.push(Draw::GpuSurface { rect, surface: id, alpha: opacity });
             }
         }
         // A `draw=picture` Surface shows the picture code handed it

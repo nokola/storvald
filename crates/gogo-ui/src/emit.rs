@@ -220,6 +220,7 @@ fn surface_type(draw: SurfaceDraw) -> &'static str {
     match draw {
         SurfaceDraw::Picture => "gogo_ui::PictureSurface",
         SurfaceDraw::Commands => "gogo_ui::CommandSurface",
+        SurfaceDraw::Gpu => "gogo_ui::GpuSurface",
     }
 }
 

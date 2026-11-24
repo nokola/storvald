@@ -1,7 +1,7 @@
 //! `Surface`: a box of a page that the program's code draws.
 //!
-//! The file says how code fills it (`draw=picture`, `draw=commands`) and
-//! there is no default. A Surface has no size of its own and holds no
+//! The file says how code fills it (`draw=picture`, `draw=commands`,
+//! `draw=gpu`) and there is no default. A Surface has no size of its own and holds no
 //! child. Its name in a build has a type by its `draw=`. A picture from
 //! code belongs in a Surface: an Image names a file.
 use gogo_ui::draw::{Draw, Fit, Sampling};
@@ -9,7 +9,7 @@ use gogo_ui::input::{EventKind, EventList, Input, Phase, Touch};
 use gogo_ui::layout::{FixedAdvance, Rect, TextMeasure};
 use gogo_ui::page::{ImageKey, Kind, NO_KEY, NodeId, PropKey, StrId, Value};
 use gogo_ui::runtime::Runtime;
-use gogo_ui::{Color_Straight_Srgb_4xU8_RGBA, CommandSurface, KeptFrame, Page, PictureSurface, SurfaceAsk, SurfaceDraw, TextAlign, compile};
+use gogo_ui::{Color_Straight_Srgb_4xU8_RGBA, CommandSurface, GpuSurface, KeptFrame, Page, PictureSurface, SurfaceAsk, SurfaceDraw, TextAlign, compile};
 
 /// Codes of every diagnostic `src` gets.
 fn codes(src: &str) -> Vec<String> {
@@ -78,6 +78,7 @@ fn a_surface_without_draw_does_not_compile() {
     assert!(message("View v { Surface s width=10, height=10 }", "G7015").contains("there is no default"));
     assert!(codes("View v { Surface s draw=picture, width=10, height=10 }").is_empty());
     assert!(codes("View v { Surface s draw=commands, width=10, height=10 }").is_empty());
+    assert!(codes("View v { Surface s draw=gpu, width=10, height=10 }").is_empty());
     // A word that is none of the set is one error, at the word.
     assert_eq!(codes("View v { Surface s draw=shader, width=10, height=10 }"), ["G0057"]);
 }
@@ -428,4 +429,62 @@ fn a_reload_refuses_a_surface_with_another_draw() {
     let changed: ShapeChange = same_shape(&built, &page("View v { Surface board draw=picture, width=100, height=50 }")).unwrap_err();
     assert_eq!(changed, ShapeChange::Draw { name: "board".to_string(), old: SurfaceDraw::Commands, new: SurfaceDraw::Picture });
     assert!(changed.to_string().contains("Surface `board` changed its `draw=` (commands -> picture)"), "{changed}");
+}
+
+// ---------------------------------------------------------------- draw=gpu
+
+/// A `draw=gpu` Surface takes none of the words of the other two: gogo
+/// places no picture in it and cuts no commands of it.
+#[test]
+fn a_gpu_surface_takes_no_word_of_another_draw() {
+    for word in ["fit=cover", "sampling=pixel", "window=[0, 0, 4, 4]", "clip_contents=true"] {
+        let src = format!("View v {{ Surface world draw=gpu, {word}, width=10, height=10 }}");
+        assert_eq!(codes(&src), ["G7016"], "{src}");
+    }
+}
+
+/// A `draw=gpu` Surface cannot be turned: the program's own draw calls
+/// run in a viewport, which is an upright rectangle. A turn written on
+/// the Surface, or on a node above it, is an error at the Surface's line.
+/// A turn of 0, and a turn beside the Surface, are none.
+#[test]
+fn a_turn_on_a_gpu_surface_or_above_it_does_not_compile() {
+    let on_it: String = message("View v { Surface world draw=gpu, rotate=10, width=10, height=10 }", "G7017");
+    assert!(on_it.contains("`rotate=` is written on it"), "{on_it}");
+    let above: String = message("View v { Layers box rotate=45, width=fill, height=fill {\n Panel inner width=fill, height=fill {\n  Surface world draw=gpu, width=fill, height=fill\n }\n} }", "G7017");
+    assert!(above.contains("on `Layers`, a node above it") && above.contains("draw=picture"), "{above}");
+    assert!(codes("View v { Layers box rotate=0, width=fill, height=fill {\n Surface world draw=gpu, width=fill, height=fill\n} }").is_empty(), "a turn of 0 turns nothing");
+    assert!(codes("View v { Layers l width=fill, height=fill {\n Rectangle beside 10x10, rotate=45, color=#FF0000FF\n Surface world draw=gpu, width=fill, height=fill\n} }").is_empty(), "a turned node beside the Surface");
+    // The other two kinds turn: gogo draws them.
+    assert!(codes("View v { Surface s draw=picture, rotate=10, width=10, height=10 }").is_empty());
+    assert!(codes("View v { Surface s draw=commands, rotate=10, width=10, height=10 }").is_empty());
+}
+
+/// The page's draw list holds a `draw=gpu` Surface's place, in paint
+/// order, with how see-through it is: the program's own draw calls run
+/// there when the frame is drawn. Its name is a `GpuSurface`.
+#[test]
+fn a_gpu_surface_puts_its_place_in_the_draw_list() {
+    let mut fx = Fx::new("View v { Layers l width=fill, height=fill {\n Rectangle under width=fill, height=fill, color=#000000FF\n Surface world draw=gpu, width=200, height=100, halign=left, valign=top, margin_left=20, margin_top=30, opacity=0.5\n Label over text=\"x\"/_, halign=right, valign=bottom\n Surface unseen draw=gpu, width=50, height=50, visibility=gone\n} }");
+    let world: GpuSurface = GpuSurface::find(&fx.page, "world").unwrap();
+    assert!(PictureSurface::find(&fx.page, "world").is_none() && CommandSurface::find(&fx.page, "world").is_none());
+    assert_eq!(SurfaceDraw::of(&fx.page, world.node()), Some(SurfaceDraw::Gpu));
+    fx.frame(400.0, 800.0);
+    let marks: Vec<&Draw> = fx.draws.iter().filter(|d| matches!(d, Draw::GpuSurface { .. })).collect();
+    assert_eq!(marks, [&Draw::GpuSurface { rect: Rect::new(20.0, 30.0, 200.0, 100.0), surface: world.node(), alpha: 0.5 }], "one place: a Surface that does not show has none");
+    let at: usize = fx.draws.iter().position(|d| matches!(d, Draw::GpuSurface { .. })).unwrap();
+    assert!(matches!(fx.draws[at - 1], Draw::Quad { .. }) && matches!(fx.draws[at + 1], Draw::Text { .. }), "over what comes before it, under what comes after: {:?}", fx.draws);
+    // gogo asks for no commands of it: the code draws when the frame is drawn.
+    assert_eq!(fx.rt.next_surface_to_draw(), None);
+    // The place moves and fades with a page that slides.
+    assert_eq!(fx.draws[at].posed(10.0, -5.0, 0.5), Draw::GpuSurface { rect: Rect::new(30.0, 25.0, 200.0, 100.0), surface: world.node(), alpha: 0.25 });
+}
+
+/// The build writes a `draw=gpu` Surface's name as a `GpuSurface`.
+#[test]
+fn the_build_writes_a_gpu_surface_s_name_with_its_type() {
+    let c = compile("View v { Surface world draw=gpu, width=100, height=100 }", &|_| None);
+    assert!(!gogo_ui::has_errors(&c.diags), "{:#?}", c.diags);
+    let code: String = gogo_ui::emit::emit_rust(&c.page, "m").unwrap();
+    assert!(code.contains("pub world: gogo_ui::GpuSurface,"), "{code}");
 }

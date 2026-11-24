@@ -119,9 +119,10 @@ struct Batch {
     /// Every quad of it is one `fs_plain` draws (`UiRenderer::quad_is_plain`),
     /// so it takes a `PipelinePair`'s `plain` pipeline.
     plain: bool,
-    /// A host layer's slot (`UiRenderer::host_layer`): no quads — the
-    /// host's recorded bundle plays here instead.
-    host: Option<u32>,
+    /// A `Surface draw=gpu`'s place, by its index in
+    /// `UiRenderer::gpu_places`: no quads, the program's own draw calls
+    /// run here instead.
+    gpu_surface: Option<u32>,
 }
 
 /// The two pipelines ONE target format is drawn through: `full` runs
@@ -171,10 +172,46 @@ struct External {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExternalImage(u32);
 
-/// The handle `UiRenderer::host_layer` opens for one image key: where in
-/// the UI's own pass a host's drawing plays (`set_host_layer`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct HostLayer(u32);
+/// Where a `Surface draw=gpu` is drawn this frame: what the program's
+/// code needs for its own draw calls there (`UiRenderer::render_with`).
+///
+/// The viewport is on the Surface's rectangle and the scissor on the
+/// part of it that shows, so the code draws as if the Surface were its
+/// whole screen: clip space -1 to 1 is the Surface's rectangle.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SurfacePlace {
+    /// The page the Surface is of, as `is_of` compares it.
+    page: usize,
+    /// The Surface's node in its page.
+    pub surface: NodeId,
+    /// The Surface's rectangle in device pixels: left, top, width,
+    /// height. It may reach past the target's edge (a page that slides
+    /// in).
+    pub rect_px: [f32; 4],
+    /// The part of the rectangle that shows, in device pixels: left,
+    /// top, width, height. What clips the Surface cuts it, and so does
+    /// the target's edge.
+    pub visible_px: [u32; 4],
+    /// Device pixels per epx.
+    pub epx: f32,
+    /// How see-through the Surface is with the nodes above it, 0 to 1.
+    /// gogo cannot fade what the code draws: the code applies it if it
+    /// wants.
+    pub opacity: f32,
+    /// The format of the pass's color target: what the code's pipelines
+    /// are made for.
+    pub target_format: wgpu::TextureFormat,
+}
+
+impl SurfacePlace {
+    /// True when the Surface is a node of `page`.
+    ///
+    /// Needed because a node's id says nothing of its page: a host with
+    /// several pages asks each one.
+    pub fn is_of(&self, page: &Page) -> bool {
+        self.page == page as *const Page as usize
+    }
+}
 
 pub struct UiRenderer {
     /// The screen's pipelines.
@@ -258,12 +295,16 @@ pub struct UiRenderer {
     /// the image key and the texture identity last registered, so a
     /// same-texture frame makes no bind group. Indexed by `ExternalImage`.
     externals: Vec<External>,
-    /// Host layers (`host_layer` / `set_host_layer`): the image key an
-    /// Image names to seat the layer, and the bundle it plays. Indexed by
-    /// `HostLayer`.
-    host_layers: Vec<(ImageKey, Option<wgpu::RenderBundle>)>,
-    /// The format of the screen's pass (the host's bundles are recorded
-    /// for it).
+    /// The `Surface draw=gpu` places of the frame last prepared, in
+    /// paint order. Kept so a frame with such a Surface allocates nothing
+    /// once warm.
+    gpu_places: Vec<SurfacePlace>,
+    /// The widest and tallest viewport the device takes, in device
+    /// pixels. A Surface larger than this is not drawn: the device would
+    /// refuse the viewport.
+    max_viewport_px: f32,
+    /// The format of the screen's pass (a `draw=gpu` Surface's pipelines
+    /// are made for it).
     target_format: wgpu::TextureFormat,
     /// The gradient tables: a row per gradient on screen, cached by
     /// content across frames.
@@ -369,7 +410,8 @@ impl UiRenderer {
             color_atlas_version_uploaded: 0,
             images: Vec::new(),
             externals: Vec::new(),
-            host_layers: Vec::new(),
+            gpu_places: Vec::new(),
+            max_viewport_px: device.limits().max_texture_dimension_2d as f32,
             target_format,
             gradients,
             skipped: 0,
@@ -481,43 +523,10 @@ impl UiRenderer {
         ExternalImage((self.externals.len() - 1) as u32)
     }
 
-    /// The format of the screen's pass: a host layer's bundle must be
-    /// recorded for it.
+    /// The format of the screen's pass: the pipelines a `draw=gpu`
+    /// Surface is drawn with are made for it.
     pub fn target_format(&self) -> wgpu::TextureFormat {
         self.target_format
-    }
-
-    /// Opens the image `key` as a HOST LAYER and hands back its handle: an
-    /// Image with `source=` this key draws no picture. The bundle the host
-    /// hands `set_host_layer` plays at that point of the UI's own pass
-    /// instead, under everything drawn after it.
-    ///
-    /// Needed so that a page can put the host's own drawing (pictures a
-    /// user moves over a photo, a 3D view) between the layers of the UI
-    /// without a render pass of its own: on a tile-based phone GPU every
-    /// extra pass costs a whole-screen load and store, and a blend with
-    /// what is already on screen needs the SAME pass.
-    ///
-    /// Opening a key twice returns the same handle.
-    pub fn host_layer(&mut self, key: ImageKey) -> HostLayer {
-        if let Some(i) = self.host_layers.iter().position(|(k, _)| *k == key) {
-            return HostLayer(i as u32);
-        }
-        self.host_layers.push((key, None));
-        HostLayer((self.host_layers.len() - 1) as u32)
-    }
-
-    /// What the layer plays from the next frame on (`None` = nothing). The
-    /// bundle is recorded for `target_format`; the pass state it leaves is
-    /// restored after it. A bundle may be kept and handed again — the
-    /// buffers it reads can change between frames.
-    pub fn set_host_layer(&mut self, layer: HostLayer, bundle: Option<wgpu::RenderBundle>) {
-        self.host_layers[layer.0 as usize].1 = bundle;
-    }
-
-    /// The host layer an Image of `key` seats, if any.
-    fn host_layer_of(&self, key: ImageKey) -> Option<u32> {
-        self.host_layers.iter().position(|(k, _)| *k == key).map(|i| i as u32)
     }
 
     /// The texture slot `key` shows, if it has pixels.
@@ -846,6 +855,7 @@ impl UiRenderer {
     fn prepare_pass<L: DrawLists + ?Sized>(&mut self, device: &wgpu::Device, pages: &L, epx: f32, screen: (u32, u32), text: &mut TextEngine, locale: Option<&Locale>) {
         self.quads.clear();
         self.batches.clear();
+        self.gpu_places.clear();
         self.skipped = 0;
         self.culled = 0;
         self.screen = screen;
@@ -1072,16 +1082,32 @@ impl UiRenderer {
                     let y = r[1] + (r[3] - h) / 2.0;
                     self.push_quad(current, Quad { rect: [x, y, (1.5 * epx).max(1.0), h], color: color.to_f32(), border_color: [0.0; 4], params: [0.0, 0.0, KIND_RECT, 0.0], uv: NO_UV, rot, wedge, swing, eye });
                 }
-                Draw::Image { rect, image, tint, fit, window, sampling } => {
-                    if let Some(layer) = self.host_layer_of(*image) {
-                        // The host's bundle plays here, between what was
-                        // drawn before and what comes after.
-                        self.close_batch(&mut batch_first, current, current_tex, current_pixel);
-                        if self.host_layers[layer as usize].1.is_some() {
-                            self.batches.push(Batch { first: batch_first, count: 0, scissor: current, tex: ATLAS, pixel: false, plain: false, host: Some(layer) });
-                        }
-                        continue;
+                Draw::GpuSurface { rect, surface, alpha } => {
+                    // The program's own draw calls run here, between what
+                    // was drawn before and what comes after: a batch of
+                    // no quads marks the place.
+                    //
+                    // A viewport is an upright rectangle, so a turn or a
+                    // swing in force would turn everything around the
+                    // drawing and not the drawing.
+                    debug_assert!(rot == NO_ROT && swing[3] <= 0.0, "Surface `{}` is `draw=gpu` and is turned (`rotate`, or a swing) by itself or by a node above it: the program's own draw calls run in a viewport, which cannot be turned. Turn what you draw in your own code, or draw into a texture and show it with `draw=picture`", page.str(page.nodes[*surface].name));
+                    self.close_batch(&mut batch_first, current, current_tex, current_pixel);
+                    let r = px(rect);
+                    let (clip_left, clip_top, clip_right, clip_bottom): (f32, f32, f32, f32) = match current {
+                        Some(clip) => (clip[0] as f32, clip[1] as f32, (clip[0] + clip[2]) as f32, (clip[1] + clip[3]) as f32),
+                        None => (0.0, 0.0, screen.0 as f32, screen.1 as f32),
+                    };
+                    let left: f32 = r[0].max(clip_left).max(0.0).floor();
+                    let top: f32 = r[1].max(clip_top).max(0.0).floor();
+                    let right: f32 = (r[0] + r[2]).min(clip_right).min(screen.0 as f32).ceil();
+                    let bottom: f32 = (r[1] + r[3]).min(clip_bottom).min(screen.1 as f32).ceil();
+                    let is_viewport_legal: bool = r[2] <= self.max_viewport_px && r[3] <= self.max_viewport_px;
+                    if right > left && bottom > top && is_viewport_legal {
+                        self.gpu_places.push(SurfacePlace { page: page as *const Page as usize, surface: *surface, rect_px: r, visible_px: [left as u32, top as u32, (right - left) as u32, (bottom - top) as u32], epx, opacity: *alpha, target_format: self.target_format });
+                        self.batches.push(Batch { first: batch_first, count: 0, scissor: current, tex: ATLAS, pixel: false, plain: false, gpu_surface: Some((self.gpu_places.len() - 1) as u32) });
                     }
+                }
+                Draw::Image { rect, image, tint, fit, window, sampling } => {
                     let Some(tex) = self.slot(*image) else {
                         self.skipped += 1;
                         continue;
@@ -1262,15 +1288,15 @@ impl UiRenderer {
     }
 
     /// Whether `debug_set_no_ui` keeps `d`: an image of an externally-owned
-    /// texture or a host layer, or a clip / rotate / wedge / swing push or pop — the state
+    /// texture, a Surface, or a clip / rotate / wedge / swing push or pop — the state
     /// such an image is drawn under. A skipped Gradient's stops fall to the
     /// stray-stop arm, which draws nothing.
     fn drawn_without_ui(&self, d: &Draw) -> bool {
         match d {
-            Draw::Image { image, .. } => self.externals.iter().any(|e| e.key == *image) || self.host_layer_of(*image).is_some(),
+            Draw::Image { image, .. } => self.externals.iter().any(|e| e.key == *image),
             Draw::ClipPush(_) | Draw::ClipPop | Draw::RotatePush { .. } | Draw::RotatePop | Draw::WedgePush { .. } | Draw::WedgePop | Draw::SwingPush { .. } | Draw::SwingPop => true,
             // The program's code draws a Surface, not gogo.
-            Draw::Surface { .. } => true,
+            Draw::Surface { .. } | Draw::GpuSurface { .. } => true,
             _ => false,
         }
     }
@@ -1340,16 +1366,36 @@ impl UiRenderer {
         for i in first + 1..=end {
             let plain: bool = i < end && Self::quad_is_plain(&self.quads[i as usize]);
             if i == end || plain != run_plain {
-                self.batches.push(Batch { first: run_first, count: i - run_first, scissor, tex, pixel, plain: run_plain, host: None });
+                self.batches.push(Batch { first: run_first, count: i - run_first, scissor, tex, pixel, plain: run_plain, gpu_surface: None });
                 run_first = i;
                 run_plain = plain;
             }
         }
     }
 
-    /// Records the quads into `pass` (the caller owns the pass).
+    /// Records the quads into `pass` (the caller owns the pass). For a
+    /// host none of whose pages has a `Surface draw=gpu`.
+    ///
+    /// WARNING: a debug build stops when the frame has a `draw=gpu`
+    /// Surface: nothing would draw it. `render_with` draws those.
     pub fn render(&mut self, pass: &mut wgpu::RenderPass<'_>) {
-        let calls: u32 = self.record(pass, &self.pipelines, false, true);
+        debug_assert!(self.gpu_places.is_empty(), "this frame has {} `Surface draw=gpu`, and `UiRenderer::render` draws none: call `render_with` and make the Surface's draw calls there", self.gpu_places.len());
+        let calls: u32 = self.record(pass, &self.pipelines, false, None);
+        self.draw_calls = calls;
+    }
+
+    /// `render`, with the program's own draw calls for each `Surface
+    /// draw=gpu` of the frame: `draw_gpu` is called once for each, in
+    /// paint order, at its place among the quads: over what the pages
+    /// drew before it, under what comes after it. No pass of its own
+    /// and no copy.
+    ///
+    /// Before each call the viewport is on the Surface's rectangle and
+    /// the scissor on the part of it that shows (`SurfacePlace`). After
+    /// it the renderer sets its own state again, so `draw_gpu` leaves
+    /// the pass in any state it likes.
+    pub fn render_with(&mut self, pass: &mut wgpu::RenderPass<'_>, draw_gpu: &mut dyn FnMut(&SurfacePlace, &mut wgpu::RenderPass<'_>)) {
+        let calls: u32 = self.record(pass, &self.pipelines, false, Some(draw_gpu));
         self.draw_calls = calls;
     }
 
@@ -1358,7 +1404,7 @@ impl UiRenderer {
     /// Needed so that a test can hold `fs_plain` to `fs_main`'s pixels: it
     /// draws one frame both ways and compares.
     pub fn debug_render_through_fs_main(&mut self, pass: &mut wgpu::RenderPass<'_>) {
-        let calls: u32 = self.record(pass, &self.pipelines, true, true);
+        let calls: u32 = self.record(pass, &self.pipelines, true, None);
         self.draw_calls = calls;
     }
 
@@ -1369,10 +1415,11 @@ impl UiRenderer {
 
     /// The prepared batches through `pipelines` (the screen's or a tile's):
     /// a plain batch through `plain`, the rest through `full` — or all of
-    /// them through `full` when `full_only`. A host layer's bundle plays
-    /// only with `host_layers` (the screen: the bundles are recorded for
-    /// its format — a tile skips them). Returns the draw calls made.
-    fn record(&self, pass: &mut wgpu::RenderPass<'_>, pipelines: &PipelinePair, full_only: bool, host_layers: bool) -> u32 {
+    /// them through `full` when `full_only`. A `draw=gpu` Surface is
+    /// drawn only with `draw_gpu` (the screen: the code's pipelines are
+    /// made for its format; a tile skips them). Returns the draw calls
+    /// made.
+    fn record(&self, pass: &mut wgpu::RenderPass<'_>, pipelines: &PipelinePair, full_only: bool, mut draw_gpu: Option<&mut dyn FnMut(&SurfacePlace, &mut wgpu::RenderPass<'_>)>) -> u32 {
         if self.batches.is_empty() {
             return 0;
         }
@@ -1386,12 +1433,17 @@ impl UiRenderer {
         };
         bind(pass);
         for b in &self.batches {
-            if let Some(layer) = b.host {
-                if let (true, Some(bundle)) = (host_layers, &self.host_layers[layer as usize].1) {
-                    pass.set_scissor_rect(0, 0, self.screen.0, self.screen.1);
-                    pass.execute_bundles(std::iter::once(bundle));
+            if let Some(index) = b.gpu_surface {
+                if let Some(draw_gpu) = draw_gpu.as_deref_mut() {
+                    let place: &SurfacePlace = &self.gpu_places[index as usize];
+                    let [x, y, w, h] = place.visible_px;
+                    pass.set_viewport(place.rect_px[0], place.rect_px[1], place.rect_px[2], place.rect_px[3], 0.0, 1.0);
+                    pass.set_scissor_rect(x, y, w, h);
+                    draw_gpu(place, pass);
                     draw_calls += 1;
-                    // A bundle leaves the pass state reset: bind again.
+                    // The code left the pass in a state of its own: the
+                    // whole target and this renderer's pipeline again.
+                    pass.set_viewport(0.0, 0.0, self.screen.0 as f32, self.screen.1 as f32, 0.0, 1.0);
                     bind(pass);
                     plain_set = false;
                 }
@@ -1468,7 +1520,7 @@ impl UiRenderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            self.record(&mut pass, self.tile_pipelines.as_ref().expect("made above"), false, false)
+            self.record(&mut pass, self.tile_pipelines.as_ref().expect("made above"), false, None)
         };
         self.draw_calls = calls;
         queue.submit([encoder.finish()]);

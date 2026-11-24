@@ -1781,6 +1781,8 @@ code draws. Its line says how the code fills it, and there is no default:
 - `draw=commands`: the code writes gogo draw commands (rectangles,
   circles, arcs, text), and gogo keeps them. This recipe.
 - `draw=picture`: the code hands over one picture. The next recipe.
+- `draw=gpu`: the code makes GPU draw calls of its own (3D, a shader of
+  its own) in the pass that draws the pages. The recipe after that.
 
 ```kdl
 View scorePage {
@@ -1901,6 +1903,59 @@ anywhere (`host.ui.set_picture(NAMES.preview, width, height, rgba)`).
 
 An `Image` names a picture file and nothing else: `source="preview://brush"`
 on an Image is an error (G2023) that names the Surface to write.
+
+---
+
+## How do I draw 3D, or with a shader of my own, inside a page?
+
+Put a `Surface` with `draw=gpu` where it goes:
+
+```kdl
+View shop {
+    Layers width=fill, height=fill {
+        Surface model draw=gpu, width=fill, height=300, valign=top
+        Panel buyBar valign=bottom, height=56 { }
+    }
+}
+```
+
+The code's GPU draw calls run inside the pass that draws the pages, at
+the Surface's place: over what comes before it in the file, under what
+comes after. No pass of its own, and no copy.
+
+gogo sets the viewport to the Surface's rectangle and the scissor to the
+part of it that shows. So the code draws as if the Surface were its
+whole screen (clip space -1 to 1 is the Surface), and does nothing for a
+page that slides in or a box that clips the Surface: the drawing moves
+and is cut with it.
+
+A page of a TurboDot program makes its pipeline in `Page::gpu_prepare`,
+for the format the pass has (`host.ui.target_format()`), and its calls
+in `Page::draw_surface_gpu`:
+
+```rust partial
+fn draw_surface_gpu(&self, app: &AppState, surface: GpuSurface, pass: &mut wgpu::RenderPass<'_>, place: &SurfacePlace) {
+    pass.set_pipeline(&self.pipeline);
+    pass.draw(0..3, 0..1);
+}
+```
+
+(The tests of `gogo-ui` have no GPU, so they do not compile this
+example. `examples/notes/src/paper_page.rs` is the whole of it, drawn
+and read back pixel by pixel in that example's tests.) A host with its
+own frame loop calls `UiRenderer::render_with` in place of `render` and
+makes the calls in the closure it hands over.
+
+`place` says the rectangle and the part that shows in device pixels, the
+pixels per epx, the opacity and the target's format. gogo cannot fade
+what the code draws: the code applies `place.opacity` if it wants. After
+the calls gogo sets its own state again, so the code leaves the pass in
+any state.
+
+A `draw=gpu` Surface cannot be turned: `rotate=` on it or on a node above
+it is an error (G7017). Turn what you draw in your own code. The pass
+has no depth buffer; a scene that needs one draws into a texture of its
+own and shows it with `draw=picture`.
 
 ---
 

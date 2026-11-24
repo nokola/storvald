@@ -889,7 +889,7 @@ pub enum PropKey {
     /// the picture's decoded copy once no live page names it, and decode
     /// it again when one does. Default: kept for the whole session.
     Release,
-    /// `draw=picture|commands` on a Surface: how the program's code fills
+    /// `draw=picture|commands|gpu` on a Surface: how the program's code fills
     /// it (`SurfaceDraw`). The file's line alone writes it: the build
     /// gives the Surface's name a type by it.
     Draw,
@@ -1116,7 +1116,7 @@ impl PropKey {
             PropKey::Loading => Some(&["lazy", "eager"]),
             PropKey::Release => Some(&["unused"]),
             PropKey::Sampling => Some(&["smooth", "pixel"]),
-            PropKey::Draw => Some(&["picture", "commands"]),
+            PropKey::Draw => Some(&["picture", "commands", "gpu"]),
             _ => None,
         }
     }
@@ -1271,7 +1271,7 @@ fn kind_row(kind: Kind) -> &'static [&'static [PropKey]] {
         Kind::Image => &[BOX, PLATE, &[PropKey::Source, PropKey::Fit, PropKey::Loading, PropKey::Release, PropKey::Window, PropKey::Sampling]],
         // The three picture words are a `draw=picture` Surface's alone,
         // `clip_contents=` a `draw=commands` one's: the compiler refuses
-        // each beside another `draw=`.
+        // each beside another `draw=`. A `draw=gpu` Surface takes none.
         Kind::Surface => &[BOX, &[PropKey::Draw, PropKey::Fit, PropKey::Window, PropKey::Sampling, PropKey::ClipContents]],
         Kind::Rectangle => &[BOX, &[PropKey::Color, PropKey::ColorA, PropKey::CornerRadius, PropKey::CornerRadiusTopLeft, PropKey::CornerRadiusTopRight, PropKey::CornerRadiusBottomRight, PropKey::CornerRadiusBottomLeft, PropKey::BorderThickness, PropKey::BorderColor, PropKey::BorderDash]],
         Kind::Circle => &[BOX, &[PropKey::Color, PropKey::ColorA, PropKey::BorderThickness, PropKey::BorderColor, PropKey::BorderDash]],

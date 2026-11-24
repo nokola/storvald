@@ -10,6 +10,12 @@ it. `draw=` is required, and there is no default:
   top left corner. gogo keeps them and asks again only when the Surface's
   size changed or the code said its content changed.
   `clip_contents=true` cuts them at the Surface's edge.
+- `draw=gpu` — the code makes GPU draw calls of its own (3D, a shader of
+  its own), inside the pass that draws the pages, at the Surface's place
+  among the nodes. gogo sets the viewport to the Surface's rectangle and
+  the scissor to the part that shows, so the drawing moves with a page
+  that slides and is cut where the Surface is cut. It cannot be turned:
+  `rotate=` on it or on a node above it is an error (G7017).
 
 ```
 Layers width=fill, height=fill {
@@ -30,5 +36,5 @@ finger (a stroke) from two (a zoom). Without them a finger goes through
 to what is under it.
 
 Its name in the code has a type by its `draw=` (`PictureSurface`,
-`CommandSurface`): code that fills it another way than the file says
-does not compile.
+`CommandSurface`, `GpuSurface`): code that fills it another way than
+the file says does not compile.

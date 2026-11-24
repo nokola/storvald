@@ -1675,14 +1675,18 @@ to the goals rather than to muscle memory from WPF or an engine (`Label`,
 - **`Surface`** — a box the program's code draws (design:
   `docs/design/2026-11-24-surface.md`). `draw=` is REQUIRED and has no
   default (G7015): `picture` (the code hands over one picture, drawn as
-  an Image draws a file: `fit=`, `window=`, `sampling=`) or `commands`
+  an Image draws a file: `fit=`, `window=`, `sampling=`), `commands`
   (the code writes gogo draw commands in the Surface's own space; gogo
   keeps them and asks again when the size changed or the code said the
-  content changed; `clip_contents=` cuts them at the edge). A leaf: no
+  content changed; `clip_contents=` cuts them at the edge) or `gpu` (the
+  code makes its own GPU draw calls inside the pass that draws the
+  pages, at the Surface's place in paint order, in a viewport on the
+  Surface's rectangle with the scissor on the part that shows; no
+  `rotate=` on it or above it, G7017). A leaf: no
   child (G7014), no size of its own, no plate. The words of the other
   `draw=` are refused (G7016). `draw=` is written on the Surface's own
   line only, because the build types the Surface's name by it
-  (`PictureSurface`, `CommandSurface`): code that fills it another way
+  (`PictureSurface`, `CommandSurface`, `GpuSurface`): code that fills it another way
   does not compile. With `interactive=true` and `on:pointer=` it takes
   every finger that lands on it, each with its own press; any other box
   holds one finger at a time. An `Image` names a picture FILE: any other

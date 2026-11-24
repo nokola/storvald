@@ -485,6 +485,10 @@ pub struct PageUi {
     /// Surface.
     #[cfg(feature = "gpu")]
     pub(crate) picture_textures: Vec<PictureTexture>,
+    /// Format of the pass page's GPU frame is drawn in
+    /// (`PageUi::target_format`). `None` before page's first GPU frame.
+    #[cfg(feature = "gpu")]
+    pub(crate) target_format: Option<wgpu::TextureFormat>,
 }
 
 /// Picture a page's code made for one `Surface draw=picture`: its
@@ -539,6 +543,8 @@ impl PageUi {
             code_pictures: Vec::new(),
             #[cfg(feature = "gpu")]
             picture_textures: Vec::new(),
+            #[cfg(feature = "gpu")]
+            target_format: None,
         }
     }
 

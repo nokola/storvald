@@ -1,5 +1,6 @@
-//! Page with two parts its own code draws, under its nodes: ruled paper
-//! (a texture) and its margin line (draw commands).
+//! Page with three parts its own code draws, under its nodes: ruled paper
+//! (a texture), its margin line (draw commands) and a stamp (GPU draw
+//! calls of the page's own).
 //! Picture: `ui/paper_page.gogo`.
 
 use turbodot::gogo::{Color_Straight_Srgb_4xU8_RGBA, Draw, Rect};
@@ -23,11 +24,30 @@ pub const MARGIN: [u8; 4] = [0xD0, 0x40, 0x40, 0xFF];
 pub const MARGIN_FROM_RIGHT_EPX: f32 = 40.0;
 /// Margin line's width, in epx.
 pub const MARGIN_WIDTH_EPX: f32 = 2.0;
+/// Stamp's color: sRGB bytes, RGBA.
+pub const STAMP: [u8; 4] = [0x20, 0x80, 0x40, 0xFF];
+
+/// Stamp's shader: one triangle over all of clip space, in one color.
+/// The viewport is on the stamp's Surface, so it fills that and no more.
+const STAMP_SHADER: &str = "
+@vertex
+fn vs_main(@builtin(vertex_index) index: u32) -> @builtin(position) vec4<f32> {
+    let corners = array<vec2<f32>, 3>(vec2<f32>(-1.0, -1.0), vec2<f32>(3.0, -1.0), vec2<f32>(-1.0, 3.0));
+    return vec4<f32>(corners[index], 0.0, 1.0);
+}
+
+@fragment
+fn fs_main() -> @location(0) vec4<f32> {
+    return vec4<f32>(0.1254902, 0.5019608, 0.2509804, 1.0);
+}
+";
 
 #[derive(Default)]
 pub struct PaperPage {
     /// Paper texture, made at page's first GPU frame.
     paper: Option<wgpu::Texture>,
+    /// Stamp's pipeline, with the format of the pass it was made for.
+    stamp: Option<(wgpu::TextureFormat, wgpu::RenderPipeline)>,
 }
 
 impl Page<AppState> for PaperPage {
@@ -48,6 +68,13 @@ impl Page<AppState> for PaperPage {
     /// draw its new strokes into its texture here.
     fn gpu_prepare(&mut self, host: &mut Host<AppState>, gpu: &Gpu) {
         host.app.paper_frames_drawn += 1;
+        // Stamp's pipeline, for the format of the pass page is drawn in:
+        // a window and a picture of the program may have two.
+        if let Some(format) = host.ui.target_format() {
+            if self.stamp.as_ref().is_none_or(|(made_for, _)| *made_for != format) {
+                self.stamp = Some((format, stamp_pipeline(&gpu.device, format)));
+            }
+        }
         if self.paper.is_some() {
             return;
         }
@@ -67,4 +94,34 @@ impl Page<AppState> for PaperPage {
         let line: Rect = Rect::new(out.width() - MARGIN_FROM_RIGHT_EPX - app.paper_margin_shift_epx, 0.0, MARGIN_WIDTH_EPX, out.height());
         out.draw(Draw::Quad { rect: line, color: Color_Straight_Srgb_4xU8_RGBA(MARGIN), corner: 0.0, border: 0.0, border_color: Color_Straight_Srgb_4xU8_RGBA::TRANSPARENT });
     }
+
+    /// Stamp: one triangle over all of clip space. The engine put the
+    /// viewport on the stamp's Surface, so the stamp moves with page and
+    /// is cut where the Surface is cut, with nothing done here for it.
+    fn draw_surface_gpu(&self, app: &AppState, surface: GpuSurface, pass: &mut wgpu::RenderPass<'_>, place: &turbodot::SurfacePlace) {
+        let _ = (app, surface);
+        let Some((made_for, pipeline)) = &self.stamp else { return };
+        if *made_for != place.target_format {
+            return;
+        }
+        pass.set_pipeline(pipeline);
+        pass.draw(0..3, 0..1);
+    }
+}
+
+/// Pipeline that draws the stamp into a pass whose color target has
+/// `format`.
+fn stamp_pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu::RenderPipeline {
+    let module: wgpu::ShaderModule = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("stamp"), source: wgpu::ShaderSource::Wgsl(STAMP_SHADER.into()) });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("stamp"),
+        layout: None,
+        vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_main"), compilation_options: Default::default(), buffers: &[] },
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        fragment: Some(wgpu::FragmentState { module: &module, entry_point: Some("fs_main"), compilation_options: Default::default(), targets: &[Some(wgpu::ColorTargetState { format, blend: None, write_mask: wgpu::ColorWrites::ALL })] }),
+        multiview_mask: None,
+        cache: None,
+    })
 }

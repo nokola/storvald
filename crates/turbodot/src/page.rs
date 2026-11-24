@@ -188,6 +188,23 @@ pub trait Page<A = ()>: Sized + 'static {
     fn draw_surface(&self, app: &A, surface: CommandSurface, out: &mut SurfaceCommands<'_>) {
         let _ = (app, surface, out);
     }
+
+    /// Makes the GPU draw calls of `surface`, a `Surface draw=gpu` of
+    /// page's file, inside the pass that draws every page: over what the
+    /// pages drew before the Surface, under what comes after it. For 3D,
+    /// for a shader of page's own.
+    ///
+    /// The viewport is on the Surface's rectangle and the scissor on the
+    /// part of it that shows (`place`), so page draws as if the Surface
+    /// were its whole screen. Page leaves the pass in any state it likes.
+    ///
+    /// Reads only: what the calls need (buffers written, textures drawn)
+    /// was made in `gpu_prepare`. Called each frame while the Surface
+    /// shows. Never called without a GPU.
+    #[cfg(feature = "gpu")]
+    fn draw_surface_gpu(&self, app: &A, surface: gogo_ui::GpuSurface, pass: &mut wgpu::RenderPass<'_>, place: &gogo_wgpu::SurfacePlace) {
+        let _ = (app, surface, pass, place);
+    }
 }
 
 /// Page cached on back, shows again same view next open.
@@ -273,6 +290,12 @@ pub trait CachedPage<A = ()>: Sized + 'static {
     fn draw_surface(&self, app: &A, surface: CommandSurface, out: &mut SurfaceCommands<'_>) {
         let _ = (app, surface, out);
     }
+
+    /// As `Page::draw_surface_gpu`.
+    #[cfg(feature = "gpu")]
+    fn draw_surface_gpu(&self, app: &A, surface: gogo_ui::GpuSurface, pass: &mut wgpu::RenderPass<'_>, place: &gogo_wgpu::SurfacePlace) {
+        let _ = (app, surface, pass, place);
+    }
 }
 
 /// Page behind one set of calls, whatever its struct.
@@ -291,6 +314,8 @@ pub(crate) trait PageObject<A> {
     #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
     fn gpu_prepare(&mut self, host: &mut Host<'_, A>, gpu: &Gpu);
     fn draw_surface(&self, app: &A, surface: CommandSurface, out: &mut SurfaceCommands<'_>);
+    #[cfg(feature = "gpu")]
+    fn draw_surface_gpu(&self, app: &A, surface: gogo_ui::GpuSurface, pass: &mut wgpu::RenderPass<'_>, place: &gogo_wgpu::SurfacePlace);
     fn show(&mut self, host: &mut Host<'_, A>);
     /// Reads page's handler names from `ui` (`HandlerTable`). Called when
     /// page is made and when a saved file replaced its strings.
@@ -386,6 +411,10 @@ impl<A: 'static, P: Page<A>> PageObject<A> for Plain<P, P::Handler> {
     fn draw_surface(&self, app: &A, surface: CommandSurface, out: &mut SurfaceCommands<'_>) {
         self.0.draw_surface(app, surface, out);
     }
+    #[cfg(feature = "gpu")]
+    fn draw_surface_gpu(&self, app: &A, surface: gogo_ui::GpuSurface, pass: &mut wgpu::RenderPass<'_>, place: &gogo_wgpu::SurfacePlace) {
+        self.0.draw_surface_gpu(app, surface, pass, place);
+    }
     fn show(&mut self, host: &mut Host<'_, A>) {
         self.0.show(host);
     }
@@ -447,6 +476,10 @@ impl<A: 'static, P: CachedPage<A>> PageObject<A> for Cached<P, P::Handler> {
     }
     fn draw_surface(&self, app: &A, surface: CommandSurface, out: &mut SurfaceCommands<'_>) {
         self.0.draw_surface(app, surface, out);
+    }
+    #[cfg(feature = "gpu")]
+    fn draw_surface_gpu(&self, app: &A, surface: gogo_ui::GpuSurface, pass: &mut wgpu::RenderPass<'_>, place: &gogo_wgpu::SurfacePlace) {
+        self.0.draw_surface_gpu(app, surface, pass, place);
     }
     fn show(&mut self, host: &mut Host<'_, A>) {
         self.0.show(host);

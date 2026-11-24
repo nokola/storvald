@@ -16,6 +16,10 @@ pub enum SurfaceDraw {
     /// `draw=commands`: code writes gogo draw commands in the Surface's
     /// own space, and gogo keeps them.
     Commands,
+    /// `draw=gpu`: code makes its own GPU draw calls, inside the pass
+    /// that draws the pages, with the viewport on the Surface's
+    /// rectangle.
+    Gpu,
 }
 
 impl SurfaceDraw {
@@ -24,6 +28,7 @@ impl SurfaceDraw {
         match self {
             SurfaceDraw::Picture => "picture",
             SurfaceDraw::Commands => "commands",
+            SurfaceDraw::Gpu => "gpu",
         }
     }
 
@@ -37,6 +42,7 @@ impl SurfaceDraw {
         match page.prop(node, PropKey::Draw)? {
             Value::VIdent(word) if page.str(word) == "picture" => Some(SurfaceDraw::Picture),
             Value::VIdent(word) if page.str(word) == "commands" => Some(SurfaceDraw::Commands),
+            Value::VIdent(word) if page.str(word) == "gpu" => Some(SurfaceDraw::Gpu),
             _ => None,
         }
     }
@@ -56,6 +62,14 @@ pub struct PictureSurface(NodeId);
 /// Surface the file fills another way.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct CommandSurface(NodeId);
+
+/// A `Surface draw=gpu` of a page, by its node.
+///
+/// Needed as a type of its own so code tells its GPU Surfaces from the
+/// ones gogo draws for it: a renderer hands code this name with the
+/// place to draw at.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct GpuSurface(NodeId);
 
 macro_rules! surface_name {
     ($name:ident, $draw:expr, $word:literal) => {
@@ -103,6 +117,7 @@ macro_rules! surface_name {
 
 surface_name!(PictureSurface, SurfaceDraw::Picture, "picture");
 surface_name!(CommandSurface, SurfaceDraw::Commands, "commands");
+surface_name!(GpuSurface, SurfaceDraw::Gpu, "gpu");
 
 /// One `Surface draw=commands` that needs its draw commands written:
 /// it shows for the first time, its size changed, or code said its

@@ -6,6 +6,8 @@ ask for another (G7015).
   as an Image draws a file (`fit=`, `window=`, `sampling=`).
 - `draw=commands` — the code writes gogo draw commands, which gogo keeps
   from frame to frame.
+- `draw=gpu` — the code makes GPU draw calls of its own, inside the pass
+  that draws the pages, in a viewport on the Surface.
 
 ```
 Surface preview 240x80, draw=picture, fit=distort

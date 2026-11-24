@@ -41,8 +41,10 @@
 //!   has a `Surface` there in its file. `Surface draw=picture` shows a
 //!   texture the page draws in `gpu_prepare`, in the pass that draws
 //!   every page, with no copy. `Surface draw=commands` shows gogo draw
-//!   commands the page writes in `draw_surface`. The engine calls
-//!   neither while another page covers the page.
+//!   commands the page writes in `draw_surface`. `Surface draw=gpu` is
+//!   where the page makes GPU draw calls of its own in that same pass
+//!   (`draw_surface_gpu`): 3D, a shader of its own. The engine calls
+//!   none of them while another page covers the page.
 //! - [`Program`] runs the pages with no window and no GPU: a touch goes in
 //!   as numbers, and what the pages show is read back. A test and an AI
 //!   agent drive a program exactly as a user would.
@@ -96,6 +98,10 @@ pub use gogo_ui as gogo;
 /// to say what its texels hold.
 #[cfg(feature = "gpu")]
 pub use gogo_wgpu::Tex_Image_Straight_Srgb_4xU8_RGBA;
+/// Where a `Surface draw=gpu` is drawn this frame: what
+/// `Page::draw_surface_gpu` gets with the pass.
+#[cfg(feature = "gpu")]
+pub use gogo_wgpu::SurfacePlace;
 /// wgpu, which a page draws its own textures with, under TurboDot's own
 /// name: client names no wgpu version.
 #[cfg(feature = "gpu")]
@@ -121,5 +127,5 @@ pub mod prelude {
     pub use crate::pages::PageUi;
     pub use crate::{Back, BuiltPage, CachedPage, Gpu, Host, Page, PageEvent, PageKind};
     pub use gogo_ui::runtime::{Item, ItemKey, ItemValue};
-    pub use gogo_ui::{Buttons, CommandSurface, EventKind, HoverPhase, Mods, NodeId, Phase, PictureSurface, PointerSample, SurfaceCommands, Tool};
+    pub use gogo_ui::{Buttons, CommandSurface, EventKind, GpuSurface, HoverPhase, Mods, NodeId, Phase, PictureSurface, PointerSample, SurfaceCommands, Tool};
 }
