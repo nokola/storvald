@@ -1373,7 +1373,9 @@ anim entrance duration_each=0.2 {              // each: wearers + stagger
   plays. A host may draw the root's `translate.x`, `translate.y` and
   `opacity` anim lanes itself (`Runtime::is_root_posed_by_host`,
   `Runtime::root_pose`): it moves the page's finished picture, and the
-  page is not drawn again on each frame of a slide.
+  page is not drawn again on each frame of a slide. The anim's value
+  replaces what was written on the root, as on any node: while an anim
+  has such a lane, the look has it at rest.
 
 ## Grid (D82 — designed 2026-07-06, built 2026-07-10)
 

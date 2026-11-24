@@ -416,12 +416,16 @@ pub struct Runtime {
     pub dirty: bool,
     /// True when host draws the root's `translate.x`, `translate.y` and
     /// `opacity` anim lanes itself: it reads them from `root_pose` and
-    /// moves and fades the page's finished picture. Those lanes then
-    /// change no node's look here.
+    /// moves and fades the page's finished picture. In the look such a
+    /// lane is at rest (in place, solid) while an anim has it.
     ///
     /// Needed for a page that slides in: with the lanes in the look,
     /// every node of the page is drawn again on each frame of the
     /// slide (7 times the frame's page time on a 2014 phone).
+    ///
+    /// An anim's value REPLACES what a file or code wrote on the root,
+    /// as an anim does on any node: host lays it over a picture drawn
+    /// with the lane at rest, never over the written value.
     ///
     /// A touch during the slide lands where the page is laid out, not
     /// where its picture is.
@@ -2098,8 +2102,10 @@ impl Runtime {
             alive
         });
         // A play that moves only lanes host draws itself changes no
-        // node's look: page is not resolved and drawn again for it.
-        let is_look_moving: bool = moving || players.iter().any(|p| !self.is_root_pose_only(&p.owns, &p.owns_props)) || finished.iter().any(|(_, owns, owns_props, _)| !self.is_root_pose_only(owns, owns_props));
+        // node's look: page is not resolved and drawn again for it. One
+        // that ends and puts its lanes back does: what was written on
+        // the root shows again.
+        let is_look_moving: bool = moving || players.iter().any(|p| !self.is_root_pose_only(&p.owns, &p.owns_props)) || finished.iter().any(|(finish, owns, owns_props, _)| *finish != Finish::Nothing || !self.is_root_pose_only(owns, owns_props));
         moving |= !players.is_empty() || !finished.is_empty();
         self.players = players;
         for (f, owns, owns_props, anim) in finished {
@@ -3738,10 +3744,26 @@ pub fn resolve(page: &Page, rt: &Runtime) -> Resolved {
 /// to their ladder look next frame).
 fn compose_anim(page: &Page, rt: &Runtime, r: &mut Resolved, touched: &mut Vec<NodeId>) {
     let mut apply = |node: NodeId, channel: Channel, v: f32| {
-        // Host draws these itself: they stay out of the look.
-        if rt.is_root_pose_lane(node, channel) {
-            return;
-        }
+        // Host draws these itself, with the anim's value
+        // (`Runtime::root_pose`). In the look the lane is at rest while
+        // an anim has it: the anim's value replaces what a file or code
+        // wrote there, and host lays it over the page's picture, so the
+        // written value must not be in that picture too. A lane written
+        // at rest, as a sliding page's root has it, is left alone: its
+        // slide changes no node's look.
+        let v: f32 = if rt.is_root_pose_lane(node, channel) {
+            let at_rest: f32 = Motion::IDENTITY.get(channel);
+            let written: f32 = match channel {
+                Channel::Opacity => r.num(page, node, PropKey::Opacity).unwrap_or(at_rest),
+                _ => r.motion[node].get(channel),
+            };
+            if written == at_rest {
+                return;
+            }
+            at_rest
+        } else {
+            v
+        };
         match channel {
             Channel::Opacity => r.overrides.push((node, Prop { key: PropKey::Opacity, value: Value::VNum(v) })),
             Channel::ColorA => r.overrides.push((node, Prop { key: PropKey::ColorA, value: Value::VNum(v) })),

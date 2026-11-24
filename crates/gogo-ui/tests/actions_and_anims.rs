@@ -215,6 +215,7 @@ fn a_host_can_draw_the_roots_slide_itself() {
     kept.frame_retained(&mut fx.rt, &fx.page, VIEW, &FixedAdvance, &mut draws, None);
     assert_eq!(gogo_ui::drawn_shift(&fx.page, kept.frame(), p), gogo_ui::DrawnShift::NONE, "the look has the root in place, solid");
     assert_eq!(kept.frame().look().motion[v.index()].translate, [0.0, 0.0]);
+    assert_eq!(kept.frame().look().anim_owned[v.index()], 0, "and says no anim has the root: its nodes are not drawn again when the slide starts");
     fx.tick(0.6);
     assert!(!fx.rt.dirty && fx.rt.root_pose() == gogo_ui::DrawnShift::NONE, "over: in place");
 
@@ -240,6 +241,61 @@ View v { Panel p width=20, height=10 }", &|_| None).page;
     plain.rt.play_id(&plain.page, slide, Finish::Nothing);
     plain.tick(0.5);
     assert!(plain.rt.dirty && plain.rt.root_pose() == gogo_ui::DrawnShift::NONE);
+}
+
+/// Root's anim that host draws replaces what was written on the root,
+/// as an anim does on any node: root that code made clear and an anim
+/// fades in ends up solid, and root written 40 to the right is drawn
+/// where its slide has it.
+///
+/// Needed because host lays the anim's value over the page's finished
+/// picture. With the written value still in that picture, a progress
+/// bar that code made clear before its fade in stayed clear for good:
+/// clear times anything is clear.
+#[test]
+fn a_roots_anim_that_host_draws_replaces_what_was_written_on_the_root() {
+    let mut fx = Fx::new("anim fadeIn { v.opacity to=1, duration=1 }\nanim fadeOut { v.opacity to=0, duration=1 }\nanim slide { v.translate.x from=60, to=0, duration=1 }\nView v translate.x=40 { Panel p width=10, height=10 }");
+    let v = fx.node("v");
+    let (fade_in, fade_out, slide) = (fx.anim("fadeIn"), fx.anim("fadeOut"), fx.anim("slide"));
+    let mut kept: KeptFrame = KeptFrame::default();
+    let mut draws: Vec<gogo_ui::Draw> = Vec::new();
+    fx.rt.is_root_posed_by_host = true;
+    fx.rt.set_prop(v, PropKey::Opacity, gogo_ui::page::Value::VNum(0.0));
+    // Where root is drawn and how solid, once host has laid its pose
+    // over the page's picture: (x shift, opacity). Page is laid out
+    // again only when the runtime asks, as a host does it.
+    let mut drawn = |fx: &mut Fx| -> (f32, f32) {
+        if fx.rt.dirty {
+            kept.frame_retained(&mut fx.rt, &fx.page, VIEW, &FixedAdvance, &mut draws, None);
+        }
+        let pose: gogo_ui::DrawnShift = fx.rt.root_pose();
+        let look = kept.frame().look();
+        (look.motion[v.index()].translate[0] + pose.offset_x, look.num(&fx.page, v, PropKey::Opacity).unwrap_or(1.0) * pose.opacity)
+    };
+    assert_eq!(drawn(&mut fx), (40.0, 0.0), "as written while no anim has the root");
+
+    fx.rt.play_id(&fx.page, fade_in, Finish::Nothing);
+    drawn(&mut fx);
+    fx.tick(0.5);
+    assert_eq!(drawn(&mut fx), (40.0, 0.5), "half way in: the anim's value, not laid over the written 0");
+    fx.tick(0.6);
+    assert_eq!(drawn(&mut fx), (40.0, 1.0), "solid: the anim's end stands");
+
+    fx.rt.play_id(&fx.page, slide, Finish::Nothing);
+    drawn(&mut fx);
+    fx.tick(0.5);
+    assert_eq!(drawn(&mut fx), (30.0, 1.0), "where the slide has it, not 40 further");
+    fx.tick(0.6);
+    assert_eq!(drawn(&mut fx), (0.0, 1.0));
+
+    // An anim that puts back what it moved when it ends (a hide hook
+    // host plays): what was written shows again.
+    fx.rt.play_id(&fx.page, fade_out, Finish::PutBack);
+    drawn(&mut fx);
+    fx.tick(0.5);
+    assert_eq!(drawn(&mut fx), (0.0, 0.5));
+    fx.tick(0.6);
+    assert_eq!(drawn(&mut fx), (0.0, 0.0), "the written 0 again, with nothing of the anim's left in the look");
 }
 
 /// What host draws in a node's rectangle follows node: `drawn_shift`
