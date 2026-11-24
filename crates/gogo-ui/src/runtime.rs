@@ -3450,6 +3450,24 @@ pub struct Resolved {
     /// ladder in no node order; they win, so a lookup reads them first.
     pub override_span: Vec<(u32, u32)>,
     pub override_tail: u32,
+    /// Per node: where the newest entry it has in the tail sits, counted
+    /// from `override_tail`; `NO_TAIL_ENTRY` when it has none.
+    ///
+    /// Needed because the tail holds every word code wrote on the page:
+    /// a list of 100 rows with two bound labels each puts 200 texts
+    /// there, and a lookup that read the whole tail first read them all
+    /// for every word of every box (0.9 ms to make that page's draw
+    /// list, against 0.08 ms for a page of 115 boxes with one written
+    /// word).
+    ///
+    /// With `tail_older` it is a chain per node, newest entry first, so
+    /// a lookup reads the node's own entries and nobody else's. Written
+    /// by `push_override` and `clear_tail` alone: an entry pushed onto
+    /// `overrides` past them is one no lookup finds.
+    tail_newest: Vec<u32>,
+    /// Per tail entry: the entry the same node pushed before it, counted
+    /// from `override_tail`; `NO_TAIL_ENTRY` for the node's first.
+    tail_older: Vec<u32>,
     pub variant: StrId,
     /// Per node: the Scroll offset (copied from the Runtime).
     pub scroll: Vec<[f32; 2]>,
@@ -3494,6 +3512,9 @@ pub struct Resolved {
     pub locale: Option<Arc<Locale>>,
 }
 
+/// In `Resolved::tail_newest` and `tail_older`: no entry.
+const NO_TAIL_ENTRY: u32 = u32::MAX;
+
 /// Written by hand so `clone_from` copies INTO a host's existing buffers
 /// (a derived `Clone` would allocate a fresh snapshot per frame, which
 /// the retained resolve exists to avoid — B36-DES stage 2).
@@ -3511,6 +3532,8 @@ impl Clone for Resolved {
         self.overrides.clone_from(&from.overrides);
         self.override_span.clone_from(&from.override_span);
         self.override_tail = from.override_tail;
+        self.tail_newest.clone_from(&from.tail_newest);
+        self.tail_older.clone_from(&from.tail_older);
         self.variant = from.variant;
         self.scroll.clone_from(&from.scroll);
         self.safe = from.safe;
@@ -3539,11 +3562,66 @@ impl Resolved {
     /// then the node's own `when` entries newest first.
     pub fn override_of(&self, node: NodeId, key: PropKey) -> Option<Value> {
         let tail = self.override_tail as usize;
-        if let Some((_, p)) = self.overrides[tail.min(self.overrides.len())..].iter().rev().find(|(n, p)| *n == node && p.key == key) {
-            return Some(p.value);
+        let mut at: u32 = self.tail_newest.get(node.index()).copied().unwrap_or(NO_TAIL_ENTRY);
+        let mut in_tail: Option<Value> = None;
+        while at != NO_TAIL_ENTRY {
+            let (_, p) = &self.overrides[tail + at as usize];
+            if p.key == key {
+                in_tail = Some(p.value);
+                break;
+            }
+            // A chain runs from a node's newest entry to its oldest.
+            let older: u32 = self.tail_older[at as usize];
+            debug_assert!(older == NO_TAIL_ENTRY || older < at, "the tail's chain of node {} goes forward: {at} to {older}", node.index());
+            at = older;
+        }
+        // The chain against the whole tail read back to front, at every
+        // lookup of a debug build: an entry pushed past `push_override`
+        // shows here, in whichever test reads it first.
+        debug_assert_eq!(in_tail, self.overrides[tail.min(self.overrides.len())..].iter().rev().find(|(n, p)| *n == node && p.key == key).map(|(_, p)| p.value), "the tail's chain of node {} disagrees with the tail for {key:?}", node.index());
+        if in_tail.is_some() {
+            return in_tail;
         }
         let (start, len) = *self.override_span.get(node.index())?;
         self.overrides[start as usize..(start + len) as usize].iter().rev().find(|(_, p)| p.key == key).map(|(_, p)| p.value)
+    }
+
+    /// Adds one entry to the tail: a code write, a tween's or an anim's
+    /// value. It wins over every entry `node` has for that key.
+    ///
+    /// The one door into the tail, so the chain a lookup follows
+    /// (`tail_newest`) always holds what the tail holds.
+    fn push_override(&mut self, node: NodeId, prop: Prop) {
+        let at: u32 = self.overrides.len() as u32 - self.override_tail;
+        if node.index() >= self.tail_newest.len() {
+            self.tail_newest.resize(node.index() + 1, NO_TAIL_ENTRY);
+        }
+        self.tail_older.push(self.tail_newest[node.index()]);
+        self.tail_newest[node.index()] = at;
+        self.overrides.push((node, prop));
+    }
+
+    /// Empties the tail and its chains; the ladder part stays.
+    ///
+    /// Only the nodes the tail names have a chain to forget, so a page
+    /// with nothing written pays nothing here.
+    fn clear_tail(&mut self) {
+        let tail = (self.override_tail as usize).min(self.overrides.len());
+        for (node, _) in &self.overrides[tail..] {
+            self.tail_newest[node.index()] = NO_TAIL_ENTRY;
+        }
+        self.overrides.truncate(tail);
+        self.tail_older.clear();
+    }
+
+    /// The chains of an empty tail, for a page of `n` nodes. Called
+    /// where the whole list was made again and the old tail went with
+    /// it: `clear_tail` cannot find its nodes there.
+    fn start_tail(&mut self, n: usize) {
+        debug_assert_eq!(self.override_tail as usize, self.overrides.len(), "the tail is empty when its chains start over");
+        self.tail_newest.clear();
+        self.tail_newest.resize(n, NO_TAIL_ENTRY);
+        self.tail_older.clear();
     }
 
     pub fn prop(&self, page: &Page, node: NodeId, key: PropKey) -> Option<Value> {
@@ -3855,10 +3933,10 @@ fn compose_anim(page: &Page, rt: &Runtime, r: &mut Resolved, touched: &mut Vec<N
             v
         };
         match channel {
-            Channel::Opacity => r.overrides.push((node, Prop { key: PropKey::Opacity, value: Value::VNum(v) })),
-            Channel::ColorA => r.overrides.push((node, Prop { key: PropKey::ColorA, value: Value::VNum(v) })),
-            Channel::RevealX => r.overrides.push((node, Prop { key: PropKey::RevealX, value: Value::VNum(v) })),
-            Channel::RevealY => r.overrides.push((node, Prop { key: PropKey::RevealY, value: Value::VNum(v) })),
+            Channel::Opacity => r.push_override(node, Prop { key: PropKey::Opacity, value: Value::VNum(v) }),
+            Channel::ColorA => r.push_override(node, Prop { key: PropKey::ColorA, value: Value::VNum(v) }),
+            Channel::RevealX => r.push_override(node, Prop { key: PropKey::RevealX, value: Value::VNum(v) }),
+            Channel::RevealY => r.push_override(node, Prop { key: PropKey::RevealY, value: Value::VNum(v) }),
             _ => r.motion[node].set(channel, v),
         }
         r.anim_owned[node] |= channel.bit();
@@ -3913,7 +3991,7 @@ fn apply_prop_lane(page: &Page, r: &mut Resolved, node: NodeId, key: PropKey, v:
         },
         v => v,
     };
-    r.overrides.push((node, Prop { key, value }));
+    r.push_override(node, Prop { key, value });
     r.anim_owned_props.push((node, key));
 }
 
@@ -3942,7 +4020,7 @@ impl Resolved {
 }
 
 fn resolve_ladder(page: &Page, rt: &Runtime) -> Resolved {
-    let mut r = Resolved { anim_owned: vec![0; page.nodes.len()], anim_owned_props: Vec::new(), placement: Vec::with_capacity(page.nodes.len()), overrides: Vec::new(), override_span: Vec::with_capacity(page.nodes.len()), override_tail: 0, variant: rt.variant, scroll: rt.scroll.clone(), safe: rt.safe, motion: vec![Motion::IDENTITY; page.nodes.len()], seat: vec![NO_NODE; page.nodes.len()], states: rt.states.clone(), raised: rt.raised.clone(), locale: rt.locale.clone(), repeat_rows: rt.pools.iter().map(|p| (p.repeat, p.live.iter().map(|s| p.slots[*s as usize]).collect())).collect(), tree: PlacedTree::default(), hiding: rt.players.iter().filter(|p| !p.stopped).filter_map(|p| match p.finish { Finish::HideWhen(n) => Some(n), _ => None }).collect(), auto: Vec::new(), presence: Vec::new(), knob: Vec::new(), caret: rt.caret, selection: rt.selection, sel_handles: rt.sel_handles };
+    let mut r = Resolved { anim_owned: vec![0; page.nodes.len()], anim_owned_props: Vec::new(), placement: Vec::with_capacity(page.nodes.len()), overrides: Vec::new(), override_span: Vec::with_capacity(page.nodes.len()), override_tail: 0, tail_newest: Vec::new(), tail_older: Vec::new(), variant: rt.variant, scroll: rt.scroll.clone(), safe: rt.safe, motion: vec![Motion::IDENTITY; page.nodes.len()], seat: vec![NO_NODE; page.nodes.len()], states: rt.states.clone(), raised: rt.raised.clone(), locale: rt.locale.clone(), repeat_rows: rt.pools.iter().map(|p| (p.repeat, p.live.iter().map(|s| p.slots[*s as usize]).collect())).collect(), tree: PlacedTree::default(), hiding: rt.players.iter().filter(|p| !p.stopped).filter_map(|p| match p.finish { Finish::HideWhen(n) => Some(n), _ => None }).collect(), auto: Vec::new(), presence: Vec::new(), knob: Vec::new(), caret: rt.caret, selection: rt.selection, sel_handles: rt.sel_handles };
     for i in 0..page.nodes.len() {
         let id = NodeId::from_index(i);
         let span_start: u32 = r.overrides.len() as u32;
@@ -3951,12 +4029,13 @@ fn resolve_ladder(page: &Page, rt: &Runtime) -> Resolved {
         r.placement.push(placement);
     }
     r.override_tail = r.overrides.len() as u32;
+    r.start_tail(page.nodes.len());
     // Code writes win over states.
     for (id, p) in &rt.writes {
         if p.key.is_placement() {
             apply_placement(&mut r.placement[*id], page, *p);
         } else {
-            r.overrides.push((*id, *p));
+            r.push_override(*id, *p);
         }
     }
     // GP33: the driver — each control's live value maps onto its
@@ -4621,7 +4700,7 @@ fn resolve_into(page: &Page, rt: &mut Runtime, r: &mut Resolved) {
     if full {
         fill_ladder_full(page, rt, r);
     } else {
-        r.overrides.truncate(r.override_tail as usize);
+        r.clear_tail();
         rt.gather_reach(r, &mut reach);
         reladder(page, rt, r, &reach);
     }
@@ -5140,6 +5219,7 @@ fn fill_ladder_full(page: &Page, rt: &mut Runtime, r: &mut Resolved) {
         ladder_seat.push(seat);
     }
     r.override_tail = r.overrides.len() as u32;
+    r.start_tail(n);
     rt.retained.ladder_placement = ladder_placement;
     rt.retained.ladder_motion = ladder_motion;
     rt.retained.ladder_seat = ladder_seat;
@@ -5239,7 +5319,7 @@ fn seat_table_moved(last: &[NodeId], now: &[NodeId]) -> bool {
 /// node's ladder look. Placement keys never come here (they apply to
 /// `Resolved::placement`).
 fn push_tail(page: &Page, r: &mut Resolved, id: NodeId, p: Prop) {
-    r.overrides.push((id, p));
+    r.push_override(id, p);
     match p.key {
         PropKey::SeatOf => r.seat[id] = seat_of(page, id, p.value),
         _ => set_motion_word(&mut r.motion[id], p.key, p.value),
