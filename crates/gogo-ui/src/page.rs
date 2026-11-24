@@ -2285,8 +2285,15 @@ impl Page {
         self.custom_states.extend(declared);
         let claims: Vec<(NodeId, u8)> = self.key_claims.iter().filter(|(n, _)| *n >= src && *n < end).map(|(n, m)| (shift(*n), *m)).collect();
         self.key_claims.extend(claims);
-        let popups: Vec<NodeId> = self.popups.iter().filter(|n| **n >= src && **n < end).map(|n| shift(*n)).collect();
-        self.popups.extend(popups);
+        // A cloned row's Popups are listed like the template's.
+        //
+        // The length check is needed so a page with no Popup pays one
+        // compare per cloned row, not a walk and an empty list: a list
+        // page clones a row per item when it opens.
+        if !self.popups.is_empty() {
+            let popups: Vec<NodeId> = self.popups.iter().filter(|n| **n >= src && **n < end).map(|n| shift(*n)).collect();
+            self.popups.extend(popups);
+        }
         let behaviors: Vec<Behavior> = self.behaviors.iter().filter(|b| b.root >= src && b.root < end).map(|b| Behavior { root: shift(b.root), slots: b.slots.map(|n| if n == NO_NODE { NO_NODE } else { shift(n) }), ..*b }).collect();
         self.behaviors.extend(behaviors);
         // A cloned control's driven slots, `$value` readers and its
@@ -2336,6 +2343,7 @@ impl Page {
     /// Needed where a Check, a Toggle or a Radio picks its look: with a
     /// body it draws the body, without one its native mark. A Popup
     /// written in it is what it opens, no part of its look.
+    #[inline]
     pub fn has_body(&self, node: NodeId) -> bool {
         let (first, count) = self.nodes[node].children;
         count > 0 && (self.popups.is_empty() || (first..first + count).any(|child| self.nodes[child as usize].kind != Kind::Popup))
