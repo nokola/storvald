@@ -1800,8 +1800,16 @@ frame and draws there:
 
 One owner per thing: gogo owns the box (where it is, how big), the host
 owns the pixels inside. To hear touches on the box, give it
-`interactive=true` and `on:pointer=<name>`: every touch phase arrives as a
-`Pointer` event with the position inside the box.
+`interactive=true` and `on:pointer=<name>`: every sample of a press
+arrives as a `Pointer` event with the place inside the box, which finger
+it is, its pressure and the buttons down. Add `on:hover=<name>` for a
+mouse that moves over the box with no button down (a brush outline
+follows it), and `on:wheel=<name>` for its wheel (a zoom at the mouse):
+
+```kdl
+Panel pad width=200, height=200, interactive=true,
+    on:pointer=drawn, on:hover=aimed, on:wheel=zoomed
+```
 
 ---
 

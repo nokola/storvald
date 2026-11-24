@@ -3,7 +3,7 @@
 use std::fmt::Write as _;
 
 use gogo_ui::runtime::{Item, ItemKey, Resolved};
-use gogo_ui::{EventList, Kind, NO_NODE, NO_STR, NodeId, Rect};
+use gogo_ui::{EventList, Kind, Mods, NO_NODE, NO_STR, NodeId, Rect};
 
 use crate::pages::{CodePicture, PageUi};
 
@@ -185,11 +185,11 @@ impl PageUi {
     /// `Scroll` or a `List` moved, or when mouse is over a node that
     /// takes input and has nothing to turn. `None`: page has nothing
     /// for the wheel there, and nothing moved.
-    pub fn wheel(&mut self, x: f32, y: f32, notches: f32) -> Option<EventList> {
+    pub fn wheel(&mut self, x: f32, y: f32, notches: f32, mods: Mods) -> Option<EventList> {
         if !self.kept.is_laid_out() || notches == 0.0 {
             return None;
         }
-        let events: EventList = self.input.wheel(&self.page, &mut self.runtime, self.kept.frame(), x, y, notches > 0.0);
+        let events: EventList = self.input.wheel(&self.page, &mut self.runtime, self.kept.frame(), x, y, notches, mods);
         if !events.is_empty() {
             return Some(events);
         }

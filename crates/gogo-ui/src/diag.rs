@@ -120,7 +120,7 @@ pub const REGISTRY: &[(&str, &str)] = &[
     ("G0070", "retired event spellings / nested `choice`"),
     ("G0071", "an asset path carries `res://`"),
     ("G0072", "`on:<event>` fires only on a press surface"),
-    ("G0073", "`on:pointer` needs `interactive=true`"),
+    ("G0073", "`on:pointer`, `on:hover` and `on:wheel` need `interactive=true`"),
     ("G0074", "a 1x1 box clips its children (warning)"),
     ("G0075", "`modulate.a` is an engine word — write `opacity`"),
     ("G0076", "a name-list head needs at least one name"),

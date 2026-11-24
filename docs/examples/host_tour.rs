@@ -83,7 +83,7 @@ impl Hosted {
 
     /// Hands one touch to the page. `t` is the time in seconds.
     pub fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> EventList {
-        self.input.touch(&self.page, &mut self.rt, self.kept.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1 })
+        self.input.touch(&self.page, &mut self.rt, self.kept.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1, ..Touch::PLAIN })
     }
 
     /// A finger down and up at the middle of `node`.

@@ -209,8 +209,8 @@ fn signals_node_change_auto_wires_under_the_instance_name() {
     let rects = f.rects();
     let slider = kids(p, find(p, "sizeSlider"))[1];
     let s = rects[slider.index()];
-    input.touch(p, &mut rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Down, x: s.x + s.w * 0.5, y: s.y + s.h * 0.5, t: 0.0, id: 1 });
-    let ev = input.touch(p, &mut rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Up, x: s.x + s.w * 0.5, y: s.y + s.h * 0.5, t: 0.1, id: 1 });
+    input.touch(p, &mut rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Down, x: s.x + s.w * 0.5, y: s.y + s.h * 0.5, t: 0.0, id: 1, ..Touch::PLAIN });
+    let ev = input.touch(p, &mut rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Up, x: s.x + s.w * 0.5, y: s.y + s.h * 0.5, t: 0.1, id: 1, ..Touch::PLAIN });
     let change = ev.iter().find(|e| matches!(e.kind, gogo_ui::EventKind::Change(_))).unwrap_or_else(|| panic!("{ev:?}"));
     let routable = change.action.is_some() || p.str(p.nodes[change.node.index()].name) == "sizeSlider";
     assert!(routable, "the change must reach a handler named after the instance: {change:?}, node name {:?}", p.str(p.nodes[change.node.index()].name));

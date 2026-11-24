@@ -120,5 +120,5 @@ pub mod prelude {
     pub use crate::pages::PageUi;
     pub use crate::{Back, BuiltPage, CachedPage, Gpu, Host, Layers, Page, PageEvent, PageKind};
     pub use gogo_ui::runtime::{Item, ItemKey, ItemValue};
-    pub use gogo_ui::{EventKind, NodeId};
+    pub use gogo_ui::{Buttons, EventKind, HoverPhase, Mods, NodeId, Phase, PointerSample, Tool};
 }

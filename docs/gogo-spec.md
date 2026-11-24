@@ -396,7 +396,8 @@ These are ordinary nodes to the parser; the resolver gives them meaning:
 - **`uses "path.gogo"`** — import (relative to the current file).
 - **`on:<event>=HandlerName`** — wiring property. The events are a closed
   set of bare stems (D181): `activate`, `press`, `release`, `change`,
-  `edit`, `show`, `hide`, `uncover`, `pointer` (see Input vocabulary); any
+  `edit`, `show`, `hide`, `uncover`, `pointer`, `hover`, `wheel` (see Input
+  vocabulary); any
   other word after `on:` is refused (G0049). Also takes `play(animName)`,
   `go(name)`, `toggle(name)`, `emit(Name)`; `on:show`/`on:hide` are the
   visibility pair and `on:uncover` is the hook a host plays, and the
@@ -1135,7 +1136,9 @@ pair already conformed):
 | `press` / `release` | the finger landed on a press surface, and that gesture ended — `release` fires exactly once however it ends (lift inside or out, cancel, a Scroll steal, disable/hide under the finger). A Slider brackets its drag with the same pair: `press` on down, `release` on up or cancel, one each. `activate` stays a press surface's completed tap; a Slider never fires it | — |
 | `show` / `hide` | visibility choreography (unchanged) | — |
 | `uncover` | the host says the page shows again after the page that covered it left (`Runtime::play_uncovers`); takes `play(anim)` | — |
-| `pointer` | every touch phase on a box the host draws itself (the node needs `interactive=true`, G0073) | the phase and the position inside the box, epx |
+| `pointer` | a press on a box the program's code handles itself, every sample from landing to lift (the node needs `interactive=true`, G0073). The pointer stays with the box until it lifts, wherever it moves | the sample: its phase, the place inside the box (epx), the move since the last sample, the finger's id, the tool (finger, mouse, pen, eraser), the buttons down, the pressure, a pen's lean, the time, the keys held |
+| `hover` | a pointer over such a box with nothing pressed (a mouse with no button down, a pen above the screen), and once more when it is gone from the box. Needs `interactive=true` (G0073) | the same sample, and whether the pointer is over the box or left it (`Over`, `Left`) |
+| `wheel` | the mouse wheel turned over such a box. Needs `interactive=true` (G0073). The box takes the turn before a Scroll around it | the place inside the box, the notches (above 0: away from the user), the keys held |
 
 Per control: **Slider** brackets its drag with `press`/`release`
 (exactly one each, cancel included), streams `edit` while dragging
@@ -1151,6 +1154,20 @@ zero changes. **choice**: `change` lives on the GROUP (the value is the
 picked Radio's name; items refuse `on:change`). **List**:
 `change` on the List, then `activate` on the row; under `select=off`
 there is no selection to change, activation still fires.
+
+**Several pointers at once.** Each finger has its own press: a finger
+drags a Slider while another taps a Button. A node holds one finger at a
+time: a second finger on a node that is held does nothing, from its
+landing to its lift. A Scroll or a List that a finger pans is held by
+that finger: another finger presses the row under it, and cannot take the
+Scroll. Keyboard focus and the text caret stay single.
+
+**A mouse is one pointer with a set of buttons** (`primary`, `secondary`,
+`middle`). Its press starts when its first button goes down and ends when
+its last one lifts; a button that changes in between arrives as a move
+with another set. Controls react to the primary button alone. A box with
+`on:pointer=` hears a press of any button, and reads which are down from
+the sample.
 
 **The set is closed.** Any word after `on:` that is not one of the events
 above is refused (G0049), with the list; a few old spellings are answered

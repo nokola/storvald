@@ -50,8 +50,8 @@ impl Fx {
         // double-click window would word-select in a field.
         self.now += 1.0;
         let t = self.now;
-        let mut ev = self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Down, x, y, t, id: 1 });
-        ev.extend(self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Up, x, y, t: t + 0.1, id: 1 }));
+        let mut ev = self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Down, x, y, t, id: 1, ..Touch::PLAIN });
+        ev.extend(self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Up, x, y, t: t + 0.1, id: 1, ..Touch::PLAIN }));
         ev
     }
     fn id(&self, name: &str) -> NodeId {
@@ -309,12 +309,12 @@ fn a_wheel_tick_steps_the_control_under_the_pointer() {
     let f = KeptFrame::fresh(&fx.page, resolve(&fx.page, &fx.rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
     let rects = f.rects();
     let r = rects[(fx.id("s")).index()];
-    let ev = fx.input.wheel(&fx.page, &mut fx.rt, f.frame(), r.x + r.w / 2.0, r.y + r.h / 2.0, true);
+    let ev = fx.input.wheel(&fx.page, &mut fx.rt, f.frame(), r.x + r.w / 2.0, r.y + r.h / 2.0, 1.0, gogo_ui::Mods::NONE);
     assert_eq!(fx.value("s"), 40.0, "up increments");
     assert!(ev.iter().any(|e| matches!(e.kind, EventKind::Change(_))), "{ev:#?}");
     assert_eq!(fx.input.focused(), Some(fx.id("s")), "the wheel takes focus");
     assert_eq!(fx.ring(), None, "parked — a wheel is pointer driving");
-    let away = fx.input.wheel(&fx.page, &mut fx.rt, f.frame(), 350.0, 700.0, true);
+    let away = fx.input.wheel(&fx.page, &mut fx.rt, f.frame(), 350.0, 700.0, 1.0, gogo_ui::Mods::NONE);
     assert!(away.is_empty(), "nothing steppable there");
 }
 
@@ -399,13 +399,13 @@ fn a_mouse_press_captures_hover() {
     let f = KeptFrame::fresh(&fx.page, resolve(&fx.page, &fx.rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
     let rects = f.rects();
     let r = rects[(fx.id("a")).index()];
-    fx.input.touch(&fx.page, &mut fx.rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Down, x: r.x + r.w / 2.0, y: r.y + r.h / 2.0, t: 0.0, id: 1 });
+    fx.input.touch(&fx.page, &mut fx.rt, f.frame(), &FixedAdvance, Touch::mouse(Phase::Down, r.x + r.w / 2.0, r.y + r.h / 2.0, 0.0, gogo_ui::Buttons::PRIMARY));
     fx.hover_xy(350.0, 700.0);
     assert!(fx.rt.has(fx.id("a"), HOVERED), "the press holds the hovered look off-box");
     let rs = rects[(fx.id("s")).index()];
     fx.hover_xy(rs.x + rs.w / 2.0, rs.y + rs.h / 2.0);
     assert!(!fx.rt.has(fx.id("s"), HOVERED), "nothing new hovers mid-press");
-    fx.input.touch(&fx.page, &mut fx.rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Up, x: 350.0, y: 700.0, t: 0.2, id: 1 });
+    fx.input.touch(&fx.page, &mut fx.rt, f.frame(), &FixedAdvance, Touch::mouse(Phase::Up, 350.0, 700.0, 0.2, gogo_ui::Buttons::NONE));
     assert!(!fx.rt.has(fx.id("a"), HOVERED), "released elsewhere: hover clears");
 }
 

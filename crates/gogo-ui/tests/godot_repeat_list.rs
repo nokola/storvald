@@ -124,7 +124,7 @@ impl Fx {
     }
     fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> EventList {
         let f = KeptFrame::fresh(&self.page, resolve(&self.page, &self.rt), FRAME, &FixedAdvance);
-        self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1 })
+        self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1, ..Touch::PLAIN })
     }
     /// A tap at the middle of `node` (Godot's `_conf_press(at, true/false)`).
     fn tap(&mut self, node: NodeId, t: f64) -> EventList {

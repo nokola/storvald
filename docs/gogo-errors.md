@@ -308,7 +308,8 @@ A gap is a stack's spacer; in free parents position the box instead.
 
 `on:pressed=`, `on:value_changed=` and other engine signal names are
 not events. The events are `activate`, `press`, `release`, `change`,
-`edit`, `show`, `hide`, `pointer`; the message maps the old name.
+`edit`, `show`, `hide`, `pointer`, `hover`, `wheel`; the message maps the
+old name.
 
 ## G0050 — action call form
 
@@ -498,9 +499,10 @@ ListItem. A List takes `on:activate` only (for the rows it owns); a
 Slider takes `on:press`/`on:release` (they bracket its drag) but not
 `on:activate`. `change` on a Radio belongs on the `choice` line.
 `on:pointer` goes on a passive box — on a control it would fight the
-control's own gestures.
+control's own gestures. So do `on:hover` and `on:wheel`: a control has its
+own answer to the mouse.
 
-## G0073 — `on:pointer` needs `interactive=true`
+## G0073 — `on:pointer`, `on:hover` and `on:wheel` need `interactive=true`
 
 Passive boxes are transparent to input, always; the wire alone claims
 nothing. Declare the surface: `interactive=true`.

@@ -661,8 +661,8 @@ fn reveal_pose_tweens_the_layout_space() {
     let r = f.rects();
     let b = r[more.index()];
     let mut input = Input::new();
-    input.touch(&page, &mut rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Down, x: b.x + 5.0, y: b.y + 5.0, t: 1.0, id: 1 });
-    let ev = input.touch(&page, &mut rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Up, x: b.x + 5.0, y: b.y + 5.0, t: 1.1, id: 1 });
+    input.touch(&page, &mut rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Down, x: b.x + 5.0, y: b.y + 5.0, t: 1.0, id: 1, ..Touch::PLAIN });
+    let ev = input.touch(&page, &mut rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Up, x: b.x + 5.0, y: b.y + 5.0, t: 1.1, id: 1, ..Touch::PLAIN });
     assert!(ev.iter().any(|e| e.kind == EventKind::Activate), "{ev:?}");
     assert_eq!(rt.arrangement, gogo_ui::ArrangementId::new(0), "reveal.toggle-opens");
     // A gone child earns nothing.

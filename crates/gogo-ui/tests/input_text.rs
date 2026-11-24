@@ -35,15 +35,15 @@ impl Fx {
         let rects = f.rects();
         let r = rects[id.index()];
         let (x, y) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
-        let mut ev = self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Down, x, y, t: t0, id: 1 });
-        ev.extend(self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Up, x, y, t: t0 + 0.1, id: 1 }));
+        let mut ev = self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Down, x, y, t: t0, id: 1, ..Touch::PLAIN });
+        ev.extend(self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Up, x, y, t: t0 + 0.1, id: 1, ..Touch::PLAIN }));
         ev
     }
     /// One raw pointer sample — `id` picks the pointer (`MOUSE_ID` = the
     /// mouse; anything else is a finger).
     fn point(&mut self, phase: Phase, x: f32, y: f32, t: f64, id: u64) -> EventList {
         let f = KeptFrame::fresh(&self.page, resolve(&self.page, &self.rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
-        self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase, x, y, t, id })
+        self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase, x, y, t, id, ..Touch::PLAIN })
     }
     /// Advances the input clock (the long-press door matures here).
     fn tick(&mut self, dt: f32) {
@@ -128,8 +128,8 @@ fn placeholder_shows_while_empty_and_max_length_caps_typing() {
         let rects = f.rects();
         let r = rects[field.index()];
         let (x, y) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
-        input.touch(&page, &mut rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Down, x, y, t: 0.0, id: 1 });
-        input.touch(&page, &mut rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Up, x, y, t: 0.1, id: 1 });
+        input.touch(&page, &mut rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Down, x, y, t: 0.0, id: 1, ..Touch::PLAIN });
+        input.touch(&page, &mut rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Up, x, y, t: 0.1, id: 1, ..Touch::PLAIN });
     }
     for ch in ['a', 'b', 'c', 'd'] {
         let f = KeptFrame::fresh(&page, resolve(&page, &rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
@@ -347,8 +347,8 @@ fn paste_replaces_the_selection_and_max_length_caps_the_result() {
     let f = KeptFrame::fresh(&page, resolve(&page, &rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
     let rects = f.rects();
     let r = rects[field.index()];
-    input.touch(&page, &mut rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Down, x: r.x + 5.0, y: r.y + 5.0, t: 0.0, id: 1 });
-    input.touch(&page, &mut rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Up, x: r.x + 5.0, y: r.y + 5.0, t: 0.1, id: 1 });
+    input.touch(&page, &mut rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Down, x: r.x + 5.0, y: r.y + 5.0, t: 0.0, id: 1, ..Touch::PLAIN });
+    input.touch(&page, &mut rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Up, x: r.x + 5.0, y: r.y + 5.0, t: 0.1, id: 1, ..Touch::PLAIN });
     let ev = input.paste(&mut page, &mut rt, "hello world");
     assert_eq!(ev.iter().filter(|e| matches!(e.kind, EventKind::Edit(_))).count(), 1, "{ev:?}");
     let text = |page: &Page, rt: &Runtime| match resolve(page, rt).prop(page, field, gogo_ui::page::PropKey::Text) {
@@ -474,6 +474,32 @@ fn a_handle_drag_moves_its_end() {
     fx.point(Phase::Up, at_char(0), hy, 41.3, 7);
     assert_eq!(fx.rt.edit_bar, Some(field), "adjusting is not dismissing");
     assert!(fx.rt.sel_handles, "the handles stand after the lift");
+}
+
+/// A second finger that lands on the field while a finger drags a handle
+/// does nothing: the field is held. Its landing dismisses no edit bar and
+/// its lift does not end the handle drag.
+#[test]
+fn a_second_finger_on_the_field_leaves_a_handle_drag_alone() {
+    let mut fx = Fx::new();
+    let field = fx.page.find("field").unwrap();
+    fx.tap("field", 0.0);
+    for c in "hello world".chars() {
+        fx.key(Key::Char(c));
+    }
+    fx.point(Phase::Down, at_char(2), 18.0, 40.0, 7);
+    fx.tick(0.6);
+    fx.point(Phase::Up, at_char(2), 18.0, 40.7, 7);
+    let f = KeptFrame::fresh(&fx.page, resolve(&fx.page, &fx.rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
+    let fr = f.rects()[field.index()];
+    let hr = sel_handle_rect(fr.y + fr.h, 8.0 + adv() * 5.0, SEL_HANDLE_EPX);
+    let (hx, hy) = (hr.x + hr.w / 2.0, hr.y + hr.h / 2.0);
+    fx.point(Phase::Down, hx, hy, 41.0, 7);
+    assert!(fx.point(Phase::Down, at_char(3), 18.0, 41.05, 8).is_empty());
+    assert_eq!(fx.rt.edit_bar, Some(field), "a finger that does nothing dismisses no edit bar");
+    assert!(fx.point(Phase::Up, at_char(3), 18.0, 41.08, 8).is_empty());
+    fx.point(Phase::Move, at_char(8), hy, 41.1, 7);
+    assert_eq!(fx.rt.selection, Some((field, 0, 8)), "the handle still follows the first finger");
 }
 
 /// A mouse drag-select shows NO handles (the mouse has drag-select and

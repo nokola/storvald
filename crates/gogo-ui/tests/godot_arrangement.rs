@@ -87,9 +87,9 @@ fn tap(page: &Page, rt: &mut Runtime, input: &mut Input, node: NodeId, t: f64) {
     let rects = f.rects();
     let r = rects[node.index()];
     let (x, y) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
-    input.touch(page, rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Down, x, y, t, id: 1 });
+    input.touch(page, rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Down, x, y, t, id: 1, ..Touch::PLAIN });
     let f = lay(page, rt);
-    input.touch(page, rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Up, x, y, t: t + 0.1, id: 1 });
+    input.touch(page, rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Up, x, y, t: t + 0.1, id: 1, ..Touch::PLAIN });
 }
 
 fn set_class(page: &Page, rt: &mut Runtime, class: ScreenClass) {

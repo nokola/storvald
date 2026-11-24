@@ -175,7 +175,7 @@ impl App {
             self.ui.input.hover(&self.ui.page, &mut self.ui.runtime, self.ui.kept.frame(), x, y);
             EventList::new()
         } else {
-            let touch = Touch { phase, x, y, t: self.started.elapsed().as_secs_f64(), id: MOUSE_ID };
+            let touch = Touch { phase, x, y, t: self.started.elapsed().as_secs_f64(), id: MOUSE_ID, ..Touch::PLAIN };
             self.ui.input.touch(&self.ui.page, &mut self.ui.runtime, self.ui.kept.frame(), &measure, touch)
         };
         self.ui.handle(&events);
@@ -352,7 +352,7 @@ mod tests {
         let r: Rect = ui.kept.rects()[button.index()];
         let (x, y) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
         for (phase, t) in [(Phase::Down, 0.0), (Phase::Up, 0.05)] {
-            let events: EventList = ui.input.touch(&ui.page, &mut ui.runtime, ui.kept.frame(), &measure, Touch { phase, x, y, t, id: MOUSE_ID });
+            let events: EventList = ui.input.touch(&ui.page, &mut ui.runtime, ui.kept.frame(), &measure, Touch { phase, x, y, t, id: MOUSE_ID, ..Touch::PLAIN });
             ui.handle(&events);
         }
         assert_eq!(ui.taps, 1);

@@ -77,8 +77,8 @@ impl Fx {
         let rects = f.rects();
         let r = rects[n.index()];
         let (x, y) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
-        self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Down, x, y, t, id: 1 });
-        self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Up, x, y, t: t + 0.1, id: 1 })
+        self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Down, x, y, t, id: 1, ..Touch::PLAIN });
+        self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Up, x, y, t: t + 0.1, id: 1, ..Touch::PLAIN })
     }
     fn draws(&self) -> Vec<Draw> {
         let f = self.lay();

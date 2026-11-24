@@ -72,7 +72,7 @@ impl Fx {
 
     fn touch(&mut self, phase: Phase, x: f32, y: f32) -> EventList {
         self.now += 0.01;
-        self.input.touch(&self.page, &mut self.rt, self.kept.frame(), &FixedAdvance, Touch { phase, x, y, t: self.now, id: 1 })
+        self.input.touch(&self.page, &mut self.rt, self.kept.frame(), &FixedAdvance, Touch { phase, x, y, t: self.now, id: 1, ..Touch::PLAIN })
     }
 
     /// A tap in the middle of `name`, a second after the touch before it

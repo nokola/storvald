@@ -249,8 +249,8 @@ impl Field {
         let f = KeptFrame::fresh(&page, resolve(&page, &rt), VIEW, &FixedAdvance);
         let r = f.rects()[field.index()];
         let (x, y) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
-        input.touch(&page, &mut rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Down, x, y, t: 0.0, id: 1 });
-        input.touch(&page, &mut rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Up, x, y, t: 0.1, id: 1 });
+        input.touch(&page, &mut rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Down, x, y, t: 0.0, id: 1, ..Touch::PLAIN });
+        input.touch(&page, &mut rt, f.frame(), &FixedAdvance, Touch { phase: Phase::Up, x, y, t: 0.1, id: 1, ..Touch::PLAIN });
         Field { page, rt, input, field }
     }
 

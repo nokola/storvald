@@ -73,16 +73,169 @@ pub enum Phase {
     Cancel,
 }
 
+/// What `on:hover=` tells its box.
+///
+/// Needed as a type of its own so a handler of `on:pointer=` matches a
+/// press's four phases and no other: a press never hovers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HoverPhase {
+    /// Pointer is over the box with nothing pressed: mouse with no button
+    /// down, pen above screen.
+    Over,
+    /// Pointer that was over the box is gone from it: over another box,
+    /// off the page, off the window.
+    Left,
+}
+
+/// What touches the screen.
+///
+/// Needed so a program tells a pen from a palm. Platform says which;
+/// gogo never guesses it from pressure.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Tool {
+    #[default]
+    Finger,
+    Mouse,
+    Pen,
+    /// Other end of a pen.
+    Eraser,
+}
+
+/// Buttons down at one sample: any of `PRIMARY`, `SECONDARY`, `MIDDLE`.
+///
+/// Needed because a mouse is ONE pointer with several buttons: a pan
+/// while middle button is down is a move whose `buttons` has `MIDDLE`.
+///
+/// Finger: always `PRIMARY`. Mouse: left, right, middle. Pen: tip,
+/// first side button, second side button.
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub struct Buttons(u8);
+
+impl Buttons {
+    pub const NONE: Buttons = Buttons(0);
+    pub const PRIMARY: Buttons = Buttons(1);
+    pub const SECONDARY: Buttons = Buttons(2);
+    pub const MIDDLE: Buttons = Buttons(4);
+
+    /// True when every button of `buttons` is down, and `buttons` names
+    /// at least one.
+    pub const fn has(self, buttons: Buttons) -> bool {
+        buttons.0 != 0 && self.0 & buttons.0 == buttons.0
+    }
+
+    /// True when no button is down.
+    pub const fn is_none(self) -> bool {
+        self.0 == 0
+    }
+
+    /// These buttons and `buttons`.
+    pub const fn with(self, buttons: Buttons) -> Buttons {
+        Buttons(self.0 | buttons.0)
+    }
+
+    /// These buttons less `buttons`.
+    pub const fn without(self, buttons: Buttons) -> Buttons {
+        Buttons(self.0 & !buttons.0)
+    }
+}
+
+impl std::fmt::Debug for Buttons {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut list = f.debug_set();
+        for (button, name) in [(Buttons::PRIMARY, "primary"), (Buttons::SECONDARY, "secondary"), (Buttons::MIDDLE, "middle")] {
+            if self.has(button) {
+                list.entry(&format_args!("{name}"));
+            }
+        }
+        list.finish()
+    }
+}
+
+/// One sample of one pointer, as a host hands it to `Input::touch`:
+/// place in page's space.
+///
+/// A mouse is one pointer (`MOUSE_ID`). Host sends `Down` when its first
+/// button goes down and `Up` when its last one lifts; a button that
+/// changes in between is a `Move` with another `buttons`. `Down` for a
+/// pointer that already presses is read as such a `Move`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Touch {
     pub phase: Phase,
     pub x: f32,
     pub y: f32,
-    /// Seconds, any monotonic origin.
+    /// Seconds, any monotonic origin. Time platform took the sample.
     pub t: f64,
     /// The finger (the platform's touch id; a mouse is one fixed id —
     /// `MOUSE_ID`).
     pub id: u64,
+    pub tool: Tool,
+    /// Buttons down at this sample.
+    pub buttons: Buttons,
+    /// Platform's number, unchanged. 1 when device measures none.
+    pub pressure: f32,
+    /// Pen's lean from upright, degrees: 0 upright, 90 flat on screen.
+    /// 0 when device measures none.
+    pub tilt: f32,
+    /// Direction pen's upper end leans to, degrees: 0 up on screen,
+    /// clockwise, as `rotate=` counts.
+    pub tilt_toward: f32,
+    /// Keys held at this sample.
+    pub mods: Mods,
+}
+
+impl Touch {
+    /// What a plain touch screen reports beyond place and time: a finger,
+    /// pressure 1, upright, no key held. Base for a literal:
+    /// `Touch { phase, x, y, t, id, ..Touch::PLAIN }`.
+    pub const PLAIN: Touch = Touch { phase: Phase::Cancel, x: 0.0, y: 0.0, t: 0.0, id: 0, tool: Tool::Finger, buttons: Buttons::PRIMARY, pressure: 1.0, tilt: 0.0, tilt_toward: 0.0, mods: Mods::NONE };
+
+    /// Sample of the mouse with `buttons` down.
+    pub const fn mouse(phase: Phase, x: f32, y: f32, t: f64, buttons: Buttons) -> Touch {
+        Touch { phase, x, y, t, id: MOUSE_ID, tool: Tool::Mouse, buttons, ..Touch::PLAIN }
+    }
+}
+
+/// One sample of one pointer, as a box gets it from `on:pointer=` (beside
+/// its `Phase`) and `on:hover=` (beside its `HoverPhase`): place in box's
+/// own space.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PointerSample {
+    /// Place in box's own space, epx: (0, 0) is its top left corner.
+    pub x: f32,
+    pub y: f32,
+    /// Move since this pointer's last sample, epx. 0 at `Down`.
+    pub dx: f32,
+    pub dy: f32,
+    /// Platform's id: same from a finger's landing to its lift.
+    /// `MOUSE_ID` for the mouse.
+    pub finger: u64,
+    pub tool: Tool,
+    pub buttons: Buttons,
+    /// As `Touch::pressure`.
+    pub pressure: f32,
+    /// As `Touch::tilt`.
+    pub tilt: f32,
+    /// As `Touch::tilt_toward`.
+    pub tilt_toward: f32,
+    /// Seconds: when platform took the sample, not when page got it.
+    pub time: f64,
+    pub mods: Mods,
+}
+
+impl PointerSample {
+    /// A finger's sample at (`x`, `y`) of a box that says nothing else:
+    /// primary button, pressure 1, upright, time 0, no key held.
+    ///
+    /// Needed by a test that hands a page a pointer event it made by
+    /// hand.
+    pub const fn at(x: f32, y: f32) -> PointerSample {
+        PointerSample { x, y, dx: 0.0, dy: 0.0, finger: 0, tool: Tool::Finger, buttons: Buttons::PRIMARY, pressure: 1.0, tilt: 0.0, tilt_toward: 0.0, time: 0.0, mods: Mods::NONE }
+    }
+
+    /// `t` as box `r` sees it, `(dx, dy)` since pointer's last sample.
+    fn of(t: &Touch, r: Rect, dx: f32, dy: f32) -> PointerSample {
+        PointerSample { x: t.x - r.x, y: t.y - r.y, dx, dy, finger: t.id, tool: t.tool, buttons: t.buttons, pressure: t.pressure, tilt: t.tilt, tilt_toward: t.tilt_toward, time: t.t, mods: t.mods }
+    }
 }
 
 /// The mouse's `Touch.id`: touch ids are the platform's, the one mouse
@@ -97,12 +250,14 @@ pub const MOUSE_ID: u64 = u64::MAX;
 pub struct Mods {
     pub shift: bool,
     pub ctrl: bool,
+    pub alt: bool,
 }
 
 impl Mods {
-    pub const NONE: Mods = Mods { shift: false, ctrl: false };
-    pub const SHIFT: Mods = Mods { shift: true, ctrl: false };
-    pub const CTRL: Mods = Mods { shift: false, ctrl: true };
+    pub const NONE: Mods = Mods { shift: false, ctrl: false, alt: false };
+    pub const SHIFT: Mods = Mods { shift: true, ctrl: false, alt: false };
+    pub const CTRL: Mods = Mods { shift: false, ctrl: true, alt: false };
+    pub const ALT: Mods = Mods { shift: false, ctrl: false, alt: true };
 }
 
 /// Seconds two presses may sit apart and still read as a double click
@@ -158,10 +313,16 @@ pub enum EventKind {
     Activate,
     Change(Value),
     Edit(Value),
-    /// The raw pointer on an `on:pointer=` node: every phase, the position
-    /// in the node's own epx space (0,0 = its top-left), captured until up.
-    /// A mouse is one pointer — the shell feeds it as one fixed finger.
-    Pointer { phase: Phase, x: f32, y: f32 },
+    /// A press on an `on:pointer=` node, every sample from landing to
+    /// lift: pointer stays with the node until it lifts, wherever it
+    /// moves.
+    Pointer(Phase, PointerSample),
+    /// Pointer over an `on:hover=` node with nothing pressed (`Over`),
+    /// and once more when it is gone from the node (`Left`).
+    Hover(HoverPhase, PointerSample),
+    /// Mouse wheel turned over an `on:wheel=` node. Place in node's own
+    /// space, epx. `notches` above 0: away from user.
+    Wheel { x: f32, y: f32, notches: f32, mods: Mods },
     /// A key a focused `control` instance claimed (GP26 `keys` line):
     /// the code-behind steps its model — traversal never saw the key.
     Key { key: Key, mods: Mods },
@@ -317,7 +478,7 @@ impl Event {
     /// under its slop target — and every one of them re-did the same
     /// subtraction over `rects` by hand.
     pub fn pointer_in(&self, rects: &[Rect], node: NodeId) -> Option<(Phase, f32, f32)> {
-        let EventKind::Pointer { phase, x, y } = self.kind else { return None };
+        let EventKind::Pointer(phase, PointerSample { x, y, .. }) = self.kind else { return None };
         let from = rects[self.node];
         let to = rects[node];
         Some((phase, from.x - to.x + x, from.y - to.y + y))
@@ -410,6 +571,58 @@ struct Fling {
     v: [f32; 2],
     /// The unclamped position; its excess past the range is the overscroll.
     accum: [f32; 2],
+    /// Offset this machine last wrote for `scroll`. Another value there
+    /// means code moved the scroll: glide stands down.
+    shown: [f32; 2],
+}
+
+/// Presses, or glides, alive at once: one kept inline, others in a list.
+///
+/// Needed because nearly every page has one finger down and one list
+/// gliding at most. A plain `Vec` allocates for its first item, once per
+/// page; `first` holds that item with no allocation.
+#[derive(Debug)]
+struct Held<T> {
+    first: Option<T>,
+    more: Vec<T>,
+}
+
+impl<T> Default for Held<T> {
+    fn default() -> Held<T> {
+        Held { first: None, more: Vec::new() }
+    }
+}
+
+impl<T: Copy> Held<T> {
+    fn is_empty(&self) -> bool {
+        self.first.is_none() && self.more.is_empty()
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &T> {
+        self.first.iter().chain(self.more.iter())
+    }
+
+    fn put(&mut self, item: T) {
+        if self.first.is_none() {
+            self.first = Some(item);
+        } else {
+            self.more.push(item);
+        }
+    }
+
+    /// Takes out the first item `is_it` accepts.
+    fn take(&mut self, is_it: impl Fn(&T) -> bool) -> Option<T> {
+        if self.first.as_ref().is_some_and(&is_it) {
+            return self.first.take();
+        }
+        let at: usize = self.more.iter().position(is_it)?;
+        Some(self.more.swap_remove(at))
+    }
+
+    /// Takes out any item; `None` when empty.
+    fn take_any(&mut self) -> Option<T> {
+        self.first.take().or_else(|| self.more.pop())
+    }
 }
 
 /// One keyboard event, in gogo's vocabulary — the shell maps the OS
@@ -517,11 +730,11 @@ fn text_value(page: &Page, rt: &Runtime, node: NodeId) -> Value {
 pub struct Input {
     /// The input behaviors (GP53): gogo's own, then the host's.
     registry: Registry,
-    press: Option<Press>,
-    fling: Option<Fling>,
-    /// The offset this machine last wrote for `fling.scroll`: a different
-    /// value means code moved the scroll — adopt it and stand down.
-    expected: Option<(NodeId, [f32; 2])>,
+    /// One press per pointer that is down (`Press::id`). A node holds one
+    /// pointer at a time: second finger on a held node gets no press.
+    presses: Held<Press>,
+    /// One glide per Scroll that glides.
+    flings: Held<Fling>,
     /// The keyboard focus owner — any reachable box (GP26); keystrokes
     /// edit it when it's an Input, and a tap off every reachable box is
     /// the focus-loss commit door (GPAR112).
@@ -534,6 +747,11 @@ pub struct Input {
     /// chain holds the HOVERED bit). None on touch devices — only the
     /// shell's mouse motion sets it.
     hover: Option<NodeId>,
+    /// `on:hover=` action of `hover`, read once when `hover` changes: a
+    /// mouse move over a box without the word looks up nothing.
+    hover_action: Option<Action>,
+    /// Where pointer was at its last hover sample, page's space.
+    hover_last: (f32, f32),
     /// The caret, in CHARS into the field's text.
     caret: usize,
     /// The selection's FIXED end, in chars — `None` = nothing selected.
@@ -1215,8 +1433,20 @@ impl Input {
         Input::default()
     }
 
+    /// True while any pointer presses on this page.
     pub fn is_pressed(&self) -> bool {
-        self.press.is_some()
+        !self.presses.is_empty()
+    }
+
+    /// True when a pointer already holds `node`: presses on it, or pans
+    /// it (a Scroll or a List a finger pans is held by that finger).
+    ///
+    /// Needed for the one-pointer-per-node rule: second finger on a held
+    /// node gets no press, and no finger takes a Scroll another one pans.
+    /// Press of the pointer being handled is taken out of `presses` for
+    /// the call, so it never counts against itself.
+    fn is_held(&self, node: NodeId) -> bool {
+        self.presses.iter().any(|p| p.node == node || (p.panning && p.scroll == Some(node)))
     }
 
     /// Adds a host behavior (GP53): a `behavior <name>` line whose name
@@ -1265,7 +1495,7 @@ impl Input {
 
     /// Is a Scroll gliding or springing back?
     pub fn is_gliding(&self) -> bool {
-        self.fling.is_some()
+        !self.flings.is_empty()
     }
 
     /// Hands an event to the host, after carrying out the action its
@@ -1342,7 +1572,8 @@ impl Input {
     pub fn cancel_press(&mut self, page: &Page, rt: &mut Runtime) -> EventList {
         let mut events: EventList = EventList::new();
         self.drag_handle = None;
-        if let Some(mut p) = self.press.take() {
+        // Every pointer's press: page's rects are gone for all of them.
+        while let Some(mut p) = self.presses.take_any() {
             self.release(page, rt, &mut events, &mut p);
             self.restore_press(page, rt, &mut events, &p);
         }
@@ -1358,11 +1589,10 @@ impl Input {
     /// the page that took its Down delivers the Up to the swapped-out
     /// page. Nothing is reported (the finger is not on this page).
     pub fn reset(&mut self, page: &Page, rt: &mut Runtime) {
-        if let Some(p) = self.press.take() {
+        while let Some(p) = self.presses.take_any() {
             rt.set_state(p.node, HELD, false);
         }
-        self.fling = None;
-        self.expected = None;
+        while self.flings.take_any().is_some() {}
         // Focus is forgotten WITHOUT a commit: the page left the screen,
         // reporting now would land on nobody.
         if let Some(f) = self.focus.take() {
@@ -1372,6 +1602,7 @@ impl Input {
         if let Some(h) = self.hover.take() {
             set_chain(page, rt, h, HOVERED, false);
         }
+        self.hover_action = None;
         self.focus_visible = false;
         rt.caret = None;
         rt.selection = None;
@@ -1692,9 +1923,7 @@ impl Input {
                 let range = scroll_range(page, res, rects, sc);
                 accum[0] = accum[0].clamp(0.0, range[0]);
                 accum[1] = accum[1].clamp(0.0, range[1]);
-                if self.fling.as_ref().map_or(false, |fl| fl.scroll == sc) {
-                    self.fling = None;
-                }
+                self.flings.take(|fl| fl.scroll == sc);
                 if rt.scroll[sc] != accum {
                     rt.scroll[sc] = accum;
                     rt.dirty = true;
@@ -1808,8 +2037,13 @@ impl Input {
     /// POINTER (Slider, Toggle) — which also takes focus, parked like
     /// any pointer grant. Panning a Scroll by wheel is the desktop
     /// conveniences round (GP42), not this.
-    pub fn wheel(&mut self, page: &Page, rt: &mut Runtime, f: Frame<'_>, x: f32, y: f32, up: bool) -> EventList {
+    ///
+    /// A box with `on:wheel=` under the pointer takes the turn first, as
+    /// a `Wheel` event: what the wheel does there is the code's to say
+    /// (zoom at the mouse). `notches` above 0: away from user.
+    pub fn wheel(&mut self, page: &Page, rt: &mut Runtime, f: Frame<'_>, x: f32, y: f32, notches: f32, mods: Mods) -> EventList {
         let (res, rects): (&Resolved, &[Rect]) = (f.look(), f.rects());
+        let up: bool = notches > 0.0;
         let mut events: EventList = EventList::new();
         let mut n = hit(page, f, x, y, false);
         // GP52/GP53: a `behavior` instance is steppable anywhere on its
@@ -1827,8 +2061,13 @@ impl Input {
             }
             return events;
         }
+        let mut wheel_action: Option<Action> = None;
         while let Some(c) = n {
             if matches!(page.nodes[c].kind, Kind::Slider | Kind::Toggle) {
+                break;
+            }
+            wheel_action = event_action(page, c, "wheel");
+            if wheel_action.is_some() {
                 break;
             }
             // Placed: the wheel turns the control the pointer is drawn over.
@@ -1837,6 +2076,11 @@ impl Input {
         }
         let Some(c) = n else { return events };
         if rt.disabled(page, c) {
+            return events;
+        }
+        if wheel_action.is_some() {
+            let r: Rect = rects[c];
+            self.push_event(page, rt, &mut events, c, EventKind::Wheel { x: x - r.x, y: y - r.y, notches, mods }, wheel_action);
             return events;
         }
         self.grant(page, rt, res, rects, Some(c), false, &mut events);
@@ -1984,29 +2228,66 @@ impl Input {
     /// FROZEN — the capture bracket: slipping off a held button keeps
     /// its hovered look, and nothing new hovers until release. Motion
     /// never changes modality (D129).
-    pub fn hover(&mut self, page: &Page, rt: &mut Runtime, f: Frame<'_>, x: f32, y: f32) {
-        if self.press.is_some() {
-            return;
+    ///
+    /// Short for `hover_sample` with a sample of the mouse, no button
+    /// down, at time 0.
+    ///
+    /// Returns `on:hover=` events of the box under the mouse.
+    pub fn hover(&mut self, page: &Page, rt: &mut Runtime, f: Frame<'_>, x: f32, y: f32) -> EventList {
+        self.hover_sample(page, rt, f, Touch::mouse(Phase::Move, x, y, 0.0, Buttons::NONE))
+    }
+
+    /// One sample of a pointer that presses nothing: a mouse with no
+    /// button down, a pen above the screen. `on:hover=` of the box under
+    /// it hears `Over`; the box it was over before hears `Left`.
+    /// `t.phase` is not read.
+    pub fn hover_sample(&mut self, page: &Page, rt: &mut Runtime, f: Frame<'_>, t: Touch) -> EventList {
+        let mut events: EventList = EventList::new();
+        // Frozen while any pointer presses on this page: slipping off a
+        // held button keeps its hovered look, and nothing new hovers.
+        if !self.presses.is_empty() {
+            return events;
         }
-        self.apply_hover(page, rt, hit(page, f, x, y, false));
+        let rects: &[Rect] = f.rects();
+        let new: Option<NodeId> = hit(page, f, t.x, t.y, false);
+        let is_same_box: bool = self.hover == new;
+        self.apply_hover(page, rt, new, rects, &t, &mut events);
+        if let (Some(node), Some(action)) = (new, self.hover_action) {
+            let (dx, dy) = if is_same_box { (t.x - self.hover_last.0, t.y - self.hover_last.1) } else { (0.0, 0.0) };
+            self.push_event(page, rt, &mut events, node, EventKind::Hover(HoverPhase::Over, PointerSample::of(&t, rects[node], dx, dy)), Some(action));
+        }
+        self.hover_last = (t.x, t.y);
+        events
     }
 
     /// The mouse left the window (or this page): nothing hovers here.
-    pub fn unhover(&mut self, page: &Page, rt: &mut Runtime) {
-        self.apply_hover(page, rt, None);
+    ///
+    /// Returns `Left` for the `on:hover=` box it was over. Place in that
+    /// event is (0, 0): page's rects are not at hand here.
+    pub fn unhover(&mut self, page: &Page, rt: &mut Runtime) -> EventList {
+        let mut events: EventList = EventList::new();
+        let gone: Touch = Touch::mouse(Phase::Move, self.hover_last.0, self.hover_last.1, 0.0, Buttons::NONE);
+        self.apply_hover(page, rt, None, &[], &gone, &mut events);
+        events
     }
 
-    fn apply_hover(&mut self, page: &Page, rt: &mut Runtime, new: Option<NodeId>) {
+    /// Moves `hovered` to `new`, and tells the box it leaves.
+    fn apply_hover(&mut self, page: &Page, rt: &mut Runtime, new: Option<NodeId>, rects: &[Rect], t: &Touch, events: &mut EventList) {
         if self.hover == new {
             return;
         }
         if let Some(old) = self.hover {
             set_chain(page, rt, old, HOVERED, false);
+            if let Some(action) = self.hover_action {
+                let r: Rect = rects.get(old.index()).copied().unwrap_or(Rect::new(t.x, t.y, 0.0, 0.0));
+                self.push_event(page, rt, events, old, EventKind::Hover(HoverPhase::Left, PointerSample::of(t, r, 0.0, 0.0)), Some(action));
+            }
         }
         if let Some(n) = new {
             set_chain(page, rt, n, HOVERED, true);
         }
         self.hover = new;
+        self.hover_action = new.filter(|n| !rt.disabled(page, *n)).and_then(|n| event_action(page, n, "hover"));
         rt.dirty = true;
     }
 
@@ -2095,7 +2376,7 @@ impl Input {
 
     /// Feeds one touch sample; returns the events it completed.
     pub fn touch(&mut self, page: &Page, rt: &mut Runtime, f: Frame<'_>, measure: &dyn TextMeasure, t: Touch) -> EventList {
-        let (res, rects): (&Resolved, &[Rect]) = (f.look(), f.rects());
+        let rects: &[Rect] = f.rects();
         // The frame must be THIS page's layout: every arm below indexes
         // `rects` by node. A host that forgot the rects (a hidden child
         // page, `KeptFrame::clear`) and still routes a finger here — the
@@ -2105,15 +2386,29 @@ impl Input {
         // a dev build: the host's routing is the bug.
         if rects.len() != page.nodes.len() {
             debug_assert!(false, "Input::touch on a frame of {} rects for a page of {} nodes — the host routed a finger to a page it forgot the layout of", rects.len(), page.nodes.len());
-            return if self.press.is_some_and(|p| p.id == t.id) { self.cancel_press(page, rt) } else { EventList::new() };
+            return if self.presses.iter().any(|p| p.id == t.id) { self.cancel_press(page, rt) } else { EventList::new() };
         }
+        // This pointer's press, out of `presses` for the call: the arms
+        // of `touch_press` read and write it as the one press at hand,
+        // and `is_held` then counts the OTHER pointers only.
+        let mut press: Option<Press> = self.presses.take(|p| p.id == t.id);
+        // `Down` of a pointer that already presses: another button of the
+        // mouse went down. It is a move with another `buttons`.
+        let t: Touch = if t.phase == Phase::Down && press.is_some() { Touch { phase: Phase::Move, ..t } } else { t };
+        let events: EventList = self.touch_press(page, rt, f, measure, t, &mut press);
+        if let Some(p) = press {
+            self.presses.put(p);
+        }
+        events
+    }
+
+    /// One sample of one pointer against its own press (`press`: `None`
+    /// when it presses nothing yet, and again when its press ended).
+    fn touch_press(&mut self, page: &Page, rt: &mut Runtime, f: Frame<'_>, measure: &dyn TextMeasure, t: Touch, press: &mut Option<Press>) -> EventList {
+        let (res, rects): (&Resolved, &[Rect]) = (f.look(), f.rects());
         let mut events: EventList = EventList::new();
         match t.phase {
             Phase::Down => {
-                if self.press.is_some() {
-                    // A second finger mid-gesture is swallowed.
-                    return events;
-                }
                 // A selection handle grab comes FIRST: the circles hang
                 // BELOW the field, over whatever sits there — the press
                 // adjusts that end and never reaches the page (the bar
@@ -2140,8 +2435,11 @@ impl Input {
                     }
                 }
                 if let Some((f, hi_end)) = grabbed {
+                    if self.is_held(f) {
+                        return events;
+                    }
                     self.drag_handle = Some(hi_end);
-                    self.press = Some(Press { node: f, kind: Kind::Input, id: t.id, start: (t.x, t.y), scroll: None, panning: false, last: (t.x, t.y), last_t: t.t, samples: Samples::EMPTY, caught_fling: false, accum: [0.0; 2], caught_raw: None, value_from: 0.0, behavior: None, registered: 0, toggle_moved: false, release_owed: false, raw: None });
+                    *press = Some(Press { node: f, kind: Kind::Input, id: t.id, start: (t.x, t.y), scroll: None, panning: false, last: (t.x, t.y), last_t: t.t, samples: Samples::EMPTY, caught_fling: false, accum: [0.0; 2], caught_raw: None, value_from: 0.0, behavior: None, registered: 0, toggle_moved: false, release_owed: false, raw: None });
                     return events;
                 }
                 // A glide is stopped only by a touch that lands ON the
@@ -2153,14 +2451,22 @@ impl Input {
                 // press reaching THIS machine is off the bar by
                 // construction, and any such press dismisses it (the
                 // press then runs its normal course).
+                let hit_node = hit(page, f, t.x, t.y, false);
+                // One pointer per node: a second finger on a node that is
+                // held does nothing, from its landing to its lift. It gets
+                // no press, so its moves and its lift find none; and it
+                // dismisses no edit bar and stops no glide.
+                let landed_on: Option<NodeId> = hit_node.map(|n| behavior_at(page, n).map_or(n, |i| page.behaviors[i as usize].root));
+                if landed_on.is_some_and(|n| self.is_held(n)) {
+                    return events;
+                }
                 if rt.edit_bar.is_some() {
                     rt.edit_bar = None;
                     rt.dirty = true;
                 }
-                let hit_node = hit(page, f, t.x, t.y, false);
                 let mut caught_accum: Option<(NodeId, [f32; 2])> = None;
-                let caught = match self.fling.take() {
-                    Some(f) if hit_node.is_some_and(|n| within(page, res, n, f.scroll)) => {
+                let caught = match hit_node.and_then(|n| self.flings.take(|fl| within(page, res, n, fl.scroll))) {
+                    Some(f) => {
                         let range = scroll_range(page, res, rects, f.scroll);
                         let raw = [f.accum[0] - f.accum[0].clamp(0.0, range[0]), f.accum[1] - f.accum[1].clamp(0.0, range[1])];
                         // The pull stays under the finger (GPAR5, the
@@ -2171,13 +2477,9 @@ impl Input {
                         let axes = scroll_axes(page, res, f.scroll);
                         apply_accum(rt, rects, f.scroll, range, axes, &mut accum);
                         caught_accum = Some((f.scroll, accum));
-                        self.expected = Some((f.scroll, rt.scroll[f.scroll]));
                         (f.v[0].powi(2) + f.v[1].powi(2)).sqrt() >= CATCH_SPEED || raw != [0.0, 0.0]
                     }
-                    fling => {
-                        self.fling = fling;
-                        false
-                    }
+                    None => false,
                 };
                 let Some(node) = hit_node else {
                     // A tap on nothing still blurs the field (the
@@ -2204,6 +2506,13 @@ impl Input {
                     }
                     None => (node, kind),
                 };
+                // Only `on:pointer=` hears a press that lacks the primary
+                // button (a mouse's middle or right one): every other node
+                // reacts to the primary button alone.
+                let raw: Option<Action> = event_action(page, node, "pointer");
+                if raw.is_none() && !t.buttons.has(Buttons::PRIMARY) {
+                    return events;
+                }
                 let mut registered: u16 = 0;
                 let mut value_from = 0.0;
                 let mut began: Option<Cx> = None;
@@ -2255,11 +2564,9 @@ impl Input {
                     self.hold = 0.0;
                     self.publish(rt, node);
                 }
-                let raw = event_action(page, node, "pointer");
                 if let Some(action) = raw {
-                    let r = rects[node];
-                    self.push_event(page, rt, &mut events, node, EventKind::Pointer { phase: Phase::Down, x: t.x - r.x, y: t.y - r.y }, Some(action));
-                    self.press = Some(Press { node, kind, id: t.id, start: (t.x, t.y), scroll: None, panning: false, last: (t.x, t.y), last_t: t.t, samples: Samples::EMPTY, caught_fling: caught, accum: [0.0; 2], caught_raw: None, value_from: 0.0, behavior: None, registered: 0, toggle_moved: false, release_owed: false, raw });
+                    self.push_event(page, rt, &mut events, node, EventKind::Pointer(Phase::Down, PointerSample::of(&t, rects[node], 0.0, 0.0)), Some(action));
+                    *press = Some(Press { node, kind, id: t.id, start: (t.x, t.y), scroll: None, panning: false, last: (t.x, t.y), last_t: t.t, samples: Samples::EMPTY, caught_fling: caught, accum: [0.0; 2], caught_raw: None, value_from: 0.0, behavior: None, registered: 0, toggle_moved: false, release_owed: false, raw });
                     return events;
                 }
                 let scroll = if matches!(kind, Kind::Scroll | Kind::List) { Some(node) } else { scroll_ancestor(page, res, node) };
@@ -2302,19 +2609,16 @@ impl Input {
                     (Some(s), _) => rt.scroll[s],
                     (None, _) => [0.0; 2],
                 };
-                self.press = Some(Press { node, kind, id: t.id, start: (t.x, t.y), scroll, panning: false, last: (t.x, t.y), last_t: t.t, samples: Samples::EMPTY, caught_fling: caught, accum, caught_raw: caught_accum, value_from, behavior, registered, toggle_moved: false, release_owed: pressed, raw: None });
+                *press = Some(Press { node, kind, id: t.id, start: (t.x, t.y), scroll, panning: false, last: (t.x, t.y), last_t: t.t, samples: Samples::EMPTY, caught_fling: caught, accum, caught_raw: caught_accum, value_from, behavior, registered, toggle_moved: false, release_owed: pressed, raw: None });
             }
             Phase::Move => {
-                let Some(mut p) = self.press else { return events };
-                if p.id != t.id {
-                    return events;
-                }
+                let Some(mut p) = *press else { return events };
                 let dead = |n: NodeId| rt.disabled(page, n) || res.gone(page, n) || res.hidden(page, n);
                 if p.panning {
                     // The Scroll owns the gesture now: only ITS death ends it;
                     // the child the finger landed on may hide under the pan.
                     if p.scroll.map_or(false, dead) {
-                        self.press = None;
+                        *press = None;
                         return events;
                     }
                 } else if dead(p.node) {
@@ -2322,20 +2626,18 @@ impl Input {
                     // here, and a raw owner hears the cancel (it would
                     // otherwise keep its grab until the next touch).
                     if let Some(action) = p.raw {
-                        let r = rects[p.node];
-                        self.push_event(page, rt, &mut events, p.node, EventKind::Pointer { phase: Phase::Cancel, x: t.x - r.x, y: t.y - r.y }, Some(action));
+                        self.push_event(page, rt, &mut events, p.node, EventKind::Pointer(Phase::Cancel, PointerSample::of(&t, rects[p.node], t.x - p.last.0, t.y - p.last.1)), Some(action));
                     }
                     self.release(page, rt, &mut events, &mut p);
                     self.restore_press(page, rt, &mut events, &p);
-                    self.press = None;
+                    *press = None;
                     return events;
                 }
                 if let Some(action) = p.raw {
-                    let r = rects[p.node];
-                    self.push_event(page, rt, &mut events, p.node, EventKind::Pointer { phase: Phase::Move, x: t.x - r.x, y: t.y - r.y }, Some(action));
+                    self.push_event(page, rt, &mut events, p.node, EventKind::Pointer(Phase::Move, PointerSample::of(&t, rects[p.node], t.x - p.last.0, t.y - p.last.1)), Some(action));
                     p.last = (t.x, t.y);
                     p.last_t = t.t;
-                    self.press = Some(p);
+                    *press = Some(p);
                     return events;
                 }
                 let dt = (t.t - p.last_t).max(1e-4) as f32;
@@ -2354,7 +2656,9 @@ impl Input {
                         // scrolls that way: the child keeps the finger for good.
                         let vertical = dy > dx;
                         let child_keeps = ((p.kind == Kind::Slider || p.behavior.is_some()) && !vertical) || (p.kind == Kind::Toggle && p.toggle_moved) || (p.kind == Kind::Input && (t.id == MOUSE_ID || self.drag_handle.is_some()));
-                        let taker = if child_keeps { None } else { scroll_taker(page, res, rects, p.node, vertical) };
+                        // A Scroll another finger holds or pans is not
+                        // taken: this finger stays with its child.
+                        let taker = if child_keeps { None } else { scroll_taker(page, res, rects, p.node, vertical).filter(|scroll| !self.is_held(*scroll)) };
                         match taker {
                             Some(scroll) => {
                                 p.scroll = Some(scroll);
@@ -2454,7 +2758,6 @@ impl Input {
                             p.accum[1] -= delta.1;
                         }
                         apply_accum(rt, rects, scroll, range, axes, &mut p.accum);
-                        self.expected = Some((scroll, rt.scroll[scroll]));
                     }
                 }
                 if p.kind.is_press_surface() && p.kind != Kind::Toggle && !p.panning && !p.caught_fling {
@@ -2469,28 +2772,29 @@ impl Input {
                 }
                 p.last = (t.x, t.y);
                 p.last_t = t.t;
-                self.press = Some(p);
+                *press = Some(p);
             }
             Phase::Up | Phase::Cancel => {
                 // A handle drag ends where the finger lifts — the
-                // selection (and the bar) stand.
-                self.drag_handle = None;
+                // selection (and the bar) stand. A lift that is not the
+                // field's own leaves a handle drag alone, for as long as
+                // some pointer still presses the field.
+                if press.is_some_and(|p| p.kind == Kind::Input) || !self.presses.iter().any(|p| p.kind == Kind::Input) {
+                    self.drag_handle = None;
+                }
                 // The hover capture bracket closes here: a mouse that
                 // slipped off mid-press re-checks where it is — back
                 // over the box keeps hover, anywhere else clears it.
                 // Gated on hover being SET at all: only mouse motion
                 // sets it, so a finger's release changes nothing (D75).
-                if self.hover.is_some() && self.press.map_or(false, |p| p.id == t.id) {
-                    self.apply_hover(page, rt, hit(page, f, t.x, t.y, false));
+                // A finger that lifts while the mouse hovers elsewhere
+                // moves no hover either: it is not the pointer that hovers.
+                if self.hover.is_some() && press.is_some() && (t.tool != Tool::Finger || t.id == MOUSE_ID) {
+                    self.apply_hover(page, rt, hit(page, f, t.x, t.y, false), rects, &t, &mut events);
                 }
-                let Some(mut p) = self.press else { return events };
-                if p.id != t.id {
-                    return events;
-                }
-                self.press = None;
+                let Some(mut p) = press.take() else { return events };
                 if let Some(action) = p.raw {
-                    let r = rects[p.node];
-                    self.push_event(page, rt, &mut events, p.node, EventKind::Pointer { phase: t.phase, x: t.x - r.x, y: t.y - r.y }, Some(action));
+                    self.push_event(page, rt, &mut events, p.node, EventKind::Pointer(t.phase, PointerSample::of(&t, rects[p.node], t.x - p.last.0, t.y - p.last.1)), Some(action));
                     return events;
                 }
                 rt.set_state(p.node, HELD, false);
@@ -2514,10 +2818,10 @@ impl Input {
                         }
                         let mut accum = p.accum;
                         let raw = apply_accum(rt, rects, scroll, range, axes, &mut accum);
+                        self.flings.take(|fl| fl.scroll == scroll);
                         if speed >= FLING_MIN_SPEED || raw != [0.0, 0.0] {
-                            self.fling = Some(Fling { scroll, v, accum });
+                            self.flings.put(Fling { scroll, v, accum, shown: rt.scroll[scroll] });
                         }
-                        self.expected = Some((scroll, rt.scroll[scroll]));
                     }
                     return events;
                 }
@@ -2651,8 +2955,10 @@ impl Input {
         // The long-press door — a FINGER only (the mouse has drag-select
         // and Ctrl): a field press held still for LONG_PRESS_S selects
         // the word it landed on and raises the edit bar.
-        if let Some(p) = self.press {
-            if p.kind == Kind::Input && p.id != MOUSE_ID && !p.panning && self.focus == Some(p.node) {
+        // One pointer per node, so at most one press is on the field.
+        let on_field: Option<Press> = self.presses.iter().find(|p| p.kind == Kind::Input && self.focus == Some(p.node)).copied();
+        if let Some(p) = on_field {
+            if p.id != MOUSE_ID && !p.panning {
                 let (dx, dy) = (p.last.0 - p.start.0, p.last.1 - p.start.1);
                 if (dx * dx + dy * dy).sqrt() <= SCROLL_DEADZONE {
                     let before = self.hold;
@@ -2685,12 +2991,12 @@ impl Input {
         // the offset until it settles, and stores an out-of-range value
         // on purpose during the rubber band. Layout never clamps (B31).
         if !rt.scroll_clamp_pending.is_empty() {
-            let panning: Option<NodeId> = self.press.as_ref().filter(|p| p.panning).and_then(|p| p.scroll);
-            let gliding: Option<NodeId> = self.fling.as_ref().map(|f| f.scroll);
             let mut i = 0;
             while i < rt.scroll_clamp_pending.len() {
                 let node = rt.scroll_clamp_pending[i];
-                if panning == Some(node) || gliding == Some(node) {
+                let is_panned: bool = self.presses.iter().any(|p| p.panning && p.scroll == Some(node));
+                let is_gliding: bool = self.flings.iter().any(|fl| fl.scroll == node);
+                if is_panned || is_gliding {
                     i += 1;
                     continue;
                 }
@@ -2706,13 +3012,38 @@ impl Input {
                 }
             }
         }
-        let Some(mut f) = self.fling else { return false };
-        if let Some((s, expected)) = self.expected {
-            if s == f.scroll && rt.scroll[s] != expected {
-                self.fling = None;
-                self.expected = None;
-                return false;
+        // Each glide by itself. `first` is stepped in place and the list
+        // by index: nothing is allocated for a glide that goes on.
+        let mut is_moving: bool = false;
+        if let Some(mut fling) = self.flings.first.take() {
+            let (is_alive, has_moved) = Self::step_fling(page, rt, res, rects, &mut fling, dt);
+            is_moving |= is_alive || has_moved;
+            if is_alive {
+                self.flings.first = Some(fling);
             }
+        }
+        let mut i: usize = 0;
+        while i < self.flings.more.len() {
+            let mut fling: Fling = self.flings.more[i];
+            let (is_alive, has_moved) = Self::step_fling(page, rt, res, rects, &mut fling, dt);
+            is_moving |= is_alive || has_moved;
+            if is_alive {
+                self.flings.more[i] = fling;
+                i += 1;
+            } else {
+                self.flings.more.swap_remove(i);
+            }
+        }
+        is_moving
+    }
+
+    /// Advances one glide by `dt` seconds.
+    ///
+    /// Returns (glide goes on, scroll moved this step). A glide whose
+    /// Scroll code moved since the last step stands down: (false, false).
+    fn step_fling(page: &Page, rt: &mut Runtime, res: &Resolved, rects: &[Rect], f: &mut Fling, dt: f32) -> (bool, bool) {
+        if rt.scroll[f.scroll] != f.shown {
+            return (false, false);
         }
         let axes = scroll_axes(page, res, f.scroll);
         let range = scroll_range(page, res, rects, f.scroll);
@@ -2751,13 +3082,10 @@ impl Input {
             // Landed: exactly on the clamped position, nothing left to do.
             let mut accum = [f.accum[0].clamp(0.0, range[0]), f.accum[1].clamp(0.0, range[1])];
             apply_accum(rt, rects, f.scroll, range, axes, &mut accum);
-            self.expected = Some((f.scroll, rt.scroll[f.scroll]));
-            self.fling = None;
-            return moved;
+            return (false, moved);
         }
-        self.expected = Some((f.scroll, rt.scroll[f.scroll]));
-        self.fling = Some(f);
-        true
+        f.shown = rt.scroll[f.scroll];
+        (true, true)
     }
 }
 
@@ -2825,7 +3153,7 @@ mod tests {
         }
         fn touch_id(&mut self, phase: Phase, x: f32, y: f32, t: f64, id: u64) -> EventList {
             let f = self.lay();
-            self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase, x, y, t, id })
+            self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase, x, y, t, id, ..Touch::PLAIN })
         }
         fn tick(&mut self, dt: f32) -> bool {
             let f = self.lay();
@@ -2902,7 +3230,7 @@ mod tests {
         let (_, rects) = (f.look(), f.rects());
         let rb = rects[b];
         let ev = fx.touch(Phase::Down, rb.x + 5.0, rb.y + 5.0, 0.0);
-        assert!(ev.iter().all(|e| e.node == b && matches!(e.kind, EventKind::Pointer { .. })), "the raw surface's own pointer, not the slider's drag: {ev:?}");
+        assert!(ev.iter().all(|e| e.node == b && matches!(e.kind, EventKind::Pointer(..))), "the raw surface's own pointer, not the slider's drag: {ev:?}");
         fx.touch(Phase::Up, rb.x + 5.0, rb.y + 5.0, 0.1);
         // A swing on c: d's drawn rect stands where the layout put it.
         fx.rt.glide(rects.to_vec());
@@ -2988,7 +3316,7 @@ mod tests {
         assert!(fx.touch(Phase::Up, 50.0, 10.0, 0.03).is_empty(), "the pan's lift releases nothing again");
         // A caught fling pressed nothing, so it releases nothing.
         let s = fx.page.find("s").unwrap();
-        fx.input.fling = Some(Fling { scroll: s, v: [0.0, -500.0], accum: [0.0, 100.0] });
+        fx.input.flings.first = Some(Fling { scroll: s, v: [0.0, -500.0], accum: [0.0, 100.0], shown: fx.rt.scroll[s] });
         assert!(fx.touch(Phase::Down, 50.0, 50.0, 2.0).is_empty());
         assert!(fx.touch(Phase::Up, 50.0, 50.0, 2.1).is_empty());
     }
@@ -3008,7 +3336,7 @@ mod tests {
         assert_eq!(fx.rt.scroll[s][1], 25.0);
         let ev = fx.touch(Phase::Up, 50.0, 10.0, 0.03);
         assert!(ev.is_empty(), "a pan never activates");
-        assert!(fx.input.fling.is_some());
+        assert!(fx.input.flings.first.is_some());
         let before = fx.rt.scroll[s][1];
         assert!(fx.tick(0.016));
         assert!(fx.rt.scroll[s][1] > before, "the glide keeps going");
@@ -3020,17 +3348,17 @@ mod tests {
             peak = peak.max(fx.rt.scroll[s][1]);
         }
         assert!(peak <= 250.0, "overscroll is capped at a quarter viewport: {peak}");
-        assert!(fx.input.fling.is_none());
+        assert!(fx.input.flings.first.is_none());
         assert_eq!(fx.rt.scroll[s][1], 200.0, "landed exactly on the edge");
         // Touching a FAST-gliding list stops it without pressing what is under the finger.
-        fx.input.fling = Some(Fling { scroll: s, v: [0.0, -500.0], accum: [0.0, 100.0] });
+        fx.input.flings.first = Some(Fling { scroll: s, v: [0.0, -500.0], accum: [0.0, 100.0], shown: fx.rt.scroll[s] });
         fx.touch(Phase::Down, 50.0, 50.0, 2.0);
-        assert!(fx.input.fling.is_none());
+        assert!(fx.input.flings.first.is_none());
         assert!(fx.touch(Phase::Up, 50.0, 50.0, 2.1).is_empty());
         // A slow glide just stops; the tap goes through.
-        fx.input.fling = Some(Fling { scroll: s, v: [0.0, -45.0], accum: [0.0, 100.0] });
+        fx.input.flings.first = Some(Fling { scroll: s, v: [0.0, -45.0], accum: [0.0, 100.0], shown: fx.rt.scroll[s] });
         fx.touch(Phase::Down, 50.0, 50.0, 3.0);
-        assert!(fx.input.fling.is_none());
+        assert!(fx.input.flings.first.is_none());
         assert_eq!(fx.touch(Phase::Up, 50.0, 50.0, 3.1).len(), 1);
     }
 
@@ -3045,14 +3373,14 @@ mod tests {
         fx.touch(Phase::Move, 50.0, 150.0, 0.02);
         fx.touch(Phase::Move, 50.0, 150.0, 0.5);
         fx.touch(Phase::Up, 50.0, 150.0, 0.7);
-        assert!(fx.input.fling.is_none(), "a finger at rest before the lift means stop");
+        assert!(fx.input.flings.first.is_none(), "a finger at rest before the lift means stop");
         let mut fx = Fx::new(src);
         fx.touch(Phase::Down, 50.0, 190.0, 0.0);
         for i in 1..=5 {
             fx.touch(Phase::Move, 50.0, 190.0 - 40.0 * i as f32, 0.001 * i as f64);
         }
         fx.touch(Phase::Up, 50.0, 0.0, 0.006);
-        let f = fx.input.fling.expect("a flick glides");
+        let f = fx.input.flings.first.expect("a flick glides");
         assert!((f.v[1] - FLING_MAX_SPEED).abs() < 1.0, "capped: {:?}", f.v);
         // A slanted (mostly vertical) flick on a vertical list leaves no x
         // component; a SIDEWAYS one never scrolls it at all (the button
@@ -3062,7 +3390,7 @@ mod tests {
         fx.touch(Phase::Move, 60.0, 60.0, 0.01);
         fx.touch(Phase::Move, 70.0, 20.0, 0.02);
         fx.touch(Phase::Up, 70.0, 20.0, 0.03);
-        let f = fx.input.fling.expect("glides");
+        let f = fx.input.flings.first.expect("glides");
         assert_eq!(f.v[0], 0.0);
         assert!(f.v[1] > 0.0);
     }
@@ -3165,9 +3493,9 @@ mod tests {
             fx.touch(Phase::Move, 100.0, 20.0 - 30.0 * i as f32, 0.01 * i as f64);
         }
         fx.touch(Phase::Up, 100.0, -130.0, 0.06);
-        assert!(fx.input.fling.is_some(), "gliding");
+        assert!(fx.input.flings.first.is_some(), "gliding");
         fx.input.reset(&fx.page, &mut fx.rt);
-        assert!(fx.input.fling.is_none() && fx.input.press.is_none());
+        assert!(fx.input.flings.first.is_none() && fx.input.presses.is_empty());
         let mut fx = Fx::new(src);
         let b = fx.page.find("b").unwrap();
         fx.touch(Phase::Down, 100.0, 20.0, 1.0);
@@ -3227,7 +3555,7 @@ mod tests {
         fx.touch(Phase::Down, 50.0, 50.0, 0.0);
         fx.rt.set_state(pad, DISABLED, true);
         let ev = fx.touch(Phase::Move, 60.0, 60.0, 0.1);
-        assert!(ev.iter().any(|e| matches!(e.kind, EventKind::Pointer { phase: Phase::Cancel, .. })), "{ev:?}");
+        assert!(ev.iter().any(|e| matches!(e.kind, EventKind::Pointer(Phase::Cancel, _))), "{ev:?}");
         assert!(fx.touch(Phase::Move, 70.0, 70.0, 0.2).is_empty(), "the gesture is over");
         let mut fx = Fx::new("View v { Scroll page width=400, height=300, halign=left, valign=top { Column c width=fill { Button b width=fill, height=40, text=\"x\"; Rectangle tall width=fill, height=2000 } } }");
         let page = fx.page.find("page").unwrap();
@@ -3365,15 +3693,18 @@ mod tests {
         assert_eq!(value_of(&fx.rt, fx.lay().look(), &fx.page, s), 0.0, "the pre-drag value is back");
     }
 
-    /// One finger owns the gesture: a second finger's down/up is swallowed.
+    /// A node holds one finger at a time: second finger on a held button
+    /// gets no press, so its moves and its lift do nothing.
     #[test]
-    fn second_finger_is_swallowed() {
+    fn second_finger_on_a_held_node_does_nothing() {
         let mut fx = Fx::new("View v { Button b width=100, height=40, halign=left, valign=top; Button c width=100, height=40, halign=right, valign=top }");
         let b = fx.page.find("b").unwrap();
         fx.touch_id(Phase::Down, 10.0, 10.0, 0.0, 1);
-        fx.touch_id(Phase::Down, 390.0, 10.0, 0.1, 2);
+        assert!(fx.touch_id(Phase::Down, 20.0, 10.0, 0.1, 2).is_empty());
         assert!(fx.rt.has(b, HELD));
-        assert!(fx.touch_id(Phase::Up, 390.0, 10.0, 0.2, 2).is_empty(), "the other finger's lift ends nothing");
+        assert!(fx.touch_id(Phase::Move, 300.0, 300.0, 0.15, 2).is_empty(), "its move is no slide-off of the first finger's press");
+        assert!(fx.rt.has(b, HELD));
+        assert!(fx.touch_id(Phase::Up, 20.0, 10.0, 0.2, 2).is_empty(), "the other finger's lift ends nothing");
         assert!(fx.rt.has(b, HELD));
         assert_eq!(fx.touch_id(Phase::Up, 10.0, 10.0, 0.3, 1).len(), 1);
     }
@@ -3403,14 +3734,14 @@ mod tests {
         let res = resolve(&fx.page, &fx.rt);
         assert!(value_of(&fx.rt, &res, &fx.page, s) > 50.0, "the drag moved the value");
         assert!(fx.rt.has(s, HELD));
-        fx.input.fling = Some(Fling { scroll: s, v: [0.0, -300.0], accum: [0.0, 0.0] });
+        fx.input.flings.first = Some(Fling { scroll: s, v: [0.0, -300.0], accum: [0.0, 0.0], shown: fx.rt.scroll[s] });
         fx.input.focus = Some(s);
         let ev = fx.input.cancel_press(&fx.page, &mut fx.rt);
         assert_eq!(ev.iter().filter(|e| e.kind == EventKind::Release).count(), 1, "the owed release comes back: {ev:?}");
         let res = resolve(&fx.page, &fx.rt);
         assert_eq!(value_of(&fx.rt, &res, &fx.page, s), 50.0, "the value is back where the finger found it");
-        assert!(!fx.rt.has(s, HELD) && fx.input.press.is_none());
-        assert!(fx.input.fling.is_some() && fx.input.focus == Some(s), "the glide and the focus stay");
+        assert!(!fx.rt.has(s, HELD) && fx.input.presses.is_empty());
+        assert!(fx.input.flings.first.is_some() && fx.input.focus == Some(s), "the glide and the focus stay");
         assert!(fx.touch(Phase::Move, 170.0, 16.0, 0.2).is_empty() && fx.touch(Phase::Up, 170.0, 16.0, 0.3).is_empty(), "the finger's later samples are nobody's");
         assert_eq!(fx.input.cancel_press(&fx.page, &mut fx.rt), EventList::new(), "nothing to cancel twice");
     }
@@ -3426,7 +3757,7 @@ mod tests {
         fx.touch(Phase::Down, 10.0, 10.0, 0.0);
         let mut kept = fx.lay();
         kept.clear();
-        fx.input.touch(&fx.page, &mut fx.rt, kept.frame(), &FixedAdvance, Touch { phase: Phase::Move, x: 20.0, y: 20.0, t: 0.1, id: 1 });
+        fx.input.touch(&fx.page, &mut fx.rt, kept.frame(), &FixedAdvance, Touch { phase: Phase::Move, x: 20.0, y: 20.0, t: 0.1, id: 1, ..Touch::PLAIN });
     }
 
     /// ...and in a store build the same sample ends the press and hits
@@ -3440,10 +3771,10 @@ mod tests {
         assert!(fx.rt.has(b, HELD));
         let mut kept = fx.lay();
         kept.clear();
-        let ev = fx.input.touch(&fx.page, &mut fx.rt, kept.frame(), &FixedAdvance, Touch { phase: Phase::Move, x: 20.0, y: 20.0, t: 0.1, id: 1 });
+        let ev = fx.input.touch(&fx.page, &mut fx.rt, kept.frame(), &FixedAdvance, Touch { phase: Phase::Move, x: 20.0, y: 20.0, t: 0.1, id: 1, ..Touch::PLAIN });
         assert_eq!(ev.iter().filter(|e| e.kind == EventKind::Release).count(), 1, "{ev:?}");
-        assert!(!fx.rt.has(b, HELD) && fx.input.press.is_none());
-        let ev = fx.input.touch(&fx.page, &mut fx.rt, kept.frame(), &FixedAdvance, Touch { phase: Phase::Down, x: 20.0, y: 20.0, t: 0.2, id: 1 });
-        assert!(ev.is_empty() && fx.input.press.is_none(), "a new finger on the forgotten frame hits nothing");
+        assert!(!fx.rt.has(b, HELD) && fx.input.presses.is_empty());
+        let ev = fx.input.touch(&fx.page, &mut fx.rt, kept.frame(), &FixedAdvance, Touch { phase: Phase::Down, x: 20.0, y: 20.0, t: 0.2, id: 1, ..Touch::PLAIN });
+        assert!(ev.is_empty() && fx.input.presses.is_empty(), "a new finger on the forgotten frame hits nothing");
     }
 }

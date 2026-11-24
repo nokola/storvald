@@ -41,7 +41,7 @@ impl Fx {
 
     fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> EventList {
         self.kept = KeptFrame::fresh(&self.page, resolve(&self.page, &self.rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
-        self.input.touch(&self.page, &mut self.rt, self.kept.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1 })
+        self.input.touch(&self.page, &mut self.rt, self.kept.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1, ..Touch::PLAIN })
     }
 
     fn key(&mut self, k: Key) -> EventList {
@@ -145,7 +145,7 @@ fn drag_signals_are_the_fingers_and_only_when_declared() {
     let ev = fx.key(Key::Right);
     assert!(signals(&fx.page, &ev).is_empty(), "{ev:?}");
     fx.kept = KeptFrame::fresh(&fx.page, resolve(&fx.page, &fx.rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
-    let ev = fx.input.wheel(&fx.page, &mut fx.rt, fx.kept.frame(), 200.0, 10.0, true);
+    let ev = fx.input.wheel(&fx.page, &mut fx.rt, fx.kept.frame(), 200.0, 10.0, 1.0, gogo_ui::Mods::NONE);
     assert!(signals(&fx.page, &ev).is_empty(), "{ev:?}");
 
     let plain = "control Plain $value=0, $min=0, $max=10, $step=0 {\n    behavior slider by $value in $min..$max\n    state_builtin focused\n    Layers width=fill, height=60 { slot track width=fill, height=10 { Rectangle width=fill, height=fill, color=#FF0000FF } }\n}\n";
@@ -164,7 +164,7 @@ fn the_wheel_steps_the_row_under_the_pointer() {
     let mut fx = Fx::new(&format!("{SLIDER_PHONE}View v {{ SliderPhone s value=2 }}"));
     let s = fx.page.find("s").unwrap();
     fx.kept = KeptFrame::fresh(&fx.page, resolve(&fx.page, &fx.rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
-    let ev = fx.input.wheel(&fx.page, &mut fx.rt, fx.kept.frame(), 200.0, 10.0, true);
+    let ev = fx.input.wheel(&fx.page, &mut fx.rt, fx.kept.frame(), 200.0, 10.0, 1.0, gogo_ui::Mods::NONE);
     assert_eq!(changes(&ev), vec![2.5], "{ev:?}");
     assert_eq!(fx.value(s), 2.5);
 }
@@ -198,7 +198,7 @@ fn a_disabled_instance_answers_nothing() {
     let ev = fx.touch(Phase::Down, 200.0, 30.0, 0.0);
     assert!(edits(&ev).is_empty(), "{ev:?}");
     fx.kept = KeptFrame::fresh(&fx.page, resolve(&fx.page, &fx.rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
-    let ev = fx.input.wheel(&fx.page, &mut fx.rt, fx.kept.frame(), 200.0, 10.0, true);
+    let ev = fx.input.wheel(&fx.page, &mut fx.rt, fx.kept.frame(), 200.0, 10.0, 1.0, gogo_ui::Mods::NONE);
     assert!(changes(&ev).is_empty(), "{ev:?}");
     // No write ever landed: the root still has no live Value prop.
     assert!(fx.value(s).is_nan(), "a write leaked through: {}", fx.value(s));

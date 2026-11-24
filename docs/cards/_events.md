@@ -29,7 +29,9 @@ Priority when several hold (higher wins per property): arrangements <
 | `edit` | a live, uncommitted value moved — per drag tick, per keystroke that changes the text | the live value |
 | `show` / `hide` | visibility choreography — takes `play(anim)` | — |
 | `uncover` | the host says the page shows again after the page that covered it left — takes `play(anim)` | — |
-| `pointer` | every touch phase on a box the host draws itself (needs `interactive=true`) | the phase and the position inside the box |
+| `pointer` | a press on a box the program's code handles itself, every sample from landing to lift (needs `interactive=true`) | the sample: phase, place inside the box, move since the last sample, finger, tool, buttons, pressure, a pen's lean, time, keys held |
+| `hover` | a pointer over such a box with nothing pressed, and once more when it is gone (needs `interactive=true`) | the same sample, and whether the pointer is over the box or left it |
+| `wheel` | the mouse wheel turned over such a box (needs `interactive=true`) | place inside the box, notches, keys held |
 
 **Value-bearing controls**
 

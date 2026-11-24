@@ -93,7 +93,7 @@ impl Fx {
     }
     fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) {
         let f = self.lay();
-        self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1 });
+        self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1, ..Touch::PLAIN });
     }
     fn background(&mut self, name: &str) -> Option<Color_Straight_Srgb_4xU8_RGBA> {
         let id = self.id(name);

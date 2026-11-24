@@ -80,7 +80,7 @@ impl Fx {
 
     fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> EventList {
         let f = self.lay();
-        self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1 })
+        self.input.touch(&self.page, &mut self.rt, f.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1, ..Touch::PLAIN })
     }
 
     fn tick(&mut self, dt: f32) -> bool {

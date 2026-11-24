@@ -39,7 +39,7 @@ impl Fx {
 
     fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> EventList {
         self.kept = KeptFrame::fresh(&self.page, self.res(), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
-        self.input.touch(&self.page, &mut self.rt, self.kept.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1 })
+        self.input.touch(&self.page, &mut self.rt, self.kept.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1, ..Touch::PLAIN })
     }
 
     fn key(&mut self, k: Key) -> EventList {
@@ -173,7 +173,7 @@ fn keys_and_wheel_pick_sides() {
     fx.key(Key::Home);
     assert_eq!(fx.value(s), 0.0);
     fx.kept = KeptFrame::fresh(&fx.page, fx.res(), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
-    let ev = fx.input.wheel(&fx.page, &mut fx.rt, fx.kept.frame(), 60.0, 30.0, true);
+    let ev = fx.input.wheel(&fx.page, &mut fx.rt, fx.kept.frame(), 60.0, 30.0, 1.0, gogo_ui::Mods::NONE);
     assert_eq!(changes(&ev), vec![true], "{ev:?}");
     assert!(signals(&fx.page, &ev).is_empty(), "the edges belong to the finger");
 }

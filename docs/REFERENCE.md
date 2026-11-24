@@ -1500,9 +1500,11 @@ Rectangle shield interactive=true, color=#00000000         // the catcher idiom
   answers with the node a touch at that point lands on, or none (the
   cookbook: "How do I debug a tap that misses?").
 - A box the host draws itself takes the raw touch with `on:pointer=<name>`
-  — every phase with its position inside the box — and needs
-  `interactive=true` on the same node (G0073: the wire alone claims
-  nothing).
+  — every sample of a press, with its place inside the box, its finger,
+  its pressure and the buttons down — and needs `interactive=true` on
+  the same node (G0073: the wire alone claims nothing). `on:hover=<name>`
+  hears a mouse that moves over the box with no button down, and
+  `on:wheel=<name>` its wheel; both need `interactive=true` too.
 
 ### Button content sizing
 
@@ -2649,7 +2651,9 @@ View settings {
 | `change` | the committed value is now different — once per commit, genuine transitions only | Check/Toggle a bool, Slider a number, Input the text, `choice` the picked Radio's name; for a List read the keys with `Runtime::selected_keys` |
 | `edit` | a live, UNCOMMITTED value moved — Slider per drag tick, Input per keystroke that changes the text; discrete controls have no edit | the live value |
 | `show` / `hide` | the node was shown or hidden — takes `play(anim)` | — |
-| `pointer` | every touch phase on a box the host draws itself (the node needs `interactive=true`, G0073) | the phase and the position inside the box, epx |
+| `pointer` | a press on a box the program's code handles itself, every sample from landing to lift (the node needs `interactive=true`, G0073). The pointer stays with the box until it lifts, wherever it moves | the sample: its phase, the place inside the box (epx), the move since the last sample, the finger's id, the tool (finger, mouse, pen, eraser), the buttons down, the pressure, a pen's lean, the time, the keys held |
+| `hover` | a pointer over such a box with nothing pressed (a mouse with no button down, a pen above the screen), and once more when it is gone from the box. Needs `interactive=true` (G0073) | the same sample, and whether the pointer is over the box or left it (`Over`, `Left`) |
+| `wheel` | the mouse wheel turned over such a box. Needs `interactive=true` (G0073). The box takes the turn before a Scroll around it | the place inside the box, the notches (above 0: away from the user), the keys held |
 
 Per control: **Slider** — `edit` streams while dragging (`held`),
 `change` commits on release; a key step commits directly (`change`
@@ -2672,9 +2676,9 @@ What `on:` takes:
   the file no longer has does not compile.
 - **Nothing**: with no `on:` line for an event, the handler it names is
   the node's own name (`saveButton`). One name serves all of a node's
-  events; the event's kind says which one happened. `press`, `release`
-  and `pointer` are the exception: gogo reports them only on a node
-  whose line has that `on:`.
+  events; the event's kind says which one happened. `press`, `release`,
+  `pointer`, `hover` and `wheel` are the exception: gogo reports them only
+  on a node whose line has that `on:`.
 - **`emit(Name)`**: the event is reported under `Name`. Use it to give
   several controls one name (`emit(BackPressed)` on a button and on a
   key).
@@ -2818,7 +2822,7 @@ glide freezes mid-flight until the next input.
 
 ```rust
     pub fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> EventList {
-        self.input.touch(&self.page, &mut self.rt, self.kept.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1 })
+        self.input.touch(&self.page, &mut self.rt, self.kept.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1, ..Touch::PLAIN })
     }
 ```
 

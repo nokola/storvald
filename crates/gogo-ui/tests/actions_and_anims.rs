@@ -52,7 +52,7 @@ impl Fx {
 
     fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> EventList {
         let kept = KeptFrame::fresh(&self.page, resolve(&self.page, &self.rt), VIEW, &FixedAdvance);
-        self.input.touch(&self.page, &mut self.rt, kept.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1 })
+        self.input.touch(&self.page, &mut self.rt, kept.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1, ..Touch::PLAIN })
     }
 
     /// The look after this frame's state changes have met their rules.

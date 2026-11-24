@@ -92,19 +92,19 @@ fn pointer_reports_every_phase_in_node_space() {
     let mut rt = Runtime::new(&page);
     let mut input = Input::new();
     let f = KeptFrame::fresh(&page, resolve(&page, &rt), Rect::new(0.0, 0.0, 200.0, 200.0), &FixedAdvance);
-    let mut touch = |phase: Phase, x: f32, y: f32, t: f64, rt: &mut Runtime| input.touch(&page, rt, f.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1 });
+    let mut touch = |phase: Phase, x: f32, y: f32, t: f64, rt: &mut Runtime| input.touch(&page, rt, f.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1, ..Touch::PLAIN });
     let ev = touch(Phase::Down, 25.0, 15.0, 0.0, &mut rt);
     assert_eq!(ev.len(), 1);
     assert_eq!(ev[0].node, pad);
-    assert_eq!(ev[0].kind, EventKind::Pointer { phase: Phase::Down, x: 5.0, y: 5.0 });
+    assert!(matches!(ev[0].kind, EventKind::Pointer(Phase::Down, gogo_ui::PointerSample { x, y, .. }) if x == 5.0 && y == 5.0), "{ev:?}");
     assert!(matches!(ev[0].action, Some(Action::Named(id)) if page.str(id) == "pad_touch"));
     assert!(!rt.has(pad, gogo_ui::runtime::HELD));
     // Moving off the node still reports (captured), in node space.
     let ev = touch(Phase::Move, 150.0, 100.0, 0.1, &mut rt);
-    assert_eq!(ev[0].kind, EventKind::Pointer { phase: Phase::Move, x: 130.0, y: 90.0 });
+    assert!(matches!(ev[0].kind, EventKind::Pointer(Phase::Move, gogo_ui::PointerSample { x, y, .. }) if x == 130.0 && y == 90.0), "{ev:?}");
     let ev = touch(Phase::Up, 150.0, 100.0, 0.2, &mut rt);
     assert_eq!(ev.len(), 1);
-    assert!(matches!(ev[0].kind, EventKind::Pointer { phase: Phase::Up, .. }));
+    assert!(matches!(ev[0].kind, EventKind::Pointer(Phase::Up, _)));
     let _ = Value::VNum(0.0);
 }
 

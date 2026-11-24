@@ -23,7 +23,7 @@ use std::sync::Arc;
 use gogo_text::{EpxMeasure, TextEngine};
 use gogo_ui::page::{Action, NO_NODE, NO_STR, StaticPage, StrId};
 use gogo_ui::reload::{Refused, Reloader};
-use gogo_ui::{ArrangementId, Draw, Event, EventList, ImageKey, Images, Input, KeptFrame, Key, Kind, Locale, Mods, NodeId, Orientation, Page, Phase, PropKey, Rect, Runtime, ScreenClass, Touch, Value, hit};
+use gogo_ui::{ArrangementId, Buttons, Draw, Event, EventList, ImageKey, Images, Input, KeptFrame, Key, Kind, Locale, MOUSE_ID, Mods, NodeId, Orientation, Page, Phase, PropKey, Rect, Runtime, ScreenClass, Touch, Value, hit};
 
 /// Every picture an app's pages name or its code shows, with what the host
 /// keeps about each: its size, whether it loads late, and the file bytes
@@ -1016,23 +1016,36 @@ impl PageStack {
         self.touched.iter().find(|(other, _)| *other == finger).map(|(_, page)| *page)
     }
 
-    /// Hands a touch, in epx, to the page `id`: the one `pick` chose when
-    /// the finger came down, or the one that has held the finger since.
+    /// Hands one sample of a pointer that presses, in epx, to the page
+    /// `id`: the one `pick` chose when the pointer came down, or the one
+    /// that has held it since. A pointer that presses nothing goes to
+    /// `hover`.
     ///
-    /// Returns the events the touch caused on that page.
-    #[allow(clippy::too_many_arguments)]
-    pub fn touch_to(&mut self, id: PageId, phase: Phase, x: f32, y: f32, t: f64, finger: u64, epx: f32, assets: &UiAssets) -> EventList {
-        if phase == Phase::Down {
+    /// A `Down` of a pointer that page already holds stays with that
+    /// page: a second button of the mouse.
+    ///
+    /// Returns the events the sample caused on that page.
+    pub fn pointer_to(&mut self, id: PageId, touch: Touch, epx: f32, assets: &UiAssets) -> EventList {
+        let finger: u64 = touch.id;
+        if touch.phase == Phase::Down {
             self.touched.retain(|(other, _)| *other != finger);
             self.touched.push((finger, id));
         }
         let measure: EpxMeasure<'_> = assets.measure(epx);
         let page: &mut PageUi = self.get_mut(id);
-        let events: EventList = page.input.touch(&page.page, &mut page.runtime, page.kept.frame(), &measure, Touch { phase, x, y, t, id: finger });
-        if matches!(phase, Phase::Up | Phase::Cancel) {
+        let events: EventList = page.input.touch(&page.page, &mut page.runtime, page.kept.frame(), &measure, touch);
+        if matches!(touch.phase, Phase::Up | Phase::Cancel) {
             self.touched.retain(|(other, _)| *other != finger);
         }
         events
+    }
+
+    /// `pointer_to` for a sample that says no more than a plain touch
+    /// screen does: a finger, or the mouse's primary button (`finger` is
+    /// `MOUSE_ID`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn touch_to(&mut self, id: PageId, phase: Phase, x: f32, y: f32, t: f64, finger: u64, epx: f32, assets: &UiAssets) -> EventList {
+        self.pointer_to(id, plain_touch(phase, x, y, t, finger), epx, assets)
     }
 
     /// Hands a touch to the page it belongs to. A finger that comes down
@@ -1047,8 +1060,18 @@ impl PageStack {
     /// touch.
     #[allow(clippy::too_many_arguments)]
     pub fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64, finger: u64, epx: f32, assets: &UiAssets) -> Option<(PageId, EventList)> {
-        let id: PageId = if phase == Phase::Down { self.pick(x, y).or_else(|| self.caret_holder().map(|(id, _)| id)) } else { self.touched_by(finger) }?;
-        Some((id, self.touch_to(id, phase, x, y, t, finger, epx, assets)))
+        self.pointer(plain_touch(phase, x, y, t, finger), epx, assets)
+    }
+
+    /// `touch` with the whole sample: tool, buttons, pressure, a pen's
+    /// lean, the keys held.
+    ///
+    /// A `Down` of a pointer that a page already holds goes to that page:
+    /// a second button of the mouse is a move of the press it has.
+    pub fn pointer(&mut self, touch: Touch, epx: f32, assets: &UiAssets) -> Option<(PageId, EventList)> {
+        let held_by: Option<PageId> = self.touched_by(touch.id);
+        let id: PageId = if touch.phase == Phase::Down && held_by.is_none() { self.pick(touch.x, touch.y).or_else(|| self.caret_holder().map(|(id, _)| id)) } else { held_by }?;
+        Some((id, self.pointer_to(id, touch, epx, assets)))
     }
 
     /// Hands a key to the page that has the keyboard. When no page has
@@ -1083,13 +1106,14 @@ impl PageStack {
     /// `top` is the topmost page of this stack under the mouse, or `None`
     /// when a page of another stack is above it. A finger never comes
     /// here: a touch does not hover.
-    pub fn hover(&mut self, top: Option<PageId>, x: f32, y: f32) {
+    ///
+    /// `sample`: place in epx; its phase is not read. `heard` gets the
+    /// `on:hover=` events, each with its page: `Over` for the box under
+    /// the mouse, `Left` for the box it was over before.
+    pub fn hover(&mut self, top: Option<PageId>, sample: Touch, heard: &mut Vec<(PageId, Event)>) {
         for (id, page) in self.iter_mut() {
-            if Some(id) == top {
-                page.input.hover(&page.page, &mut page.runtime, page.kept.frame(), x, y);
-            } else {
-                page.input.unhover(&page.page, &mut page.runtime);
-            }
+            let events: EventList = if Some(id) == top { page.input.hover_sample(&page.page, &mut page.runtime, page.kept.frame(), sample) } else { page.input.unhover(&page.page, &mut page.runtime) };
+            heard.extend(events.into_iter().map(|event| (id, event)));
         }
     }
 
@@ -1098,20 +1122,23 @@ impl PageStack {
         self.order.iter().rev().copied().find(|id| self.get(*id).covers(x, y))
     }
 
-    /// The mouse left the window: no page shows a hovered node.
-    pub fn unhover(&mut self) {
-        for (_, page) in self.iter_mut() {
-            page.input.unhover(&page.page, &mut page.runtime);
+    /// The mouse left the window: no page shows a hovered node. `heard`
+    /// gets `Left` for the `on:hover=` box it was over.
+    pub fn unhover(&mut self, heard: &mut Vec<(PageId, Event)>) {
+        for (id, page) in self.iter_mut() {
+            let events: EventList = page.input.unhover(&page.page, &mut page.runtime);
+            heard.extend(events.into_iter().map(|event| (id, event)));
         }
     }
 
-    /// One notch of the mouse wheel at (`x`, `y`) on the page `id`. It
-    /// steps a Slider or a Toggle under the mouse.
+    /// Mouse wheel turned by `notches` at (`x`, `y`) on the page `id`,
+    /// with `mods` held. It goes to a box with `on:wheel=` under the
+    /// mouse, else it steps a Slider or a Toggle there.
     ///
-    /// Returns the events of the control that took it.
-    pub fn wheel_to(&mut self, id: PageId, x: f32, y: f32, is_up: bool) -> EventList {
+    /// Returns the events of what took it.
+    pub fn wheel_to(&mut self, id: PageId, x: f32, y: f32, notches: f32, mods: Mods) -> EventList {
         let page: &mut PageUi = self.get_mut(id);
-        page.input.wheel(&page.page, &mut page.runtime, page.kept.frame(), x, y, is_up)
+        page.input.wheel(&page.page, &mut page.runtime, page.kept.frame(), x, y, notches, mods)
     }
 
     /// The text selected on the page that has the keyboard, for a copy.
@@ -1156,4 +1183,10 @@ impl PageStack {
         }
         has_any
     }
+}
+
+/// A sample that says no more than a plain touch screen does: a finger,
+/// or the mouse with its primary button (`finger` is `MOUSE_ID`).
+pub(crate) fn plain_touch(phase: Phase, x: f32, y: f32, t: f64, finger: u64) -> Touch {
+    if finger == MOUSE_ID { Touch::mouse(phase, x, y, t, Buttons::PRIMARY) } else { Touch { phase, x, y, t, id: finger, ..Touch::PLAIN } }
 }

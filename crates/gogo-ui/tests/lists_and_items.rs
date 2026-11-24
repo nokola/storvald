@@ -75,7 +75,7 @@ impl Rows {
         for (phase, t) in [(Phase::Down, 1.0), (Phase::Up, 1.05)] {
             let kept = self.kept();
             let r = kept.rects()[self.rows[row].index()];
-            events.extend(self.input.touch(&self.page, &mut self.rt, kept.frame(), &FixedAdvance, Touch { phase, x: r.x + r.w / 2.0, y: r.y + r.h / 2.0, t: t + row as f64, id: 1 }));
+            events.extend(self.input.touch(&self.page, &mut self.rt, kept.frame(), &FixedAdvance, Touch { phase, x: r.x + r.w / 2.0, y: r.y + r.h / 2.0, t: t + row as f64, id: 1, ..Touch::PLAIN }));
         }
         events
     }

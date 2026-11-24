@@ -100,7 +100,7 @@ impl Fx {
 
     fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> EventList {
         self.kept = KeptFrame::fresh(&self.page, resolve(&self.page, &self.rt), Rect::new(0.0, 0.0, 400.0, 800.0), &FixedAdvance);
-        self.input.touch(&self.page, &mut self.rt, self.kept.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1 })
+        self.input.touch(&self.page, &mut self.rt, self.kept.frame(), &FixedAdvance, Touch { phase, x, y, t, id: 1, ..Touch::PLAIN })
     }
 
     fn key(&mut self, k: Key) -> EventList {

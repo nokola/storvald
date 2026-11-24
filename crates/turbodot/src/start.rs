@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use gogo_ui::{Key, Mods, Phase};
+use gogo_ui::{Buttons, Key, Mods};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
@@ -21,7 +21,6 @@ struct ProgramWindow<'a, A> {
     gfx: Option<Gfx>,
     /// The mouse, in device pixels.
     cursor: (f32, f32),
-    is_mouse_down: bool,
     mods: Mods,
     started: Instant,
     last_frame: Instant,
@@ -48,15 +47,9 @@ impl<A: 'static> ProgramWindow<'_, A> {
         (self.cursor.0 / epx, self.cursor.1 / epx)
     }
 
-    /// One mouse event into page on screen.
-    fn pointer(&mut self, phase: Phase) {
-        let (x, y) = self.cursor_epx();
-        if phase == Phase::Move && !self.is_mouse_down {
-            self.program.hover(x, y);
-        } else {
-            self.program.touch(phase, x, y, self.started.elapsed().as_secs_f64());
-        }
-        self.redraw();
+    /// Seconds since program started: time of an input sample.
+    fn now(&self) -> f64 {
+        self.started.elapsed().as_secs_f64()
     }
 
     /// One frame: advance, lay out, draw.
@@ -139,15 +132,23 @@ impl<A: 'static> ApplicationHandler for ProgramWindow<'_, A> {
             WindowEvent::ScaleFactorChanged { .. } => self.redraw(),
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor = (position.x as f32, position.y as f32);
-                self.pointer(Phase::Move);
+                let (x, y) = self.cursor_epx();
+                self.program.mouse_moved(x, y, self.now(), self.mods);
+                self.redraw();
             }
             WindowEvent::CursorLeft { .. } => {
                 self.program.unhover();
                 self.redraw();
             }
-            WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => {
-                self.is_mouse_down = state == ElementState::Pressed;
-                self.pointer(if self.is_mouse_down { Phase::Down } else { Phase::Up });
+            WindowEvent::MouseInput { state, button: button @ (MouseButton::Left | MouseButton::Right | MouseButton::Middle), .. } => {
+                let button: Buttons = match button {
+                    MouseButton::Right => Buttons::SECONDARY,
+                    MouseButton::Middle => Buttons::MIDDLE,
+                    _ => Buttons::PRIMARY,
+                };
+                let (x, y) = self.cursor_epx();
+                self.program.mouse_button(button, state == ElementState::Pressed, x, y, self.now(), self.mods);
+                self.redraw();
             }
             // Mouse's own back button: back request, as Esc is.
             WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Back, .. } => {
@@ -160,11 +161,11 @@ impl<A: 'static> ApplicationHandler for ProgramWindow<'_, A> {
                     MouseScrollDelta::PixelDelta(by) => by.y as f32 / (TOUCHPAD_PIXELS_PER_NOTCH * self.epx()),
                 };
                 let (x, y) = self.cursor_epx();
-                self.program.wheel(x, y, notches);
+                self.program.wheel(x, y, notches, self.mods);
                 self.redraw();
             }
             WindowEvent::ModifiersChanged(mods) => {
-                self.mods = Mods { shift: mods.state().shift_key(), ctrl: mods.state().control_key() };
+                self.mods = Mods { shift: mods.state().shift_key(), ctrl: mods.state().control_key(), alt: mods.state().alt_key() };
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 if event.logical_key == WinitKey::Named(NamedKey::Escape) {
@@ -210,7 +211,7 @@ pub fn start<A: 'static>(options: WindowOptions<'_>, mut program: Program<A>) ->
     program.on_page_file_saved(move || {
         let _ = proxy.send_event(());
     });
-    let mut window = ProgramWindow { options, program, gfx: None, cursor: (0.0, 0.0), is_mouse_down: false, mods: Mods::NONE, started: Instant::now(), last_frame: Instant::now(), failed: None };
+    let mut window = ProgramWindow { options, program, gfx: None, cursor: (0.0, 0.0), mods: Mods::NONE, started: Instant::now(), last_frame: Instant::now(), failed: None };
     event_loop.run_app(&mut window).map_err(|e| format!("the event loop stopped: {e}"))?;
     match window.failed {
         Some(why) => Err(why),

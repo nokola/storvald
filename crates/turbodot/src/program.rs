@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use gogo_text::TextEngine;
 use gogo_ui::reload::{BuildTables, Reloader, Sources};
-use gogo_ui::{Draw, Event, EventList, Hook, ImageKey, Key, Locale, MOUSE_ID, Mods, NodeId, Orientation, Phase, PropKey, Rect, ScreenClass, Value};
+use gogo_ui::{Buttons, Draw, Event, EventList, Hook, ImageKey, Key, Locale, Mods, NodeId, Orientation, Phase, PropKey, Rect, ScreenClass, Touch, Value};
 
 use crate::page::{Back, Host, IntoPage, Nav, PageKind, PageObject, Request};
 use crate::pages::{PageUi, PageId, PagePlatform, PagePose, PageStack, UiAssets};
@@ -100,6 +100,11 @@ pub struct Program<A = ()> {
     is_screen_from_host: bool,
     /// Device pixels per epx.
     epx: f32,
+    /// Mouse buttons down, as `mouse_button` was told.
+    mouse_buttons: Buttons,
+    /// `on:hover=` events of one mouse move, each with its page. Kept
+    /// between moves: a move allocates nothing.
+    hover_events: Vec<(PageId, Event)>,
     /// Width and height of last frame, in epx.
     size: (f32, f32),
     /// What each page put under its nodes this frame (`gpu_draw_screen`),
@@ -183,7 +188,7 @@ impl<A: 'static> Program<A> {
         let fonts: Vec<(&str, Vec<u8>)> = built.fonts.iter().map(|(key, bytes)| (*key, bytes.to_vec())).collect();
         let assets: UiAssets = UiAssets::new(TextEngine::new(&fonts), crate::pictures::image_table(built.tables, built.release_unused));
         let platform: PagePlatform = PagePlatform::new([0.0; 4], Orientation::from_view(1.0, 1.0), ScreenClass::from_view(1.0, 1.0), None);
-        let mut program: Program<A> = Program { app, assets, platform, stack: PageStack::new(), objects: Vec::new(), back_stack: Vec::new(), cached: Vec::new(), is_kind_checked: Vec::new(), has_played_entrances: Vec::new(), on_their_way: Vec::new(), nav: Nav::new(), reload, is_screen_from_host: false, epx: 1.0, size: (0.0, 0.0), layer_draws: Vec::new(), picture_keys: Vec::new(),
+        let mut program: Program<A> = Program { app, assets, platform, stack: PageStack::new(), objects: Vec::new(), back_stack: Vec::new(), cached: Vec::new(), is_kind_checked: Vec::new(), has_played_entrances: Vec::new(), on_their_way: Vec::new(), nav: Nav::new(), reload, is_screen_from_host: false, epx: 1.0, mouse_buttons: Buttons::NONE, hover_events: Vec::new(), size: (0.0, 0.0), layer_draws: Vec::new(), picture_keys: Vec::new(),
             pictures_to_release: Vec::new(),
             code_pictures_to_release: Vec::new(),
             arrived: None,
@@ -532,21 +537,75 @@ impl<A: 'static> Program<A> {
     /// Returns false when no page took the touch: host hands it to what
     /// is under the pages. Before first frame there is nothing to touch.
     pub fn touch_finger(&mut self, phase: Phase, x: f32, y: f32, t: f64, finger: u64) -> bool {
+        self.pointer(crate::pages::plain_touch(phase, x, y, t, finger))
+    }
+
+    /// `touch_finger` for the mouse's primary button, or for a test with
+    /// one finger.
+    pub fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> bool {
+        self.pointer(Touch::mouse(phase, x, y, t, Buttons::PRIMARY))
+    }
+
+    /// Hands one sample of one pointer to the page it belongs to, with
+    /// all a device says: tool, buttons, pressure, a pen's lean, keys
+    /// held, time platform took the sample. Place in epx.
+    ///
+    /// Needed for what `touch_finger` cannot say. A host hands every
+    /// sample the platform took, in order, also those between two
+    /// frames: a brush needs each one. A sample allocates nothing.
+    ///
+    /// `Down` of a pointer a page already holds goes to that page:
+    /// second button of the mouse. A pointer that presses nothing goes
+    /// to `hover_sample`.
+    ///
+    /// Returns false when no page took the sample.
+    pub fn pointer(&mut self, touch: Touch) -> bool {
         if !self.stack.get(self.top()).kept.is_laid_out() {
             return false;
         }
+        let held_by: Option<PageId> = self.stack.touched_by(touch.id);
         // A press no page takes still goes to page whose field holds the
         // text caret, so the field ends its edit.
-        let taker: Option<PageId> = if phase == Phase::Down { self.page_that_takes(x, y).or_else(|| self.caret_holder().map(|(id, _)| id)) } else { self.stack.touched_by(finger) };
+        let taker: Option<PageId> = if touch.phase == Phase::Down && held_by.is_none() { self.page_that_takes(touch.x, touch.y).or_else(|| self.caret_holder().map(|(id, _)| id)) } else { held_by };
         let Some(id) = taker else { return false };
-        let events: EventList = self.stack.touch_to(id, phase, x, y, t, finger, self.epx, &self.assets);
+        let events: EventList = self.stack.pointer_to(id, touch, self.epx, &self.assets);
         self.hand_events(id, &events);
         true
     }
 
-    /// `touch_finger` for a mouse, or for a test with one finger.
-    pub fn touch(&mut self, phase: Phase, x: f32, y: f32, t: f64) -> bool {
-        self.touch_finger(phase, x, y, t, MOUSE_ID)
+    /// Mouse moved to (`x`, `y`), with `mods` held, at time `t`.
+    ///
+    /// Needed so a host with a window has one call per mouse event: a
+    /// move with a button down is a move of the mouse's press; with none
+    /// down it is a hover.
+    ///
+    /// Returns false when no page took it.
+    pub fn mouse_moved(&mut self, x: f32, y: f32, t: f64, mods: Mods) -> bool {
+        let sample: Touch = Touch { mods, ..Touch::mouse(Phase::Move, x, y, t, self.mouse_buttons) };
+        if self.mouse_buttons.is_none() { self.hover_sample(sample) } else { self.pointer(sample) }
+    }
+
+    /// One mouse button went down or lifted at (`x`, `y`). `button`: one
+    /// of `Buttons::PRIMARY` (left), `SECONDARY` (right), `MIDDLE`.
+    ///
+    /// Needed because the mouse is one pointer: its press starts with
+    /// its first button and ends when its last one lifts. A button in
+    /// between is a move with another set of buttons, and this call
+    /// keeps that set.
+    ///
+    /// Returns false when no page took it.
+    pub fn mouse_button(&mut self, button: Buttons, is_down: bool, x: f32, y: f32, t: f64, mods: Mods) -> bool {
+        let before: Buttons = self.mouse_buttons;
+        self.mouse_buttons = if is_down { before.with(button) } else { before.without(button) };
+        let phase: Phase = match (before.is_none(), self.mouse_buttons.is_none()) {
+            (true, false) => Phase::Down,
+            (false, true) => Phase::Up,
+            (false, false) => Phase::Move,
+            // A lift with nothing down: a button that went down outside
+            // the window.
+            (true, true) => return false,
+        };
+        self.pointer(Touch { mods, ..Touch::mouse(phase, x, y, t, self.mouse_buttons) })
     }
 
     /// True for page on its way out, and for page placed in one.
@@ -692,17 +751,40 @@ impl<A: 'static> Program<A> {
     /// would go on to the host): host with pages of its own under the
     /// program's hands them the move.
     pub fn hover(&mut self, x: f32, y: f32) -> bool {
+        self.hover_sample(Touch::mouse(Phase::Move, x, y, 0.0, Buttons::NONE))
+    }
+
+    /// `hover` with the whole sample: a pen above the screen, keys held.
+    /// A box with `on:hover=` under the pointer hears it; the box it was
+    /// over before hears that it left. `sample.phase` is not read.
+    ///
+    /// Returns false when no page is under the pointer.
+    pub fn hover_sample(&mut self, sample: Touch) -> bool {
         if !self.stack.get(self.top()).kept.is_laid_out() {
             return false;
         }
-        let under_mouse: Option<PageId> = self.page_that_takes(x, y);
-        self.stack.hover(under_mouse, x, y);
+        let under_mouse: Option<PageId> = self.page_that_takes(sample.x, sample.y);
+        let mut heard: Vec<(PageId, Event)> = std::mem::take(&mut self.hover_events);
+        self.stack.hover(under_mouse, sample, &mut heard);
+        self.hand_hover_events(heard);
         under_mouse.is_some()
     }
 
-    /// Mouse left the window: nothing is hovered.
+    /// Mouse left the window: nothing is hovered. A box with `on:hover=`
+    /// it was over hears that it left.
     pub fn unhover(&mut self) {
-        self.stack.unhover();
+        let mut heard: Vec<(PageId, Event)> = std::mem::take(&mut self.hover_events);
+        self.stack.unhover(&mut heard);
+        self.hand_hover_events(heard);
+    }
+
+    /// Hands each page its `on:hover=` events, and keeps `heard`'s
+    /// memory for the next mouse move.
+    fn hand_hover_events(&mut self, mut heard: Vec<(PageId, Event)>) {
+        for (id, event) in heard.drain(..) {
+            self.hand_events(id, &[event]);
+        }
+        self.hover_events = heard;
     }
 
     /// One key press, for control that has the keyboard.
@@ -728,7 +810,9 @@ impl<A: 'static> Program<A> {
     /// Returns false when no page took the turn, and then none moved:
     /// host with something of its own under the program's pages hands
     /// that the turn.
-    pub fn wheel(&mut self, x: f32, y: f32, notches: f32) -> bool {
+    ///
+    /// `mods`: keys held. A box with `on:wheel=` gets them with the turn.
+    pub fn wheel(&mut self, x: f32, y: f32, notches: f32, mods: Mods) -> bool {
         for i in (0..self.stack.order.len()).rev() {
             let id: PageId = self.stack.order[i];
             if self.is_leaving(id) || !self.stack.get(id).covers(x, y) {
@@ -736,7 +820,7 @@ impl<A: 'static> Program<A> {
             }
             let page_ui: &mut PageUi = self.stack.get_mut(id);
             let is_modal: bool = page_ui.is_modal;
-            match page_ui.wheel(x, y, notches) {
+            match page_ui.wheel(x, y, notches, mods) {
                 Some(events) => {
                     self.hand_events(id, &events);
                     return true;

@@ -239,7 +239,7 @@ impl Rows {
             let look = resolve_animated(&self.page, &mut self.rt);
             let kept = KeptFrame::fresh(&self.page, look, VIEW, &FixedAdvance);
             let r = kept.rects()[self.rows[row].index()];
-            self.input.touch(&self.page, &mut self.rt, kept.frame(), &FixedAdvance, Touch { phase, x: r.x + r.w / 2.0, y: r.y + r.h / 2.0, t: t + row as f64, id: 1 });
+            self.input.touch(&self.page, &mut self.rt, kept.frame(), &FixedAdvance, Touch { phase, x: r.x + r.w / 2.0, y: r.y + r.h / 2.0, t: t + row as f64, id: 1, ..Touch::PLAIN });
         }
     }
 

@@ -2,7 +2,7 @@
 # `cargo test -p storvald-perf` fails when one differs.
 # A change that moves a count on purpose writes this file again:
 #     cargo run -p storvald-perf -- write-expected
-compile_controls_page allocations 3518
+compile_controls_page allocations 3517
 compile_controls_page nodes_placed 0
 compile_controls_page nodes_measured 0
 start_program allocations 350

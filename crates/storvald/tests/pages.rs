@@ -127,23 +127,23 @@ fn the_wheel_scrolls_the_text_under_the_mouse() {
     let mut program: Program<AppState> = shown();
     let scroll: NodeId = SKILLS.skill_scroll;
     let text: Rect = program.ui().rect(scroll);
-    program.wheel(text.x + 40.0, text.y + 40.0, -2.0);
+    program.wheel(text.x + 40.0, text.y + 40.0, -2.0, turbodot::gogo::Mods::NONE);
     frame(&mut program, 0.0);
     assert_eq!(program.ui().scroll_of(scroll), [0.0, 96.0], "two notches toward the user move the text up by 96");
-    program.wheel(text.x + 40.0, text.y + 40.0, 5.0);
+    program.wheel(text.x + 40.0, text.y + 40.0, 5.0, turbodot::gogo::Mods::NONE);
     frame(&mut program, 0.0);
     assert_eq!(program.ui().scroll_of(scroll), [0.0, 0.0], "the top holds");
     // Far past the end: the text stops with its last line at the bottom
     // of the box.
-    program.wheel(text.x + 40.0, text.y + 40.0, -1000.0);
+    program.wheel(text.x + 40.0, text.y + 40.0, -1000.0, turbodot::gogo::Mods::NONE);
     frame(&mut program, 0.0);
     frame(&mut program, 0.0);
     let whole: Rect = program.ui().rect(SKILLS.skill_text);
     assert_eq!(program.ui().scroll_of(scroll), [0.0, whole.h - text.h], "the end holds: the text is {} tall in a box of {}", whole.h, text.h);
-    program.wheel(text.x + 40.0, text.y + 40.0, 1000.0);
+    program.wheel(text.x + 40.0, text.y + 40.0, 1000.0, turbodot::gogo::Mods::NONE);
     frame(&mut program, 0.0);
     let side: Rect = program.ui().rect(SKILLS.side);
-    program.wheel(side.x + 40.0, side.y + 80.0, -2.0);
+    program.wheel(side.x + 40.0, side.y + 80.0, -2.0, turbodot::gogo::Mods::NONE);
     frame(&mut program, 0.0);
     assert_eq!(program.ui().scroll_of(scroll), [0.0, 0.0]);
 }

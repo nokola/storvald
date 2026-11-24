@@ -78,7 +78,12 @@ pub struct CompileOptions<'a> {
 /// `show`, `hide` and `uncover` are hooks: each plays an anim and sends
 /// no event. `uncover` plays when host says page shows again from under
 /// what covered it (`Runtime::play_uncovers`).
-const EVENTS: &[&str] = &["activate", "press", "release", "change", "edit", "show", "hide", "uncover", "pointer"];
+const EVENTS: &[&str] = &["activate", "press", "release", "change", "edit", "show", "hide", "uncover", "pointer", "hover", "wheel"];
+
+/// Events of a pointer as the device reports it, for a box the program's
+/// code handles itself. Each needs `interactive=true` on the same node
+/// (G0073) and goes on a passive box (G0072).
+const RAW_POINTER_EVENTS: &[&str] = &["pointer", "hover", "wheel"];
 
 /// The extensions the build embeds (`build_pages` collects every literal
 /// carrying one) — a literal naming one must write the `res://` scheme
@@ -6642,6 +6647,9 @@ impl<'a> Compiler<'a> {
             "pointer" if kind.is_press_surface() || matches!(kind, Kind::Scroll | Kind::Slider | Kind::Input) => {
                 self.error("G0072", line, format!("`on:pointer` takes the raw finger, so a {kind:?}'s own gestures would never fire — put the pointer surface on a passive box (Layers, Panel)"));
             }
+            "hover" | "wheel" if kind.is_press_surface() || matches!(kind, Kind::Scroll | Kind::List | Kind::Slider | Kind::Input) => {
+                self.error("G0072", line, format!("`on:{event}` is for a box the program's code handles itself, and a {kind:?} has its own answer to the mouse — put it on a passive box (Layers, Panel)"));
+            }
             _ => {}
         }
     }
@@ -6658,7 +6666,7 @@ impl<'a> Compiler<'a> {
                 _ => "",
             };
             if hint.is_empty() {
-                self.error("G0049", p.line, format!("`on:{event}` — raw signals are gone (§7); the events are activate, press, release, change, edit, show, hide, pointer"));
+                self.error("G0049", p.line, format!("`on:{event}` — raw signals are gone (§7); the events are activate, press, release, change, edit, show, hide, pointer, hover, wheel"));
             } else {
                 self.error("G0049", p.line, format!("`on:{event}` is spelled `on:{hint}`"));
             }
@@ -7129,16 +7137,24 @@ impl<'a> Compiler<'a> {
         // interactive is a wire nothing can ever reach; error now, not a
         // control that silently ignores every finger. (Checked here so
         // style-carried props are already merged into the node's range.)
-        let pointer_ev = self.page.intern("pointer");
-        for i in 0..self.page.nodes.len() {
-            let node = &self.page.nodes[i];
-            let (hf, hn) = node.handlers;
-            if !self.page.handlers[hf as usize..(hf + hn) as usize].iter().any(|h| h.event == pointer_ev) {
+        // `on:hover` and `on:wheel` are the same kind of wire.
+        for word in RAW_POINTER_EVENTS {
+            // Looked up, not added: a page with no such wire keeps the
+            // word out of its strings.
+            let raw_event = self.page.intern_lookup(word);
+            if raw_event == NO_STR {
                 continue;
             }
-            if self.page.prop(NodeId::from_index(i), PropKey::Interactive) != Some(Value::VBool(true)) {
-                let line = node.line;
-                self.error("G0073", line, "`on:pointer` needs `interactive=true` on the same node — passive boxes are transparent to input, always; the wire alone claims nothing");
+            for i in 0..self.page.nodes.len() {
+                let node = &self.page.nodes[i];
+                let (hf, hn) = node.handlers;
+                if !self.page.handlers[hf as usize..(hf + hn) as usize].iter().any(|h| h.event == raw_event) {
+                    continue;
+                }
+                if self.page.prop(NodeId::from_index(i), PropKey::Interactive) != Some(Value::VBool(true)) {
+                    let line = node.line;
+                    self.error("G0073", line, format!("`on:{word}` needs `interactive=true` on the same node — passive boxes are transparent to input, always; the wire alone claims nothing"));
+                }
             }
         }
         // A Radio outside any `choice` has nothing to be exclusive with:
@@ -8264,6 +8280,11 @@ mod tests {
         assert!(codes("View v { Button b on:pointer=x }").contains(&"G0072".to_string()));
         assert!(codes("View v { Layers l interactive=true, on:press=x }").contains(&"G0072".to_string()));
         assert!(codes("View v { Layers l on:pointer=x }").contains(&"G0073".to_string()), "pointer without interactive=true is a dead wire");
+        assert!(codes("View v { Layers l on:hover=x }").contains(&"G0073".to_string()), "so is hover");
+        assert!(codes("View v { Layers l on:wheel=x }").contains(&"G0073".to_string()), "and wheel");
+        assert!(codes("View v { Layers l interactive=true, on:hover=x, on:wheel=y }").is_empty(), "a passive box that declares itself takes both");
+        assert!(codes("View v { Button b on:hover=x }").contains(&"G0072".to_string()), "a control has its own answer to the mouse");
+        assert!(codes("View v { Scroll s on:wheel=x { } }").contains(&"G0072".to_string()), "a Scroll moves by the wheel itself");
         assert!(!crate::diag::has_errors(&compile("View v { Layers l interactive=true, on:pointer=x }", &|_| None).diags));
         assert!(codes("Column c { Label a }").contains(&"G7003".to_string()));
         assert!(codes("View v { Label a text=\"x\"/k; Label b text=\"y\"/k }").contains(&"G8001".to_string()));

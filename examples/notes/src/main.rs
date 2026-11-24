@@ -571,6 +571,31 @@ mod tests {
         assert!(program.page::<HomePage>().is_some() && program.ui().drawn_pose(HOME.home_page).is_some(), "under a fullscreen page it comes back");
     }
 
+    /// Mouse is one pointer with several buttons: its press starts with
+    /// the first button and ends when the last one lifts. A button other
+    /// than the left one presses no button of a page.
+    #[test]
+    fn a_button_of_a_page_takes_the_left_mouse_button_alone() {
+        use turbodot::gogo::{Buttons, Mods};
+        let middle = |rect: Rect| -> (f32, f32) { (rect.x + rect.w / 2.0, rect.y + rect.h / 2.0) };
+        let mut program: Program<AppState> = started(AppState::default());
+        let (x, y): (f32, f32) = middle(program.ui().rect(HOME.add_note));
+        // Middle button alone: nothing.
+        program.mouse_button(Buttons::MIDDLE, true, x, y, 1.0, Mods::NONE);
+        program.mouse_button(Buttons::MIDDLE, false, x, y, 1.1, Mods::NONE);
+        assert_eq!(program.depth(), 1, "the middle button opens no page");
+        // Left, then middle too, then left lifts: the press goes on until
+        // the last button lifts.
+        program.mouse_button(Buttons::PRIMARY, true, x, y, 3.0, Mods::NONE);
+        program.mouse_button(Buttons::MIDDLE, true, x, y, 3.1, Mods::NONE);
+        program.mouse_button(Buttons::PRIMARY, false, x, y, 3.2, Mods::NONE);
+        assert_eq!(program.depth(), 1, "one press, and it has not ended");
+        program.mouse_button(Buttons::MIDDLE, false, x, y, 3.3, Mods::NONE);
+        assert_eq!(program.depth(), 2, "it ends when the last button lifts");
+        // A lift with no button down (it went down outside the window) is nothing.
+        assert!(!program.mouse_button(Buttons::PRIMARY, false, x, y, 4.0, Mods::NONE));
+    }
+
     /// Mouse move and wheel turn say whether a page took them, as a
     /// touch does.
     ///
@@ -582,16 +607,16 @@ mod tests {
         let mut program: Program<AppState> = started(AppState::default());
         let (x, y): (f32, f32) = middle(program.ui().rect(HOME.title));
         assert!(program.hover(x, y), "a page that takes every touch is under the mouse everywhere");
-        assert!(program.wheel(x, y, 1.0));
+        assert!(program.wheel(x, y, 1.0, turbodot::gogo::Mods::NONE));
 
         program.tap(HOME.open_paper, 2.0);
         let_the_slides_end(&mut program);
         let (x, y): (f32, f32) = middle(program.ui().rect(crate::ui::paper_page::NAMES.hint));
         assert!(!program.hover(x, y), "the mouse over the paper is the host's");
-        assert!(!program.wheel(x, y, 1.0));
+        assert!(!program.wheel(x, y, 1.0, turbodot::gogo::Mods::NONE));
         let (x, y): (f32, f32) = middle(program.ui().rect(crate::ui::paper_page::NAMES.go_back));
         assert!(program.hover(x, y), "over the page's button it is the page's");
-        assert!(program.wheel(x, y, 1.0));
+        assert!(program.wheel(x, y, 1.0, turbodot::gogo::Mods::NONE));
     }
 
     /// Wheel turn goes to the page that has something for it under the
@@ -622,13 +647,13 @@ mod tests {
         frame(&mut program, 0.0);
         frame(&mut program, 0.016);
         let (x, y): (f32, f32) = middle(program.ui().rect(SETTINGS.body));
-        assert!(program.wheel(x, y, -2.0), "the turn over the text is the page's: its Scroll moves");
+        assert!(program.wheel(x, y, -2.0, turbodot::gogo::Mods::NONE), "the turn over the text is the page's: its Scroll moves");
         frame(&mut program, 0.016);
         let scrolled: f32 = program.ui().scroll_of(SETTINGS.body)[1];
         assert!(scrolled > 0.0, "the text moved");
 
         let (x, y): (f32, f32) = middle(program.ui().rect(SETTINGS.title));
-        assert!(!program.wheel(x, y, -2.0), "over a label beside the Scroll the page has nothing for the turn");
+        assert!(!program.wheel(x, y, -2.0, turbodot::gogo::Mods::NONE), "over a label beside the Scroll the page has nothing for the turn");
         frame(&mut program, 0.016);
         assert_eq!(program.ui().scroll_of(SETTINGS.body)[1], scrolled, "and nothing moved");
 
@@ -636,7 +661,7 @@ mod tests {
         let mut program: Program<AppState> = started(AppState::default());
         open_settings(&mut program, 1.0);
         let (x, y): (f32, f32) = middle(program.ui().rect(SETTINGS.title));
-        assert!(program.wheel(x, y, -2.0), "a turn over a dialog is the dialog's");
+        assert!(program.wheel(x, y, -2.0, turbodot::gogo::Mods::NONE), "a turn over a dialog is the dialog's");
         frame(&mut program, 0.016);
         assert_eq!(program.ui().scroll_of(SETTINGS.body)[1], 0.0, "with nothing under the mouse to turn, nothing moves");
     }

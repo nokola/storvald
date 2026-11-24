@@ -10,7 +10,7 @@
 #![cfg(feature = "ui")]
 
 use gogo_text::TextEngine;
-use gogo_ui::{Event, EventKind, EventList, ImageKey, Images, NodeId, Orientation, Page, Phase, Rect, ScreenClass, compile, has_errors};
+use gogo_ui::{Buttons, Event, EventKind, EventList, HoverPhase, ImageKey, Images, MOUSE_ID, Mods, NodeId, Orientation, Page, Phase, PointerSample, Rect, ScreenClass, Tool, Touch, compile, has_errors};
 use turbodot::pages::{PageUi, ImageTable, PageId, PagePlatform, PageStack, UiAssets};
 
 /// A page with one wide button at its top left.
@@ -188,6 +188,83 @@ fn an_event_names_its_handler() {
     let activate: &Event = events.iter().find(|event| event.kind == EventKind::Activate).expect("a tap");
     assert_eq!(stack.get(id).handler_name(activate), Some("wide"));
     assert_eq!(id, bottom);
+}
+
+/// A page with a box its code handles itself at its top left.
+const PAD: &str = r#"
+View below background=#101010 {
+    Panel pad width=300, height=200, halign=left, valign=top, interactive=true, on:pointer=drawn, on:hover=over
+}
+"#;
+
+/// A page with one small button at its bottom right, and nothing else
+/// that takes a touch.
+const CORNER: &str = r#"
+View above {
+    Button small text="Small", width=100, height=50, halign=right, valign=bottom
+}
+"#;
+
+/// `PAD` below, `CORNER` above, after a frame.
+fn pad_under_a_button() -> (PageStack, UiAssets, PageId, PageId) {
+    let assets: UiAssets = assets();
+    let mut stack: PageStack = PageStack::new();
+    let below: PageId = stack.add(PageUi::new(page(PAD)));
+    let above: PageId = stack.add(PageUi::new(page(CORNER)));
+    stack.frame(0.0, SIZE, EPX, &platform(), &assets);
+    (stack, assets, below, above)
+}
+
+/// `pointer` hands a page all a device said about a sample: here a pen
+/// with its side button, its pressure, its lean and a key held.
+#[test]
+fn the_whole_sample_reaches_the_box_under_a_pen() {
+    let (mut stack, assets, below, _above) = pad_under_a_button();
+    let pen = Touch { phase: Phase::Down, x: 40.0, y: 30.0, t: 4.0, id: 9, tool: Tool::Pen, buttons: Buttons::PRIMARY.with(Buttons::SECONDARY), pressure: 0.4, tilt: 20.0, tilt_toward: 90.0, mods: Mods::CTRL };
+    let (id, events) = stack.pointer(pen, EPX, &assets).expect("the page with the pad takes it");
+    assert_eq!(id, below);
+    let EventKind::Pointer(phase, sample) = events[0].kind else { panic!("{events:?}") };
+    assert_eq!(stack.get(id).handler_name(&events[0]), Some("drawn"));
+    assert_eq!((phase, sample.x, sample.y, sample.finger, sample.tool, sample.pressure, sample.tilt, sample.tilt_toward, sample.time, sample.mods), (Phase::Down, 40.0, 30.0, 9, Tool::Pen, 0.4, 20.0, 90.0, 4.0, Mods::CTRL));
+    assert!(sample.buttons.has(Buttons::SECONDARY));
+}
+
+/// The mouse is one pointer: a second button that goes down while a page
+/// holds the mouse stays with that page, also over another page's node.
+#[test]
+fn a_second_button_of_the_mouse_stays_with_the_page_that_holds_it() {
+    let (mut stack, assets, below, above) = pad_under_a_button();
+    let (first, _) = stack.pointer(Touch::mouse(Phase::Down, 40.0, 30.0, 1.0, Buttons::MIDDLE), EPX, &assets).expect("the pad takes the middle button");
+    assert_eq!(first, below);
+    // Over the small button of the page above, the left button goes down.
+    let (second, events) = stack.pointer(Touch::mouse(Phase::Down, 390.0, 290.0, 1.1, Buttons::MIDDLE.with(Buttons::PRIMARY)), EPX, &assets).expect("the same page");
+    assert_eq!(second, below, "the page that holds the mouse, not the one under it now");
+    assert!(matches!(events[0].kind, EventKind::Pointer(Phase::Move, PointerSample { finger: MOUSE_ID, .. })), "a move of the press it has: {events:?}");
+    assert!(!stack.get(above).runtime.has(node(&stack, above, "small"), gogo_ui::runtime::HELD), "the button of the page above is not pressed");
+    let (last, events) = stack.pointer(Touch::mouse(Phase::Up, 390.0, 290.0, 1.2, Buttons::NONE), EPX, &assets).expect("the lift follows");
+    assert_eq!(last, below);
+    assert!(matches!(events[0].kind, EventKind::Pointer(Phase::Up, _)));
+    // The mouse is free again: a press over the small button is that page's.
+    let (free, _) = stack.pointer(Touch::mouse(Phase::Down, 390.0, 290.0, 2.0, Buttons::PRIMARY), EPX, &assets).expect("the page above");
+    assert_eq!(free, above);
+}
+
+/// `hover` tells the box under the mouse, and tells it once more when
+/// the mouse is over another page.
+#[test]
+fn hover_reaches_the_box_under_the_mouse_and_says_when_it_left() {
+    let (mut stack, _assets, below, above) = pad_under_a_button();
+    let mut heard: Vec<(PageId, Event)> = Vec::new();
+    stack.hover(Some(below), Touch::mouse(Phase::Move, 40.0, 30.0, 0.0, Buttons::NONE), &mut heard);
+    assert_eq!(heard.len(), 1);
+    assert!(heard[0].0 == below && matches!(heard[0].1.kind, EventKind::Hover(HoverPhase::Over, PointerSample { x, y, .. }) if x == 40.0 && y == 30.0), "{heard:?}");
+    heard.clear();
+    stack.hover(Some(above), Touch::mouse(Phase::Move, 390.0, 290.0, 0.1, Buttons::NONE), &mut heard);
+    assert_eq!(heard.len(), 1, "the button has no `on:hover=`: only the pad hears, that the mouse left");
+    assert!(heard[0].0 == below && matches!(heard[0].1.kind, EventKind::Hover(HoverPhase::Left, _)), "{heard:?}");
+    heard.clear();
+    stack.unhover(&mut heard);
+    assert!(heard.is_empty(), "it left once");
 }
 
 /// A child page at the window's edge gets the whole inset, a child that
