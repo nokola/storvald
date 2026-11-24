@@ -1,6 +1,6 @@
-# `open_controls_page` at commit 656b7cd1f0d2c4cc007f92ccf47d6b2c54d9bf39: instructions by function, 121036 in all.
+# `open_controls_page` at commit 015ecfd4f7c78d9b9113470b3530df79d7fe1221: instructions by function, 121263 in all.
 # A function's own code only: what it calls is counted at the called function.
-26822 __memcpy_avx_unaligned_erms
+26826 __memcpy_avx_unaligned_erms
 11818 <gogo_ui::tree::PlacedTree>::build
 8560 gogo_ui::runtime::ladder_node
 7840 <core::iter::adapters::map::Map<core::ops::range::Range<usize>, gogo_ui::runtime::static_nodes::{closure#0}> as core::iter::traits::iterator::Iterator>::fold::<(), core::iter::traits::iterator::Iterator::for_each::call<bool, <alloc::vec::Vec<bool>>::extend_trusted<core::iter::adapters::map::Map<core::ops::range::Range<usize>, gogo_ui::runtime::static_nodes::{closure#0}>>::{closure#0}>::{closure#0}>
@@ -17,14 +17,14 @@
 1590 <gogo_ui::page::Page>::prop_by_id
 1419 <gogo_ui::runtime::Resolved>::override_of_by_id
 1288 __libc_malloc2
+1287 <core::iter::adapters::map::Map<core::ops::range::Range<usize>, <gogo_ui::page::NodeId>::from_index> as core::iter::traits::iterator::Iterator>::try_fold::<(), core::iter::traits::iterator::Iterator::find::check<gogo_ui::page::NodeId, &mut <gogo_ui::runtime::Runtime>::new::{closure#5}>::{closure#0}, core::ops::control_flow::ControlFlow<gogo_ui::page::NodeId>>
 1283 malloc
 1263 <gogo_ui::runtime::Runtime>::set_screen
-1179 <alloc::vec::Vec<gogo_ui::page::NodeId> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<gogo_ui::page::NodeId, core::iter::adapters::filter::Filter<core::iter::adapters::map::Map<core::ops::range::Range<usize>, <gogo_ui::page::NodeId>::from_index>, <gogo_ui::runtime::Runtime>::new::{closure#5}>>>::from_iter
-1126 <gogo_ui::page::Page>::from_static
+1154 <gogo_ui::page::Page>::from_static
 924 gogo_ui::input::event_action
 868 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::alloc
-836 gogo_ui::runtime::settle_seats
-716 __memcmp_avx2_movbe
+841 gogo_ui::runtime::settle_seats
+772 __memcmp_avx2_movbe
 713 <gogo_ui::input::Input>::touch
 612 <alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global>
 599 <gogo_ui::anim::Player>::new
@@ -98,6 +98,7 @@
 28 <gogo_ui::input::Input>::release
 28 pthread_mutex_unlock@@GLIBC_2.2.5
 27 calloc
+26 <alloc::vec::Vec<gogo_ui::page::NodeId> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<gogo_ui::page::NodeId, core::iter::adapters::filter::Filter<core::iter::adapters::map::Map<core::ops::range::Range<usize>, <gogo_ui::page::NodeId>::from_index>, <gogo_ui::runtime::Runtime>::new::{closure#5}>>>::from_iter
 25 <alloc::vec::Vec<(gogo_ui::page::NodeId, f32)> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<(gogo_ui::page::NodeId, f32), core::iter::adapters::map::Map<core::iter::adapters::filter::Filter<core::slice::iter::Iter<gogo_ui::page::AutoDriver>, <gogo_ui::runtime::Runtime>::new::{closure#1}>, <gogo_ui::runtime::Runtime>::new::{closure#2}>>>::from_iter
 25 sbrk
 24 <alloc::raw_vec::RawVec<(f32, f32)>>::grow_one
@@ -122,9 +123,9 @@
 6 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::kind
 4 <alloc::vec::Vec<gogo_ui::anim::Tween>>::retain::<<gogo_ui::runtime::Runtime>::play_id::{closure#8}>
 3 <<turbodot::program::Program<storvald_perf::AppState>>::open::{closure#5} as core::ops::function::FnOnce<(&mut dyn turbodot::page::PageObject<storvald_perf::AppState>, &mut turbodot::page::Host<storvald_perf::AppState>)>>::call_once
-2 0x0000000004d2b430
-2 0x0000000004d2b4c0
-2 0x0000000004d2b680
+2 0x0000000004d2e430
+2 0x0000000004d2e4c0
+2 0x0000000004d2e680
 2 <gogo_ui::runtime::Runtime>::play_entrances
 2 <turbodot::page::Plain<storvald_perf::pages::ControlsPage, storvald_perf::ui::controls_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::built
 2 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::left

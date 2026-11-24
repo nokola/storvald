@@ -1,8 +1,8 @@
-# `text_change` at commit 656b7cd1f0d2c4cc007f92ccf47d6b2c54d9bf39: instructions by function, 162532 in all.
+# `text_change` at commit 015ecfd4f7c78d9b9113470b3530df79d7fe1221: instructions by function, 162667 in all.
 # A function's own code only: what it calls is counted at the called function.
-40670 __memcpy_avx_unaligned_erms
+40708 __memcpy_avx_unaligned_erms
 35796 <gogo_ui::layout::LookCopy>::diff
-15537 gogo_ui::draw::walk'2
+15613 gogo_ui::draw::walk'2
 15247 <gogo_ui::draw::DrawCache>::patch
 8150 <gogo_ui::page::Page>::kind_default::{closure#0}
 6468 <gogo_ui::runtime::Resolved>::override_of_by_id
@@ -15,7 +15,7 @@
 1482 <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as core::hash::Hasher>::write
 1193 <gogo_ui::runtime::Resolved>::written_from
 920 <(gogo_ui::page::NodeId, gogo_ui::page::Prop) as core::slice::cmp::SlicePartialEq<(gogo_ui::page::NodeId, gogo_ui::page::Prop)>>::equal_same_length
-836 gogo_ui::runtime::settle_seats
+841 gogo_ui::runtime::settle_seats
 823 <gogo_ui::layout::LayoutCache>::run
 781 <gogo_ui::draw::DrawCache>::run
 611 gogo_ui::draw::clips
@@ -28,19 +28,19 @@
 270 <gogo_ui::draw::DrawCache>::emit
 258 <gogo_ui::runtime::Runtime>::tick
 250 <gogo_ui::runtime::Resolved as core::clone::Clone>::clone_from
+248 <gogo_ui::layout::Lay>::content_min
 242 <gogo_text::EpxMeasure as gogo_ui::layout::TextMeasure>::identity
-242 <gogo_ui::layout::Lay>::content_min
 240 _int_malloc
 208 <gogo_ui::layout::Lay>::text_extent
 204 gogo_ui::draw::own_opacity
 186 <gogo_ui::runtime::Resolved>::gone_by_id
 184 <turbodot::pages::PageUi>::frame
 179 <gogo_ui::draw::DrawCache>::remember
+172 <gogo_ui::runtime::Runtime>::frame_retained
 172 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&u64>
-163 <gogo_ui::runtime::Runtime>::frame_retained
 160 <gogo_ui::runtime::Resolved>::color_by_id
 146 <turbodot::program::Program<storvald_perf::AppState>>::frame
-142 <gogo_ui::layout::LayoutCache>::remember
+143 <gogo_ui::layout::LayoutCache>::remember
 140 roundf
 136 <gogo_text::TextEngine>::measure
 126 gogo_ui::runtime::resolve_into::{closure#44}

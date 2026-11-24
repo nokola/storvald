@@ -1,8 +1,8 @@
-# `slider_drag_step` at commit 656b7cd1f0d2c4cc007f92ccf47d6b2c54d9bf39: instructions by function, 144128 in all.
+# `slider_drag_step` at commit 015ecfd4f7c78d9b9113470b3530df79d7fe1221: instructions by function, 144262 in all.
 # A function's own code only: what it calls is counted at the called function.
 36144 <gogo_ui::layout::LookCopy>::diff
-28968 __memcpy_avx_unaligned_erms
-15588 gogo_ui::draw::walk'2
+29012 __memcpy_avx_unaligned_erms
+15664 gogo_ui::draw::walk'2
 15240 <gogo_ui::draw::DrawCache>::patch
 5988 <gogo_ui::page::Page>::kind_default::{closure#0}
 5535 <gogo_ui::tree::Children as core::iter::traits::iterator::Iterator>::next
@@ -13,7 +13,7 @@
 2362 <gogo_ui::layout::LayoutCache>::patch
 1656 <gogo_ui::runtime::Runtime>::set_screen
 920 <(gogo_ui::page::NodeId, gogo_ui::page::Prop) as core::slice::cmp::SlicePartialEq<(gogo_ui::page::NodeId, gogo_ui::page::Prop)>>::equal_same_length
-836 gogo_ui::runtime::settle_seats
+841 gogo_ui::runtime::settle_seats
 823 <gogo_ui::layout::LayoutCache>::run
 781 <gogo_ui::draw::DrawCache>::run
 684 gogo_ui::input::event_action
@@ -33,8 +33,8 @@
 189 gogo_ui::runtime::resolve_into::{closure#44}
 184 <turbodot::pages::PageUi>::frame
 179 <gogo_ui::draw::DrawCache>::remember
+172 <gogo_ui::runtime::Runtime>::frame_retained
 167 <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as core::hash::Hasher>::write
-163 <gogo_ui::runtime::Runtime>::frame_retained
 146 <turbodot::program::Program<storvald_perf::AppState>>::frame
 125 <gogo_ui::input::Input>::tick
 123 <turbodot::program::Program<storvald_perf::AppState>>::frame_pages
