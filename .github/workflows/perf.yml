@@ -36,7 +36,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: rustup update stable --no-self-update
-      - run: sudo apt-get update && sudo apt-get install --yes valgrind
+      # Valgrind alone, none of the packages it only recommends: with
+      # them this step took seven minutes of a nine minute run.
+      - run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends valgrind
       - run: cargo build --release -p storvald-perf
       - name: Take the perf-data branch, or start it
         run: |
