@@ -1,4 +1,4 @@
-# `mouse_move` at commit 7a72309bafe555456af3837d09bfb157aea8d1eb: instructions by function, 193436 in all.
+# `mouse_move` at commit e2b0aa7919fba6bb5d01d5a5357ed6ea3f201122: instructions by function, 193435 in all.
 # A function's own code only: what it calls is counted at the called function.
 35704 <gogo_ui::layout::LookCopy>::diff
 28868 __memcpy_avx_unaligned_erms
@@ -28,7 +28,7 @@
 408 gogo_ui::runtime::find_rule
 405 <gogo_ui::input::Input>::apply_hover
 372 gogo_ui::runtime::kind_visual_default
-327 __memcmp_avx2_movbe
+326 __memcmp_avx2_movbe
 302 <alloc::vec::Vec<(gogo_ui::page::NodeId, gogo_ui::anim::Channel, f32)>>::retain::<gogo_ui::runtime::resolve_into::{closure#0}>
 288 <gogo_ui::runtime::Resolved>::color
 272 gogo_ui::draw::own_opacity
@@ -89,5 +89,5 @@
 8 <(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>) as core::slice::cmp::SlicePartialEq<(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>)>>::equal_same_length
 6 <gogo_ui::input::EventList as core::ops::drop::Drop>::drop
 4 <alloc::vec::Vec<gogo_ui::page::NodeId>>::retain::<<gogo_ui::layout::LayoutCache>::patch::{closure#2}>
-2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
+2 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
 1 storvald_perf_measured

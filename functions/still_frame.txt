@@ -1,7 +1,7 @@
-# `still_frame` at commit 7a72309bafe555456af3837d09bfb157aea8d1eb: instructions by function, 3164 in all.
+# `still_frame` at commit e2b0aa7919fba6bb5d01d5a5357ed6ea3f201122: instructions by function, 3163 in all.
 # A function's own code only: what it calls is counted at the called function.
 1656 <gogo_ui::runtime::Runtime>::set_screen
-286 __memcmp_avx2_movbe
+285 __memcmp_avx2_movbe
 258 <gogo_ui::runtime::Runtime>::tick
 184 <turbodot::pages::PageUi>::frame
 146 <turbodot::program::Program<storvald_perf::AppState>>::frame
@@ -16,5 +16,5 @@
 33 <turbodot::program::Program<storvald_perf::AppState>>::carry_out_requests
 11 <turbodot::pages::PageStack>::get_mut
 9 storvald_perf::counts::counted::<storvald_perf::scenarios::slide_frame::{closure#0}>::{closure#0}
-2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
+2 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
 1 storvald_perf_measured

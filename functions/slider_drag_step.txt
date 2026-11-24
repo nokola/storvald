@@ -1,4 +1,4 @@
-# `slider_drag_step` at commit 7a72309bafe555456af3837d09bfb157aea8d1eb: instructions by function, 144129 in all.
+# `slider_drag_step` at commit e2b0aa7919fba6bb5d01d5a5357ed6ea3f201122: instructions by function, 144119 in all.
 # A function's own code only: what it calls is counted at the called function.
 36144 <gogo_ui::layout::LookCopy>::diff
 28968 __memcpy_avx_unaligned_erms
@@ -21,7 +21,7 @@
 617 gogo_ui::draw::clips
 606 gogo_ui::draw::walk
 525 <gogo_ui::input::Input>::touch
-513 __memcmp_avx2_movbe
+505 __memcmp_avx2_movbe
 342 <gogo_ui::runtime::Runtime>::tick
 270 <gogo_ui::draw::DrawCache>::emit
 250 <gogo_ui::runtime::Resolved as core::clone::Clone>::clone_from
@@ -71,9 +71,9 @@
 50 gogo_ui::draw::walk::{closure#2}
 46 <gogo_ui::runtime::Runtime>::glide_in_place
 42 gogo_ui::layout::diff_pairs::<bool>
-41 <turbodot::page::Plain<storvald_perf::pages::ControlsPage, storvald_perf::ui::controls_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::handle
 40 <alloc::vec::Vec<gogo_ui::anim::Player> as core::ops::drop::Drop>::drop
 40 <gogo_ui::runtime::Resolved>::slider_value
+39 <turbodot::page::Plain<storvald_perf::pages::ControlsPage, storvald_perf::ui::controls_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::handle
 39 storvald_perf::counts::counted::<storvald_perf::scenarios::slider_drag_step::{closure#1}>::{closure#0}
 38 gogo_ui::runtime::own_word
 32 <gogo_ui::runtime::Resolved>::num
@@ -91,5 +91,5 @@
 10 <&mut core::iter::traits::iterator::Iterator::any::check<&(gogo_ui::page::NodeId, gogo_ui::page::Prop), gogo_ui::layout::keys_differ<gogo_ui::layout::inherits>::{closure#1}>::{closure#0} as core::ops::function::FnMut<((), &(gogo_ui::page::NodeId, gogo_ui::page::Prop))>>::call_mut
 8 <(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>) as core::slice::cmp::SlicePartialEq<(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>)>>::equal_same_length
 4 <alloc::vec::Vec<gogo_ui::page::NodeId>>::retain::<<gogo_ui::layout::LayoutCache>::patch::{closure#2}>
-2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
+2 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
 1 storvald_perf_measured

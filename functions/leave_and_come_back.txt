@@ -1,4 +1,4 @@
-# `leave_and_come_back` at commit 7a72309bafe555456af3837d09bfb157aea8d1eb: instructions by function, 254495 in all.
+# `leave_and_come_back` at commit e2b0aa7919fba6bb5d01d5a5357ed6ea3f201122: instructions by function, 254482 in all.
 # A function's own code only: what it calls is counted at the called function.
 73376 <gogo_ui::layout::LookCopy>::diff
 28928 __memcpy_avx_unaligned_erms
@@ -8,7 +8,7 @@
 9105 gogo_ui::runtime::resolve_into
 7990 free
 6478 <gogo_ui::runtime::Runtime>::tick
-5715 __memcmp_avx2_movbe
+5702 __memcmp_avx2_movbe
 5012 <gogo_ui::layout::LayoutCache>::patch
 4909 <gogo_ui::runtime::Runtime>::is_hook_playing
 3560 <turbodot::program::Program<storvald_perf::AppState>>::frame
@@ -80,7 +80,6 @@
 72 gogo_ui::layout::sym_diff_nodes
 66 core::ptr::drop_glue::<gogo_ui::layout::LookCopy>
 64 <gogo_ui::anim::Player>::resolve_pending_percent
-54 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
 54 <turbodot::program::Program<storvald_perf::AppState>>::order_top_with_placed
 49 <turbodot::pages::PageStack>::remove
 48 <turbodot::program::Program<storvald_perf::AppState>>::start_leave
@@ -88,8 +87,10 @@
 40 <alloc::raw_vec::RawVecInner>::finish_grow
 36 <alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global>
 36 <turbodot::program::Program<storvald_perf::AppState>>::do_what_layouts_left
+28 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
 27 <gogo_ui::runtime::Runtime>::play_hook
 27 <turbodot::program::Program<storvald_perf::AppState>>::end_leave
+26 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
 24 <(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>) as core::slice::cmp::SlicePartialEq<(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>)>>::equal_same_length
 23 __libc_malloc2
 23 core::ptr::drop_glue::<gogo_ui::input::Input>
@@ -98,16 +99,17 @@
 14 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::alloc
 12 <alloc::vec::Vec<gogo_ui::page::NodeId>>::retain::<<gogo_ui::layout::LayoutCache>::patch::{closure#2}>
 8 <alloc::vec::Vec<gogo_ui::anim::Tween>>::retain::<<gogo_ui::runtime::Runtime>::play_id::{closure#8}>
-8 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::kind
-7 core::ptr::drop_glue::<alloc::string::String>
+8 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::kind
+7 core::ptr::drop_glue::<turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler>>
 6 storvald_perf::counts::counted::<storvald_perf::scenarios::leave_and_come_back::{closure#0}>::{closure#0}
 5 alloc_perturb
 3 <<turbodot::program::Program<storvald_perf::AppState>>::end_leave::{closure#0} as core::ops::function::FnOnce<(&mut dyn turbodot::page::PageObject<storvald_perf::AppState>, &mut turbodot::page::Host<storvald_perf::AppState>)>>::call_once
 3 <<turbodot::program::Program<storvald_perf::AppState>>::open::{closure#5} as core::ops::function::FnOnce<(&mut dyn turbodot::page::PageObject<storvald_perf::AppState>, &mut turbodot::page::Host<storvald_perf::AppState>)>>::call_once
 3 <<turbodot::program::Program<storvald_perf::AppState>>::tell_arrival::{closure#0} as core::ops::function::FnOnce<(&mut dyn turbodot::page::PageObject<storvald_perf::AppState>, &mut turbodot::page::Host<storvald_perf::AppState>)>>::call_once
-3 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::left
 3 __rustc::__rust_alloc
 2 <gogo_ui::runtime::Runtime>::play_uncovers
-2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::back
+2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::left
+2 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::back
+1 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::left
 1 __rustc::__rust_no_alloc_shim_is_unstable_v2
 1 storvald_perf_measured

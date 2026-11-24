@@ -1,4 +1,4 @@
-# `text_change` at commit 7a72309bafe555456af3837d09bfb157aea8d1eb: instructions by function, 162531 in all.
+# `text_change` at commit e2b0aa7919fba6bb5d01d5a5357ed6ea3f201122: instructions by function, 162530 in all.
 # A function's own code only: what it calls is counted at the called function.
 40670 __memcpy_avx_unaligned_erms
 35796 <gogo_ui::layout::LookCopy>::diff
@@ -23,7 +23,7 @@
 570 gogo_ui::runtime::deref
 379 <gogo_ui::runtime::Resolved>::inherited
 314 gogo_text::cache_key
-308 __memcmp_avx2_movbe
+307 __memcmp_avx2_movbe
 283 <gogo_ui::layout::Lay>::size_at_flag
 270 <gogo_ui::draw::DrawCache>::emit
 258 <gogo_ui::runtime::Runtime>::tick
@@ -98,5 +98,5 @@
 8 <(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>) as core::slice::cmp::SlicePartialEq<(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>)>>::equal_same_length
 7 <turbodot::pages::PageUi>::set_text
 3 __rustc::__rust_no_alloc_shim_is_unstable_v2
-2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
+2 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
 1 storvald_perf_measured

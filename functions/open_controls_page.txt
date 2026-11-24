@@ -1,4 +1,4 @@
-# `open_controls_page` at commit 7a72309bafe555456af3837d09bfb157aea8d1eb: instructions by function, 121088 in all.
+# `open_controls_page` at commit e2b0aa7919fba6bb5d01d5a5357ed6ea3f201122: instructions by function, 121031 in all.
 # A function's own code only: what it calls is counted at the called function.
 26822 __memcpy_avx_unaligned_erms
 11818 <gogo_ui::tree::PlacedTree>::build
@@ -24,7 +24,7 @@
 924 gogo_ui::input::event_action
 868 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::alloc
 836 gogo_ui::runtime::settle_seats
-752 __memcmp_avx2_movbe
+716 __memcmp_avx2_movbe
 708 <gogo_ui::input::Input>::touch
 612 <alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global>
 599 <gogo_ui::anim::Player>::new
@@ -78,19 +78,19 @@
 55 <turbodot::pages::PageStack>::get
 55 gogo_ui::input::scroll_ancestor
 51 _int_free_chunk
-50 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::handle
 49 <turbodot::pages::PageUi>::covers
 48 <alloc::vec::Vec<bool> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<bool, core::iter::adapters::map::Map<core::ops::range::Range<usize>, gogo_ui::runtime::static_nodes::{closure#0}>>>::from_iter
 48 __cxa_thread_atexit_impl
 48 __rustc::__rust_alloc_zeroed
-42 <storvald_perf::pages::FirstPage as turbodot::page::Page<storvald_perf::AppState>>::handle
 38 <gogo_ui::runtime::Resolved>::hidden
 38 pthread_mutex_lock@@GLIBC_2.2.5
+37 <turbodot::page::Nav<storvald_perf::AppState>>::go::<storvald_perf::pages::ControlsPage, turbodot::page::AsPage>
 37 _dl_find_dso_for_object
 36 <turbodot::page::Plain<storvald_perf::pages::ControlsPage, storvald_perf::ui::controls_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::read_handler_names
 36 <turbodot::program::Program<storvald_perf::AppState>>::order_top_with_placed
 35 <turbodot::pages::PagePlatform>::apply
 34 <gogo_ui::input::EventList as core::ops::drop::Drop>::drop
+34 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::handle
 33 <turbodot::pages::PageStack>::get_mut
 32 <alloc::vec::Vec<(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>)> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>), core::iter::adapters::map::Map<core::slice::iter::Iter<gogo_ui::runtime::Pool>, gogo_ui::runtime::resolve_ladder::{closure#0}>>>::from_iter
 30 __rustc::__rust_realloc
@@ -119,14 +119,14 @@
 10 alloc_perturb
 9 brk
 8 storvald_perf::counts::counted::<storvald_perf::scenarios::open_controls_page::{closure#0}>::{closure#0}
-6 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::kind
+6 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::kind
 4 <alloc::vec::Vec<gogo_ui::anim::Tween>>::retain::<<gogo_ui::runtime::Runtime>::play_id::{closure#8}>
 3 <<turbodot::program::Program<storvald_perf::AppState>>::open::{closure#5} as core::ops::function::FnOnce<(&mut dyn turbodot::page::PageObject<storvald_perf::AppState>, &mut turbodot::page::Host<storvald_perf::AppState>)>>::call_once
-2 0x0000000004d29430
-2 0x0000000004d294c0
-2 0x0000000004d29680
+2 0x0000000004d2b430
+2 0x0000000004d2b4c0
+2 0x0000000004d2b680
 2 <gogo_ui::runtime::Runtime>::play_entrances
 2 <turbodot::page::Plain<storvald_perf::pages::ControlsPage, storvald_perf::ui::controls_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::built
-2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::left
-2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::takes_every_touch
+2 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::left
+2 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::takes_every_touch
 1 storvald_perf_measured

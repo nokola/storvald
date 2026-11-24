@@ -1,4 +1,4 @@
-# `scroll_step` at commit 7a72309bafe555456af3837d09bfb157aea8d1eb: instructions by function, 3455337 in all.
+# `scroll_step` at commit e2b0aa7919fba6bb5d01d5a5357ed6ea3f201122: instructions by function, 3455331 in all.
 # A function's own code only: what it calls is counted at the called function.
 662249 gogo_ui::draw::walk'2
 636741 <gogo_ui::page::Page>::kind_default::{closure#0}
@@ -38,7 +38,7 @@
 2629 <gogo_ui::runtime::Resolved>::font_size
 2611 <gogo_ui::layout::LayoutCache>::run
 2569 <gogo_ui::draw::DrawCache>::run
-2093 __memcmp_avx2_movbe
+2087 __memcmp_avx2_movbe
 1606 gogo_ui::draw::walk
 1256 <(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>) as core::slice::cmp::SlicePartialEq<(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>)>>::equal_same_length
 501 <gogo_ui::input::Input>::touch
@@ -91,5 +91,5 @@
 10 <alloc::vec::Vec<gogo_ui::layout::StackLists> as core::ops::drop::Drop>::drop
 4 <alloc::vec::Vec<gogo_ui::page::NodeId>>::retain::<<gogo_ui::layout::LayoutCache>::patch::{closure#2}>
 3 <gogo_ui::input::EventList as core::ops::drop::Drop>::drop
-2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
+2 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
 1 storvald_perf_measured

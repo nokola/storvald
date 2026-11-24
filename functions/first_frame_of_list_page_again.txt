@@ -1,4 +1,4 @@
-# `first_frame_of_list_page_again` at commit 7a72309bafe555456af3837d09bfb157aea8d1eb: instructions by function, 8236106 in all.
+# `first_frame_of_list_page_again` at commit e2b0aa7919fba6bb5d01d5a5357ed6ea3f201122: instructions by function, 8235839 in all.
 # A function's own code only: what it calls is counted at the called function.
 1547302 <gogo_ui::page::Page>::kind_default::{closure#0}
 1280313 <gogo_ui::runtime::Resolved>::override_of
@@ -31,7 +31,7 @@
 34744 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&u64>
 33694 gogo_ui::runtime::ladder_motion_and_seat
 28858 <gogo_ui::layout::VisibleChildren as core::iter::traits::iterator::Iterator>::next
-27784 <gogo_text::TextEngine>::measure
+27532 <gogo_text::TextEngine>::measure
 25888 <gogo_ui::layout::Lay>::seat
 24770 <gogo_ui::tree::Subtree as core::iter::traits::iterator::Iterator>::next
 24635 gogo_ui::runtime::resolve_into::{closure#44}
@@ -77,7 +77,7 @@
 2760 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::realloc
 2629 <gogo_ui::runtime::Resolved>::font_size
 2400 _int_free_maybe_trim
-2185 __memcmp_avx2_movbe
+2170 __memcmp_avx2_movbe
 1968 <gogo_ui::layout::LookCopy>::diff
 1700 _int_free_chunk
 1641 <gogo_ui::draw::DrawCache>::emit
@@ -108,7 +108,7 @@
 177 <gogo_ui::layout::LayoutCache>::remember
 173 <gogo_ui::runtime::Runtime>::is_hook_playing
 169 <gogo_ui::draw::DrawCache>::run
-168 0x0000000004d29680
+168 0x0000000004d2b680
 168 <alloc::raw_vec::RawVec<gogo_ui::draw::Draw>>::grow_one
 168 <alloc::raw_vec::RawVec<gogo_ui::page::When>>::grow_one
 166 <turbodot::pages::PageUi>::frame
@@ -156,5 +156,6 @@
 9 storvald_perf::counts::counted::<storvald_perf::scenarios::slide_frame::{closure#0}>::{closure#0}
 8 <(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>) as core::slice::cmp::SlicePartialEq<(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>)>>::equal_same_length
 4 <alloc::vec::Vec<gogo_ui::page::NodeId>>::retain::<<gogo_ui::layout::LayoutCache>::patch::{closure#2}>
-4 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
+2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
+2 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
 1 storvald_perf_measured
