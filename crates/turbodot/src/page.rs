@@ -2,7 +2,7 @@
 
 use std::any::{Any, TypeId};
 
-use gogo_ui::{Draw, Event, EventKind, HandlerName, NodeId, StaticPage, StrId};
+use gogo_ui::{CommandSurface, Event, EventKind, HandlerName, NodeId, StaticPage, StrId, SurfaceCommands};
 
 #[cfg(feature = "gpu")]
 use crate::gpu::Gpu;
@@ -61,74 +61,11 @@ pub struct Host<'a, A = ()> {
     pub nav: &'a mut Nav<A>,
 }
 
-/// GPU device a page draws its own textures with
-/// (`Page::gpu_draw_textures`). Without cargo feature `gpu` nothing makes
-/// one: page code still compiles, and its GPU functions are never called.
+/// GPU device a page draws its own textures with (`Page::gpu_prepare`).
+/// Without cargo feature `gpu` nothing makes one: page code still
+/// compiles, and its GPU functions are never called.
 #[cfg(not(feature = "gpu"))]
 pub struct Gpu(());
-
-/// What a page puts under its own nodes: pictures it drew on GPU
-/// (`Page::gpu_draw_screen`).
-///
-/// Needed so page's picture and page's nodes reach screen in ONE pass,
-/// with no copy: on a phone, one more pass over the screen can cost as
-/// much as the whole frame.
-pub struct Layers<'a> {
-    /// Draw commands page puts under its nodes, in paint order.
-    pub(crate) draws: &'a mut Vec<Draw>,
-    #[cfg(feature = "gpu")]
-    pub(crate) renderer: &'a mut gogo_wgpu::UiRenderer,
-    #[cfg(feature = "gpu")]
-    pub(crate) device: &'a wgpu::Device,
-    #[cfg(feature = "gpu")]
-    pub(crate) images: &'a mut crate::pages::ImageTable,
-    /// Keys of pictures page has shown, by order of its `image` calls in a
-    /// frame. Kept from frame to frame: no key is made per frame.
-    #[cfg(feature = "gpu")]
-    pub(crate) keys: &'a mut Vec<gogo_ui::ImageKey>,
-    /// Count of `image` calls this frame.
-    #[cfg(feature = "gpu")]
-    pub(crate) used: usize,
-    /// Page's place in program's page list: makes its picture keys its own.
-    #[cfg(feature = "gpu")]
-    pub(crate) page_index: usize,
-}
-
-impl Layers<'_> {
-    /// Puts one gogo draw command under page's nodes, above the ones put
-    /// before it. Rectangles in epx, window's space.
-    ///
-    /// Needed for what `picture` cannot say: part of a texture, a tint, a
-    /// turn. Picture's key comes from `image`.
-    pub fn draw(&mut self, draw: Draw) {
-        self.draws.push(draw);
-    }
-
-    /// Key under which `texture` shows in a `Draw::Image`. Renderer samples
-    /// page's own texture: no copy.
-    ///
-    /// Same texture as last frame costs nothing. Another texture in its
-    /// place (page draws into two in turn) is taken over.
-    #[cfg(feature = "gpu")]
-    pub fn image(&mut self, texture: gogo_wgpu::Tex_Image_Straight_Srgb_4xU8_RGBA<'_>) -> gogo_ui::ImageKey {
-        if self.used == self.keys.len() {
-            self.keys.push(self.images.intern(&format!("turbodot://page/{}/picture/{}", self.page_index, self.used)));
-        }
-        let key: gogo_ui::ImageKey = self.keys[self.used];
-        self.used += 1;
-        let external: gogo_wgpu::ExternalImage = self.renderer.external_image(key);
-        self.renderer.set_external_image(self.device, external, texture);
-        key
-    }
-
-    /// Shows `texture` stretched over `rect` (epx, window's space), under
-    /// page's nodes and above pictures put before it.
-    #[cfg(feature = "gpu")]
-    pub fn picture(&mut self, texture: gogo_wgpu::Tex_Image_Straight_Srgb_4xU8_RGBA<'_>, rect: gogo_ui::Rect) {
-        let image: gogo_ui::ImageKey = self.image(texture);
-        self.draw(Draw::Image { rect, image, tint: gogo_ui::Color_Straight_Srgb_4xU8_RGBA::opaque(0xFFFFFF), fit: gogo_ui::Fit::Distort, window: None, sampling: gogo_ui::Sampling::Smooth });
-    }
-}
 
 /// One screen of a program: `.gogo` file plus struct that writes into it
 /// and answers its events.
@@ -148,19 +85,13 @@ pub trait Page<A = ()>: Sized + 'static {
     /// page: under a see-through page that leaves a hole. Debug build
     /// checks this line against page's picture (`Program::frame`).
     const KIND: PageKind = PageKind::Fullscreen;
-    /// True for page that covers screen with its own GPU picture
-    /// (`gpu_draw_screen`) under a see-through root.
-    ///
-    /// Needed because debug check of `KIND` reads root's background, and
-    /// such a page has none. Matters only for page opened over another.
-    const DRAWS_GPU_PICTURE: bool = false;
     /// False for page that lets a touch on none of its nodes go on: to
     /// page drawn under it, else to the host (`Program::touch_finger`
     /// returns false).
     ///
-    /// Needed for page with a surface of its own under its nodes (a
-    /// painting): host hands that surface the fingers no button took.
-    /// Any other page keeps a tap beside its buttons to itself.
+    /// Needed for page over a painting or a world that another page or
+    /// the host draws: the fingers no button took go on to it. Any other
+    /// page keeps a tap beside its buttons to itself.
     const TAKES_EVERY_TOUCH: bool = true;
 
     /// Writes program's data into page: texts, rows, selection.
@@ -229,24 +160,33 @@ pub trait Page<A = ()>: Sized + 'static {
         Back::Leave
     }
 
-    /// Page's own GPU work, into its own textures: strokes of a painting,
-    /// a game's world. Called each frame before screen is drawn.
+    /// Page's own GPU work, before the pass that draws the pages: draws
+    /// into its own textures (strokes of a painting, a game's world) and
+    /// hands a `Surface draw=picture` its texture
+    /// (`PageUi::set_picture_texture`). Called each frame.
     ///
     /// Called only while page is drawn: not for page under a fullscreen
     /// page, not for cached page. Never called without a GPU (a test
     /// that runs `Program` alone).
-    fn gpu_draw_textures(&mut self, host: &mut Host<'_, A>, gpu: &Gpu) {
+    fn gpu_prepare(&mut self, host: &mut Host<'_, A>, gpu: &Gpu) {
         let _ = (host, gpu);
     }
 
-    /// Says what goes under page's nodes: page's pictures, in paint
-    /// order (`Layers::picture`). Called each frame, after
-    /// `gpu_draw_textures`, under the same conditions.
+    /// Writes the draw commands of `surface`, a `Surface draw=commands`
+    /// of page's file, into `out`: in the Surface's own space, (0, 0)
+    /// its top left corner, `out.width()` x `out.height()` its size.
     ///
-    /// Needed so page's picture reaches screen in the pass that draws
-    /// every page: no copy, no pass of its own.
-    fn gpu_draw_screen(&self, host: &Host<'_, A>, layers: &mut Layers<'_>) {
-        let _ = (host, layers);
+    /// Called when the Surface shows for the first time, when its size
+    /// changed, and after `PageUi::surface_changed`. The commands are
+    /// kept and drawn every frame until then: a frame in which nothing
+    /// changed costs page's code nothing.
+    ///
+    /// Needs no GPU: called in a test that runs `Program` alone too.
+    ///
+    /// Needed with `&self` and `app` alone, without `host`: `out` holds
+    /// the page while it is written.
+    fn draw_surface(&self, app: &A, surface: CommandSurface, out: &mut SurfaceCommands<'_>) {
+        let _ = (app, surface, out);
     }
 }
 
@@ -264,15 +204,13 @@ pub trait CachedPage<A = ()>: Sized + 'static {
     type Handler: HandlerName + 'static;
     /// As `Page::KIND`.
     const KIND: PageKind = PageKind::Fullscreen;
-    /// As `Page::DRAWS_GPU_PICTURE`.
-    const DRAWS_GPU_PICTURE: bool = false;
     /// False for page that lets a touch on none of its nodes go on: to
     /// page drawn under it, else to the host (`Program::touch_finger`
     /// returns false).
     ///
-    /// Needed for page with a surface of its own under its nodes (a
-    /// painting): host hands that surface the fingers no button took.
-    /// Any other page keeps a tap beside its buttons to itself.
+    /// Needed for page over a painting or a world that another page or
+    /// the host draws: the fingers no button took go on to it. Any other
+    /// page keeps a tap beside its buttons to itself.
     const TAKES_EVERY_TOUCH: bool = true;
 
     /// As `Page::show`.
@@ -326,14 +264,14 @@ pub trait CachedPage<A = ()>: Sized + 'static {
         Back::Leave
     }
 
-    /// As `Page::gpu_draw_textures`.
-    fn gpu_draw_textures(&mut self, host: &mut Host<'_, A>, gpu: &Gpu) {
+    /// As `Page::gpu_prepare`.
+    fn gpu_prepare(&mut self, host: &mut Host<'_, A>, gpu: &Gpu) {
         let _ = (host, gpu);
     }
 
-    /// As `Page::gpu_draw_screen`.
-    fn gpu_draw_screen(&self, host: &Host<'_, A>, layers: &mut Layers<'_>) {
-        let _ = (host, layers);
+    /// As `Page::draw_surface`.
+    fn draw_surface(&self, app: &A, surface: CommandSurface, out: &mut SurfaceCommands<'_>) {
+        let _ = (app, surface, out);
     }
 }
 
@@ -350,13 +288,9 @@ pub(crate) trait PageObject<A> {
     fn kind(&self) -> PageKind;
     /// True for page that takes a touch on none of its nodes.
     fn takes_every_touch(&self) -> bool;
-    /// Read by debug build's check of page's kind alone.
-    #[cfg_attr(not(debug_assertions), allow(dead_code))]
-    fn draws_gpu_picture(&self) -> bool;
     #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
-    fn gpu_draw_textures(&mut self, host: &mut Host<'_, A>, gpu: &Gpu);
-    #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
-    fn gpu_draw_screen(&self, host: &Host<'_, A>, layers: &mut Layers<'_>);
+    fn gpu_prepare(&mut self, host: &mut Host<'_, A>, gpu: &Gpu);
+    fn draw_surface(&self, app: &A, surface: CommandSurface, out: &mut SurfaceCommands<'_>);
     fn show(&mut self, host: &mut Host<'_, A>);
     /// Reads page's handler names from `ui` (`HandlerTable`). Called when
     /// page is made and when a saved file replaced its strings.
@@ -446,14 +380,11 @@ impl<A: 'static, P: Page<A>> PageObject<A> for Plain<P, P::Handler> {
     fn takes_every_touch(&self) -> bool {
         P::TAKES_EVERY_TOUCH
     }
-    fn draws_gpu_picture(&self) -> bool {
-        P::DRAWS_GPU_PICTURE
+    fn gpu_prepare(&mut self, host: &mut Host<'_, A>, gpu: &Gpu) {
+        self.0.gpu_prepare(host, gpu);
     }
-    fn gpu_draw_textures(&mut self, host: &mut Host<'_, A>, gpu: &Gpu) {
-        self.0.gpu_draw_textures(host, gpu);
-    }
-    fn gpu_draw_screen(&self, host: &Host<'_, A>, layers: &mut Layers<'_>) {
-        self.0.gpu_draw_screen(host, layers);
+    fn draw_surface(&self, app: &A, surface: CommandSurface, out: &mut SurfaceCommands<'_>) {
+        self.0.draw_surface(app, surface, out);
     }
     fn show(&mut self, host: &mut Host<'_, A>) {
         self.0.show(host);
@@ -511,14 +442,11 @@ impl<A: 'static, P: CachedPage<A>> PageObject<A> for Cached<P, P::Handler> {
     fn takes_every_touch(&self) -> bool {
         P::TAKES_EVERY_TOUCH
     }
-    fn draws_gpu_picture(&self) -> bool {
-        P::DRAWS_GPU_PICTURE
+    fn gpu_prepare(&mut self, host: &mut Host<'_, A>, gpu: &Gpu) {
+        self.0.gpu_prepare(host, gpu);
     }
-    fn gpu_draw_textures(&mut self, host: &mut Host<'_, A>, gpu: &Gpu) {
-        self.0.gpu_draw_textures(host, gpu);
-    }
-    fn gpu_draw_screen(&self, host: &Host<'_, A>, layers: &mut Layers<'_>) {
-        self.0.gpu_draw_screen(host, layers);
+    fn draw_surface(&self, app: &A, surface: CommandSurface, out: &mut SurfaceCommands<'_>) {
+        self.0.draw_surface(app, surface, out);
     }
     fn show(&mut self, host: &mut Host<'_, A>) {
         self.0.show(host);

@@ -18,7 +18,7 @@ use gogo_ui::locale::Keys;
 use gogo_ui::page::Action;
 use gogo_ui::reload::{Reloader, Sources};
 use gogo_ui::runtime::{Item, ItemKey, ItemValue};
-use gogo_ui::{ArrangementId, Behavior, BehaviorSpec, Claim, Compiled, CompileOptions, Cx, Draw, Event, EventKind, EventList, Finish, Input, KEYS_ARROWS, KeptFrame, KeyAction, KeyId, Locale, NO_NODE, NO_STR, NodeId, Orientation, Page, Payload, Phase, PropKey, Runtime, ScreenClass, StrId, Touch, Value, compile, compile_with, has_errors};
+use gogo_ui::{ArrangementId, Behavior, BehaviorSpec, Claim, Color_Straight_Srgb_4xU8_RGBA, CommandSurface, Compiled, CompileOptions, Cx, Draw, Event, EventKind, EventList, Finish, ImageKey, Input, KEYS_ARROWS, KeptFrame, KeyAction, KeyId, Locale, NO_KEY, NO_NODE, NO_STR, NodeId, Orientation, Page, Payload, Phase, PictureSurface, PropKey, Runtime, ScreenClass, StrId, SurfaceCommands, TextAlign, Touch, Value, compile, compile_with, has_errors};
 
 /// Compiles a page from text and prints what the compiler says.
 ///
@@ -422,6 +422,63 @@ fn behavior_tour() {
     assert_eq!(change, Some((volume, 2.5)), "{events:?}");
 }
 
+/// A page with two boxes the program's code draws: a photo it hands
+/// over, and the points it writes as draw commands.
+const BOARD: &str = r#"
+View scorePage {
+    Layers width=fill, height=fill {
+        Surface photo draw=picture, fit=cover, width=fill, height=fill
+        Surface score draw=commands, width=120, height=32, halign=right, valign=top
+    }
+}
+"#;
+
+/// Writes the draw commands of each Surface gogo asks for. Here that is
+/// the one that shows the points: a dark plate and a text, in the
+/// Surface's own space, where (0, 0) is its top left corner.
+fn write_surfaces(host: &mut Hosted, points: u32) {
+    while let Some(ask) = host.rt.next_surface_to_draw() {
+        let mut out: SurfaceCommands = host.page.write_surface(ask);
+        let whole: Rect = Rect::new(0.0, 0.0, out.width(), out.height());
+        out.draw(Draw::Quad { rect: whole, color: Color_Straight_Srgb_4xU8_RGBA([0, 0, 0, 0x80]), corner: 6.0, border: 0.0, border_color: Color_Straight_Srgb_4xU8_RGBA::TRANSPARENT });
+        let text: StrId = out.text(&format!("{points} points"));
+        out.draw(Draw::Text { rect: whole, text, key: NO_KEY, font_size: 16.0, color: Color_Straight_Srgb_4xU8_RGBA::opaque(0xFFFFFF), halign: TextAlign::Center, valign: TextAlign::Center, wrap: false, font: NO_STR });
+    }
+}
+
+fn surface_tour() {
+    let (page, _) = compile_page(BOARD).expect("the board compiles");
+    let mut host: Hosted = Hosted::new(page, 360.0, 640.0);
+    // A page compiled while the program runs finds its Surfaces by name.
+    // A built page has them in `NAMES`, each with its type.
+    let photo: PictureSurface = PictureSurface::find(&host.page, "photo").expect("photo");
+    let score: CommandSurface = CommandSurface::find(&host.page, "score").expect("score");
+
+    // `draw=picture`: a key of the host's picture table. The host hands
+    // its renderer the texture under the same key.
+    let picture: ImageKey = ImageKey::new(7);
+    host.rt.set_picture(photo, picture);
+
+    // `draw=commands`: gogo asks when the Surface first shows.
+    host.frame(0.0);
+    write_surfaces(&mut host, 3);
+    assert_eq!(host.page.surface_commands(score.node()).len(), 2);
+    // Nothing changed: the next frame asks for nothing.
+    host.frame(0.016);
+    assert!(host.rt.next_surface_to_draw().is_none());
+    // The points changed: say so, and the next frame asks again.
+    host.rt.surface_changed(&mut host.page, score);
+    host.frame(0.016);
+    write_surfaces(&mut host, 4);
+    assert_eq!(host.page.str(match host.page.surface_commands(score.node())[1] {
+        Draw::Text { text, .. } => text,
+        _ => NO_STR,
+    }), "4 points");
+    // The page's own list holds the photo, and the place of the points.
+    assert!(host.draws.iter().any(|d| matches!(d, Draw::Image { image, .. } if *image == picture)));
+    assert!(host.draws.iter().any(|d| matches!(d, Draw::Surface { surface, .. } if *surface == score.node())));
+}
+
 /// Runs every piece above. The docs test calls it.
 pub fn tour() {
     let (page, keys) = compile_page(MENU).expect("the menu compiles");
@@ -438,5 +495,6 @@ pub fn tour() {
     list_tour();
     safe_tour();
     behavior_tour();
+    surface_tour();
     assert!(compile_page("View v { Label a no_such_word=1 }").is_none());
 }

@@ -40,7 +40,7 @@ use std::cell::RefCell;
 use crate::compile::{BuiltNumbers, CompileOptions, Loader, compile_keeping_numbers};
 use crate::diag::{Diagnostic, Severity, has_errors};
 use crate::locale::Keys;
-use crate::page::{AtlasDecl, AtlasShape, BehaviorSpec, ImageKey, ImageSlice, Images, Kind, Page, StaticPage};
+use crate::page::{AtlasDecl, AtlasShape, BehaviorSpec, ImageKey, ImageSlice, Images, Kind, NodeId, Page, StaticPage};
 use crate::runtime::Runtime;
 
 /// Everything a reload needs to know about the build an app was made
@@ -61,9 +61,6 @@ pub struct BuildTables<'a> {
     pub slices: &'a [ImageSlice],
     /// Every `atlas` line of the build.
     pub atlases: &'a [BuiltAtlas<'a>],
-    /// Node types the host draws from code — the same list the build
-    /// compiled with (`CompileOptions::code_controls`).
-    pub code_controls: &'a [&'a str],
     /// The host's own input behaviors (`CompileOptions::behaviors`).
     pub behaviors: &'a [BehaviorSpec],
     /// The build's `CompileOptions::require_keys`.
@@ -74,7 +71,7 @@ pub struct BuildTables<'a> {
 
 impl BuildTables<'_> {
     /// A build with nothing in it: no key, no picture, no page.
-    pub const EMPTY: BuildTables<'static> = BuildTables { keys: &[], images: &[], slices: &[], atlases: &[], code_controls: &[], behaviors: &[], require_keys: false, pages: &[] };
+    pub const EMPTY: BuildTables<'static> = BuildTables { keys: &[], images: &[], slices: &[], atlases: &[], behaviors: &[], require_keys: false, pages: &[] };
 }
 
 /// One page of a build: the file it was compiled from and what that file
@@ -187,7 +184,7 @@ fn compile_against(source: &str, source_name: &str, loader: Loader<'_>, baked: &
         })
         .collect();
     let images = RefCell::new(images);
-    let options = CompileOptions { code_controls: baked.code_controls, behaviors: baked.behaviors, keys: Some(&keys), images: Some(&images), require_keys: baked.require_keys, source_name, refuse_new_keys_and_pictures: true, ..CompileOptions::default() };
+    let options = CompileOptions { behaviors: baked.behaviors, keys: Some(&keys), images: Some(&images), require_keys: baked.require_keys, source_name, refuse_new_keys_and_pictures: true, ..CompileOptions::default() };
     // Built page of this file: its strings and arrangements keep their
     // numbers, which program's code holds (`Anim`, `Theme`,
     // `Arrangement`).
@@ -217,6 +214,13 @@ pub enum ShapeChange {
     Count { old: usize, new: usize },
     /// The node at `index` has another kind or name.
     Node { index: usize, old_kind: Kind, old_name: String, new_kind: Kind, new_name: String },
+    /// The Surface `name` says another `draw=`.
+    ///
+    /// Needed because the program's code names a Surface with a type by
+    /// its `draw=` (`PictureSurface`, `CommandSurface`), fixed when the
+    /// program was built: with another `draw=` the code would go on
+    /// filling the Surface the old way, and it would show nothing.
+    Draw { name: String, old: crate::surface::SurfaceDraw, new: crate::surface::SurfaceDraw },
     /// The row of `repeat` holds other nodes than the rows on screen.
     Row { repeat: String },
     /// `repeat` keys its rows another way than the rows on screen were
@@ -231,6 +235,7 @@ impl std::fmt::Display for ShapeChange {
             ShapeChange::Node { index, old_kind, old_name, new_kind, new_name } => {
                 write!(f, "node {index} changed ({old_kind:?} `{old_name}` -> {new_kind:?} `{new_name}`): a changed node list needs a rebuild")
             }
+            ShapeChange::Draw { name, old, new } => write!(f, "Surface `{name}` changed its `draw=` ({} -> {}): the program's code names it with a type by its `draw=`, so this needs a rebuild", old.word(), new.word()),
             ShapeChange::Row { repeat } => write!(f, "the row of repeat `{repeat}` holds other nodes than the rows on screen: a changed node list needs a rebuild"),
             ShapeChange::RowKey { repeat } => write!(f, "repeat `{repeat}` keys its rows another way than the rows on screen: a changed `by` needs a rebuild"),
         }
@@ -245,6 +250,14 @@ pub(crate) fn first_changed_node(old: &Page, new: &Page, from: usize, to: usize)
         let (old_name, new_name) = (old.str(a.name), new.str(b.name));
         if a.kind != b.kind || old_name != new_name {
             return Some(ShapeChange::Node { index, old_kind: a.kind, old_name: old_name.to_string(), new_kind: b.kind, new_name: new_name.to_string() });
+        }
+        if a.kind == Kind::Surface {
+            let node: NodeId = NodeId::from_index(index);
+            if let (Some(old_draw), Some(new_draw)) = (crate::surface::SurfaceDraw::of(old, node), crate::surface::SurfaceDraw::of(new, node)) {
+                if old_draw != new_draw {
+                    return Some(ShapeChange::Draw { name: old_name.to_string(), old: old_draw, new: new_draw });
+                }
+            }
         }
     }
     None
@@ -479,13 +492,12 @@ impl Reloader {
 
     /// As [`Reloader::files`], for an app that compiles its pages with
     /// options of its own: every reload compiles a followed file with
-    /// the code controls, the behaviors and the `require_keys` of
-    /// `options`, the options the app gives `compile_with` at start.
+    /// the behaviors and the `require_keys` of `options`, the options
+    /// the app gives `compile_with` at start.
     ///
-    /// Needed because a file that names a host's code control or
-    /// behavior compiles only when the compiler is told of it: a
-    /// reloader that was not told refuses the first save of such a page
-    /// ("unknown node type").
+    /// Needed because a file that names a host's behavior compiles
+    /// only when the compiler is told of it: a reloader that was not
+    /// told refuses the first save of such a page.
     ///
     /// The key table, the picture table and the asset reader of
     /// `options` are not kept: they are lent for one compile. So a
@@ -789,14 +801,13 @@ mod live {
     /// and the reloader compiles again at every save.
     #[derive(Default)]
     pub(super) struct HostWords {
-        code_controls: Vec<String>,
         behaviors: Vec<BehaviorSpec>,
         require_keys: bool,
     }
 
     impl HostWords {
         pub(super) fn of(options: &CompileOptions<'_>) -> HostWords {
-            HostWords { code_controls: options.code_controls.iter().map(|c| c.to_string()).collect(), behaviors: options.behaviors.to_vec(), require_keys: options.require_keys }
+            HostWords { behaviors: options.behaviors.to_vec(), require_keys: options.require_keys }
         }
     }
 
@@ -904,8 +915,7 @@ mod live {
                 // the file may name any key and any picture, and it is
                 // compiled with the words the host told of.
                 _ => {
-                    let code_controls: Vec<&str> = self.host.code_controls.iter().map(String::as_str).collect();
-                    let options = CompileOptions { source_name: &name, code_controls: &code_controls, behaviors: &self.host.behaviors, require_keys: self.host.require_keys, ..CompileOptions::default() };
+                    let options = CompileOptions { source_name: &name, behaviors: &self.host.behaviors, require_keys: self.host.require_keys, ..CompileOptions::default() };
                     let compiled = compile_with(&text, &loader, options);
                     if has_errors(&compiled.diags) {
                         (Err(Why::Errors(compiled.diags.into_iter().filter(|d| d.severity == Severity::Error).collect())), Some(compiled.uses))

@@ -3,7 +3,7 @@
 use std::fmt::Write as _;
 
 use gogo_ui::runtime::{Item, ItemKey, Resolved};
-use gogo_ui::{EventList, Kind, Mods, NO_NODE, NO_STR, NodeId, Rect};
+use gogo_ui::{CommandSurface, EventList, Kind, Mods, NO_NODE, NO_STR, NodeId, PictureSurface, Rect};
 
 use crate::pages::{CodePicture, PageUi};
 
@@ -30,29 +30,31 @@ impl PageUi {
         self.runtime.text_of(&self.page, node)
     }
 
-    /// Shows a picture made in code in Image `node`. `rgba`: `width` x
-    /// `height` pixels, four bytes each (R, G, B, A; straight alpha,
-    /// sRGB), row by row from the top.
+    /// Shows a picture made in code in `surface`, a `Surface
+    /// draw=picture` of page's file. `rgba`: `width` x `height` pixels,
+    /// four bytes each (R, G, B, A; straight alpha, sRGB), row by row
+    /// from the top.
     ///
     /// Needed for what no file holds: a thumbnail of user's work, a
     /// preview. Callable anywhere: `loaded`, `show`, a handler. It needs
     /// no GPU, so a page that calls it runs in a test.
     ///
-    /// Layout has the size from program's next frame. Pixels reach the
-    /// screen at the next frame drawn on a GPU; with no GPU only the
-    /// size shows.
+    /// The Surface keeps the size its file gives it: the picture is
+    /// fitted into it by the Surface's `fit=`. Pixels reach the screen
+    /// at the next frame drawn on a GPU.
     ///
     /// Page takes `rgba` over, with no copy, and keeps it while it
     /// lives: a renderer made new gets the pixels again. Picture that
-    /// changes every frame: draw it on the GPU instead
-    /// (`Page::gpu_draw_screen`), which keeps nothing.
+    /// changes every frame: draw it into a texture on the GPU instead
+    /// (`set_picture_texture`), which keeps no pixels.
     ///
     /// WARNING: panics when `rgba` is not `width * height * 4` bytes long.
     ///
-    /// Returns buffer of the picture `node` showed before, empty for
+    /// Returns buffer of the picture `surface` showed before, empty for
     /// its first picture. Page that fills it for its next picture
     /// allocates nothing.
-    pub fn set_picture(&mut self, node: NodeId, width: u32, height: u32, rgba: Vec<u8>) -> Vec<u8> {
+    pub fn set_picture(&mut self, surface: PictureSurface, width: u32, height: u32, rgba: Vec<u8>) -> Vec<u8> {
+        let node: NodeId = surface.node();
         let byte_count: usize = width as usize * height as usize * 4;
         assert_eq!(rgba.len(), byte_count, "set_picture: {width} x {height} pixels are {byte_count} bytes (4 a pixel, R G B A), and `rgba` holds {}", rgba.len());
         let at: usize = match self.code_pictures.iter().position(|picture| picture.node == node) {
@@ -68,6 +70,42 @@ impl PageUi {
         picture.is_size_new = true;
         picture.is_uploaded = false;
         std::mem::replace(&mut picture.rgba, rgba)
+    }
+
+    /// Shows a texture of page's own in `surface`, a `Surface
+    /// draw=picture` of page's file: the renderer samples it where the
+    /// Surface is, in the pass that draws every page. No copy, no pass
+    /// of its own.
+    ///
+    /// Needed for a picture page draws on the GPU: a painting, a game's
+    /// world drawn into a texture. Called from `Page::gpu_prepare`, once
+    /// or every frame: the same texture again costs one compare, and
+    /// another texture (page draws into two in turn) takes its place.
+    ///
+    /// Page keeps a handle to the texture while it lives, so a renderer
+    /// made new gets it again.
+    #[cfg(feature = "gpu")]
+    pub fn set_picture_texture(&mut self, surface: PictureSurface, texture: gogo_wgpu::Tex_Image_Straight_Srgb_4xU8_RGBA<'_>) {
+        let node: NodeId = surface.node();
+        match self.picture_textures.iter_mut().find(|picture| picture.node == node) {
+            Some(picture) => {
+                if picture.texture != *texture.RGBA {
+                    picture.texture = texture.RGBA.clone();
+                    picture.is_new = true;
+                }
+            }
+            None => self.picture_textures.push(crate::pages::PictureTexture { node, key: None, texture: texture.RGBA.clone(), is_new: true }),
+        }
+    }
+
+    /// Says what `surface`, a `Surface draw=commands` of page's file,
+    /// shows is out of date: program calls page's `draw_surface` for it
+    /// before the next frame is drawn.
+    ///
+    /// Needed because the Surface's draw commands are kept from frame
+    /// to frame: a score that rose, a board after a move.
+    pub fn surface_changed(&mut self, surface: CommandSurface) {
+        self.runtime.surface_changed(&mut self.page, surface);
     }
 
     /// Shows or hides `node`. Hidden node takes no space and no touch.
@@ -212,12 +250,12 @@ impl PageUi {
 mod tests {
     use super::*;
 
-    fn page_with_an_image() -> (PageUi, NodeId) {
-        let compiled = gogo_ui::compile("View root { Image made size=hug }", &|_| None);
+    fn page_with_a_picture_surface() -> (PageUi, PictureSurface) {
+        let compiled = gogo_ui::compile("View root { Surface made draw=picture, width=40, height=40 }", &|_| None);
         assert!(!gogo_ui::has_errors(&compiled.diags), "{:?}", compiled.diags);
         let ui: PageUi = PageUi::new(compiled.page);
-        let node: NodeId = ui.node("made");
-        (ui, node)
+        let surface: PictureSurface = PictureSurface::find(&ui.page, "made").expect("a Surface draw=picture");
+        (ui, surface)
     }
 
     /// Page takes picture's bytes over with no copy, and hands back
@@ -225,7 +263,7 @@ mod tests {
     /// picture allocates nothing.
     #[test]
     fn a_page_takes_a_pictures_bytes_over_and_hands_back_the_buffer_before() {
-        let (mut ui, node) = page_with_an_image();
+        let (mut ui, node) = page_with_a_picture_surface();
         let first: Vec<u8> = vec![1, 2, 3, 4, 5, 6, 7, 8];
         let first_memory: *const u8 = first.as_ptr();
         assert!(ui.set_picture(node, 2, 1, first).is_empty(), "node's first picture replaces none");
@@ -248,7 +286,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "set_picture: 2 x 2 pixels are 16 bytes")]
     fn a_picture_with_the_wrong_count_of_bytes_is_refused() {
-        let (mut ui, node) = page_with_an_image();
+        let (mut ui, node) = page_with_a_picture_surface();
         ui.set_picture(node, 2, 2, vec![0; 12]);
     }
 }

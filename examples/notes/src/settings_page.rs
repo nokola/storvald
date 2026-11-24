@@ -7,7 +7,8 @@ use crate::ui::settings_page::{Handler, NAMES, PAGE};
 
 /// Count of lines in page's long text.
 const BODY_LINE_COUNT: usize = 80;
-/// Side of the picture page makes in code, in pixels.
+/// Side of the picture page makes in code, in pixels. Its Surface in
+/// `ui/settings_page.gogo` is as many epx wide and tall.
 pub const MADE_PICTURE_SIDE_PX: u32 = 12;
 /// Its one color: R, G, B, A.
 pub const MADE_PICTURE_COLOR: [u8; 4] = [0x30, 0xC0, 0x60, 0xFF];

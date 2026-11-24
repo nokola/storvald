@@ -43,7 +43,7 @@ fn kind_words_markdown() -> String {
     out.push_str("Every box takes: ");
     out.push_str(&every_box.iter().map(|w| format!("`{w}`")).collect::<Vec<_>>().join(", "));
     out.push_str(".\nA Grid cell adds `col_span`, `row_span`; a Tiles cell adds `span`, `full_row`.\n");
-    let kinds: Vec<(&str, Kind)> = KIND_WORDS.iter().map(|(w, k)| (*w, *k)).chain(std::iter::once(("<code control>", Kind::Custom))).collect();
+    let kinds: Vec<(&str, Kind)> = KIND_WORDS.iter().map(|(w, k)| (*w, *k)).collect();
     // A kind that takes the box words less a few: the table shows own
     // words only, so the few are said here.
     for (word, kind) in &kinds {

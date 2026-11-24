@@ -379,7 +379,7 @@ fn a_build_writes_down_what_a_reload_needs() {
     std::fs::write(ui.join("first-page.gogo"), page_text).unwrap();
     std::fs::write(ui.join("styles").join("theme.gogo"), theme_text).unwrap();
     let out = dir.join("pages.rs");
-    gogo_ui::build_pages(&ui, &out, gogo_ui::BuildOptions { compile: gogo_ui::CompileOptions { code_controls: &["Canvas"], ..Default::default() }, ..gogo_ui::BuildOptions::new(&dir) }).unwrap();
+    gogo_ui::build_pages(&ui, &out, gogo_ui::BuildOptions::new(&dir)).unwrap();
     let source: String = std::fs::read_to_string(&out).unwrap();
     let _ = std::fs::remove_dir_all(&dir);
 
@@ -389,7 +389,7 @@ fn a_build_writes_down_what_a_reload_needs() {
     assert!(source.contains("pub static BUILD: gogo_ui::reload::BuildTables<'static> = gogo_ui::reload::BuildTables {\n    keys: KEYS,\n    images: IMAGES,\n    slices: &SLICES,\n"), "{source}");
     assert!(source.contains(&row), "the page's row: {row}\n{source}");
     assert!(source.contains("gogo_ui::reload::BuiltPage { file: \"\", page: &gogo_edit_bar::PAGE, uses: &[], text: 0 },"), "the edit bar has no file");
-    assert!(source.contains("    code_controls: &[\"Canvas\"],\n"), "{source}");
+    assert!(source.contains("    behaviors: &[\n"), "{source}");
     assert!(source.contains("    require_keys: false,\n"), "{source}");
 
     // Line endings do not count: a checkout that turns them is no change.

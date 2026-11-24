@@ -813,7 +813,7 @@ fn app_pages_resolve_the_same_with_the_mask_on_and_off() {
         let rel: &str = path.strip_prefix("res://").ok_or_else(|| format!("not a res:// path: {path}"))?;
         std::fs::read(res_root.join(rel)).map_err(|e| format!("{path}: {e}"))
     };
-    let options = CompileOptions { code_controls: &["GradientEdit"], assets: Some(&read_res), ..CompileOptions::default() };
+    let options = CompileOptions { assets: Some(&read_res), ..CompileOptions::default() };
     let mut ran = 0;
     let mut big: Vec<(String, usize, usize)> = Vec::new();
     for path in &paths {
@@ -862,8 +862,7 @@ fn frame(page: &Page, rt: &mut Runtime, draws: &mut Vec<Draw>) -> (u32, LayoutSt
 fn a_button_flip_on_the_effect_page_stays_local() {
     let dir: PathBuf = app_ui_dir();
     let path = dir.join("effect_page.gogo");
-    let options = CompileOptions { code_controls: &["GradientEdit"], ..CompileOptions::default() };
-    let c = compile_file_with(&path, options).unwrap();
+    let c = compile_file_with(&path, CompileOptions::default()).unwrap();
     assert!(!has_errors(&c.diags), "{:#?}", c.diags);
     let mut page = c.page;
     let n = page.nodes.len();

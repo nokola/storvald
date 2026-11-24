@@ -169,6 +169,7 @@ pub const REGISTRY: &[(&str, &str)] = &[
     ("G2020", "`release=` with a value other than `unused`, or on a picture it cannot free"),
     ("G2021", "a picture not in this build (hot reload, `CompileOptions::refuse_new_keys_and_pictures`)"),
     ("G2022", "an `atlas` line that is not the build's (hot reload)"),
+    ("G2023", "an Image's `source=` names no picture file — a picture from code goes in a `Surface draw=picture`"),
     ("G3002", "an automatic (value-driven) slot property assigned — the control drives it"),
     ("G3005", "one target posed from both screen vocabularies — a class and an orientation can hold at once; compose or pick one"),
     ("G3006", "style targeting / theme-entry shape — `for=`/`extends=` misuse, `theme` in a node, a named/wired/placed/duplicate entry"),
@@ -192,8 +193,9 @@ pub const REGISTRY: &[(&str, &str)] = &[
     ("G7003", "a file has one root — `View` or `Panel`"),
     ("G7011", "unknown node type"),
     ("G7012", "`View` is the screen root only"),
-    ("G7013", "a code-drawn control — an empty box (warning)"),
-    ("G7014", "a child inside a shape (Rectangle, Circle, Arc, Gradient, Image)"),
+    ("G7014", "a child inside a shape (Rectangle, Circle, Arc, Gradient, Image) or a Surface"),
+    ("G7015", "a Surface without `draw=`, or `draw=` written in a `when`"),
+    ("G7016", "a word of another `draw=` on a Surface — `fit=`, `window=`, `sampling=` are a `draw=picture` Surface's, `clip_contents=` a `draw=commands` one's"),
     ("G8001", "a translation key carries different English"),
     ("G8002", "displayed text with no translation key (`CompileOptions::require_keys`)"),
     ("G8003", "`allow` takes one word: `allow untranslated`"),
@@ -234,5 +236,7 @@ pub const SHARED_WITH_ADDON: &[&str] = &[
 /// inside `live()`") went with `live()` itself: `round()` is written
 /// by itself now. G0043 ("unknown flag") had a site nothing reached: the
 /// parser knows one flag, `signals`, and reads any other bare word as a
-/// name or reports it as G0046.
-pub const RETIRED: &[&str] = &["G0010", "G0042", "G0043", "G0053", "G0080", "G1007", "G1008", "G1012", "G5104"];
+/// name or reports it as G0046. G7013 ("a code-drawn control — an empty
+/// box") went with code controls: a box the program's code draws is a
+/// `Surface`.
+pub const RETIRED: &[&str] = &["G0010", "G0042", "G0043", "G0053", "G0080", "G1007", "G1008", "G1012", "G5104", "G7013"];

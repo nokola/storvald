@@ -1375,6 +1375,7 @@ A `ListItem` takes these less `valign`, `aspect`, `overlay`.
 | `Circle` | `color`, `color.a`, `border_thickness`, `border_color`, `border_dash` |
 | `Arc` | `color`, `color.a`, `from`, `sweep`, `thickness`, `dash` |
 | `Gradient` | `stops`, `fill`, `angle`, `repeat`, `from`, `to`, `corner_radius` |
+| `Surface` | `draw`, `fit`, `window`, `sampling`, `clip_contents` |
 | `Slider` | `background`, `corner_radius`, `color`, `value`, `min`, `max`, `step` |
 | `Input` | `background`, `corner_radius`, `corner_radius_top_left`, `corner_radius_top_right`, `corner_radius_bottom_right`, `corner_radius_bottom_left`, `border_thickness`, `border_color`, `border_dash`, `clip_contents`, `padding`, `padding_left`, `padding_top`, `padding_right`, `padding_bottom`, `text`, `font_size`, `font_color`, `placeholder_text`, `max_length`, `selection_color` |
 | `Check` | `background`, `corner_radius`, `corner_radius_top_left`, `corner_radius_top_right`, `corner_radius_bottom_right`, `corner_radius_bottom_left`, `border_thickness`, `border_color`, `border_dash`, `clip_contents`, `padding`, `padding_left`, `padding_top`, `padding_right`, `padding_bottom`, `text`, `font_size`, `font_color`, `wrap`, `horizontal_alignment`, `vertical_alignment`, `tap_pulse`, `selected` |
@@ -1390,8 +1391,22 @@ A `ListItem` takes these less `valign`, `aspect`, `overlay`.
 | `slot` | `background`, `corner_radius`, `corner_radius_top_left`, `corner_radius_top_right`, `corner_radius_bottom_right`, `corner_radius_bottom_left`, `border_thickness`, `border_color`, `border_dash`, `clip_contents`, `padding`, `padding_left`, `padding_top`, `padding_right`, `padding_bottom`, `automatic` |
 | `seat` | (none of its own) |
 | `empty` | (none — the line takes clauses, not properties) |
-| `<code control>` | `background`, `corner_radius`, `corner_radius_top_left`, `corner_radius_top_right`, `corner_radius_bottom_right`, `corner_radius_bottom_left`, `border_thickness`, `border_color`, `border_dash`, `clip_contents`, `padding`, `padding_left`, `padding_top`, `padding_right`, `padding_bottom` |
 <!-- kind-words:end -->
+
+### Added 2026-11-24 (user): `Surface` (design `docs/design/2026-11-24-surface.md`)
+
+- **`Surface`**: one node kind for a box the program's code draws, in
+  place of four ways the file did not show. Built so far: `draw=picture`
+  and `draw=commands`.
+- **Gone with it:** an `Image` whose `source=` names no file (G2023; the
+  "host picture" of the entries above), and code controls
+  (`CompileOptions::code_controls`, G7013): a box code draws is a
+  Surface. The host layer of the 2026-09-28 entry stays until
+  `draw=gpu` is built.
+- **A Surface's name is typed by its `draw=`** (`PictureSurface`,
+  `CommandSurface`) in `NAMES`, a repeat's row and a widget's names.
+- **`Draw::Surface`** marks a `draw=commands` Surface's place in a page's
+  draw list; the commands stay with the page (`Page::surface_commands`).
 
 ## Checks for G1's successors
 

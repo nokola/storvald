@@ -1054,7 +1054,9 @@ impl<'a> Lay<'a> {
             Kind::GridRow => (0.0, 0.0),
             Kind::Gap | Kind::Skip => (0.0, 0.0),
             Kind::Image => self.image_min(id, avail_w),
-            Kind::Rectangle | Kind::Circle | Kind::Arc | Kind::Gradient => (0.0, 0.0),
+            // A Surface has no size of its own: gogo does not know what
+            // code draws, so the file's words size it.
+            Kind::Rectangle | Kind::Circle | Kind::Arc | Kind::Gradient | Kind::Surface => (0.0, 0.0),
             Kind::Slider => (0.0, SLIDER_HEIGHT),
             Kind::Input => (0.0, INPUT_HEIGHT),
         };

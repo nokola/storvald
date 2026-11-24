@@ -464,16 +464,20 @@ pub struct PageUi {
     /// The rectangle the page lays out in, in epx; `None` = the whole
     /// window.
     pub viewport: Option<Rect>,
-    /// Pictures page's code made (`set_picture`), one per Image node.
+    /// Pictures page's code made (`set_picture`), one per Surface.
     pub(crate) code_pictures: Vec<CodePicture>,
+    /// Textures page's code handed over (`set_picture_texture`), one per
+    /// Surface.
+    #[cfg(feature = "gpu")]
+    pub(crate) picture_textures: Vec<PictureTexture>,
 }
 
-/// Picture a page's code made for one Image node: its pixels, kept until
-/// a GPU frame uploads them, and after, so a renderer made new gets them
-/// again.
+/// Picture a page's code made for one `Surface draw=picture`: its
+/// pixels, kept until a GPU frame uploads them, and after, so a renderer
+/// made new gets them again.
 pub(crate) struct CodePicture {
     pub(crate) node: NodeId,
-    /// Key the Image shows it under. `None` until program's next frame.
+    /// Key the Surface shows it under. `None` until program's next frame.
     pub(crate) key: Option<ImageKey>,
     pub(crate) width: u32,
     pub(crate) height: u32,
@@ -487,10 +491,40 @@ pub(crate) struct CodePicture {
     pub(crate) is_uploaded: bool,
 }
 
+/// Texture a page's code handed over for one `Surface draw=picture`.
+/// The renderer samples it where the Surface is: no copy.
+#[cfg(feature = "gpu")]
+pub(crate) struct PictureTexture {
+    pub(crate) node: NodeId,
+    /// Key the Surface shows it under. `None` until the GPU frame that
+    /// hands the texture to the renderer.
+    pub(crate) key: Option<ImageKey>,
+    /// Page's texture: a handle to it, not a copy of its pixels.
+    pub(crate) texture: wgpu::Texture,
+    /// True from `set_picture_texture` with another texture until a GPU
+    /// frame handed it to the renderer.
+    pub(crate) is_new: bool,
+}
+
 impl PageUi {
     pub fn new(page: Page) -> PageUi {
         let runtime: Runtime = Runtime::new(&page);
-        PageUi { page, runtime, input: Input::new(), kept: KeptFrame::default(), draws: Vec::new(), above_children: None, top_draws: Vec::new(), laid_out_for: ((0, 0), 0.0, None), is_modal: false, pose: None, viewport: None, code_pictures: Vec::new() }
+        PageUi {
+            page,
+            runtime,
+            input: Input::new(),
+            kept: KeptFrame::default(),
+            draws: Vec::new(),
+            above_children: None,
+            top_draws: Vec::new(),
+            laid_out_for: ((0, 0), 0.0, None),
+            is_modal: false,
+            pose: None,
+            viewport: None,
+            code_pictures: Vec::new(),
+            #[cfg(feature = "gpu")]
+            picture_textures: Vec::new(),
+        }
     }
 
     /// A page from what `gogo_ui::build_pages` wrote when the program was
@@ -606,6 +640,25 @@ impl PageUi {
         let ((width_px, height_px), epx, _) = self.laid_out_for;
         let whole: Rect = self.viewport.unwrap_or(Rect::new(0.0, 0.0, width_px as f32 / epx, height_px as f32 / epx));
         rect.x <= whole.x + COVER_SLACK_EPX && rect.y <= whole.y + COVER_SLACK_EPX && rect.x + rect.w >= whole.x + whole.w - COVER_SLACK_EPX && rect.y + rect.h >= whole.y + whole.h - COVER_SLACK_EPX
+    }
+
+    /// True when a `Surface` of the page covers page's whole rectangle:
+    /// the program's code draws the page's picture there.
+    ///
+    /// Needed by the debug check of a page's `KIND`: gogo cannot see what
+    /// code draws, so a full-screen page that says so with a Surface
+    /// over all of it is taken at its word. False before first frame.
+    pub fn has_surface_over_viewport(&self) -> bool {
+        if !self.kept.is_laid_out() {
+            return false;
+        }
+        let ((width_px, height_px), epx, _) = self.laid_out_for;
+        let whole: Rect = self.viewport.unwrap_or(Rect::new(0.0, 0.0, width_px as f32 / epx, height_px as f32 / epx));
+        let look = self.kept.look();
+        self.page.node_ids().filter(|node| self.page.nodes[*node].kind == Kind::Surface && !look.gone(&self.page, *node) && !look.hidden(&self.page, *node)).any(|node| {
+            let rect: Rect = self.kept.rects()[node.index()];
+            rect.x <= whole.x + COVER_SLACK_EPX && rect.y <= whole.y + COVER_SLACK_EPX && rect.x + rect.w >= whole.x + whole.w - COVER_SLACK_EPX && rect.y + rect.h >= whole.y + whole.h - COVER_SLACK_EPX
+        })
     }
 
     /// The node under (`x`, `y`) that takes input, if any.

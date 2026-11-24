@@ -153,6 +153,6 @@ pub fn build(pages: &[(&str, &str)], others: &[(&str, &str)], pictures: &[(&str,
         .iter()
         .map(|(name, page, uses, text)| BuiltPage { file: leak_str(name), page: as_built(page, slices), uses: leak(&uses.iter().map(|u| leak_str(u)).collect::<Vec<_>>()), text: *text })
         .collect();
-    let tables: &'static BuildTables<'static> = Box::leak(Box::new(BuildTables { keys: leak(&key_rows), images: leak(&image_rows), slices, atlases: leak(&atlases), code_controls: &[], behaviors: &[], require_keys: true, pages: leak(&built) }));
+    let tables: &'static BuildTables<'static> = Box::leak(Box::new(BuildTables { keys: leak(&key_rows), images: leak(&image_rows), slices, atlases: leak(&atlases), behaviors: &[], require_keys: true, pages: leak(&built) }));
     Kit { tables, files: Arc::new(Mutex::new(files)) }
 }

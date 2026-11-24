@@ -2456,8 +2456,12 @@ impl Input {
                 // held does nothing, from its landing to its lift. It gets
                 // no press, so its moves and its lift find none; and it
                 // dismisses no edit bar and stops no glide.
+                //
+                // A Surface takes every finger that lands on it: the
+                // program's code tells one finger (a stroke) from two (a
+                // zoom), so each gets a press of its own.
                 let landed_on: Option<NodeId> = hit_node.map(|n| behavior_at(page, n).map_or(n, |i| page.behaviors[i as usize].root));
-                if landed_on.is_some_and(|n| self.is_held(n)) {
+                if landed_on.is_some_and(|n| page.nodes[n].kind != Kind::Surface && self.is_held(n)) {
                     return events;
                 }
                 if rt.edit_bar.is_some() {

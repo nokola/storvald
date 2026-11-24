@@ -24,8 +24,9 @@ View settingsPage .SlidingPage background=$back, padding=16 {
         // no live page names it, and is decoded again at its next show.
         Image banner source="res://assets/banner.jpg", size=hug, loading=lazy, release=unused
         // No file behind this one: page's code makes its pixels
-        // (`set_picture` in `settings_page.rs`).
-        Image madeInCode size=hug
+        // (`set_picture` in `settings_page.rs`). A Surface has no size
+        // of its own, so the file gives it one.
+        Surface madeInCode draw=picture, width=12, height=12
         Scroll body width=fill, height=fill {
             Label bodyText text="", wrap=true, width=fill, font_color=$ink
         }

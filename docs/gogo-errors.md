@@ -167,8 +167,8 @@ resolves against the INCLUDING file's directory (`sub/widgets.gogo`
 writing `uses "inner.gogo"` loads `sub/inner.gogo`; `..` climbs).
 
 The same code answers a translation key on a picture's address:
-`source="preview://brush"/k` and `source="res://a.png"/k`. An address is
-never translated; the key goes on text.
+`source="res://a.png"/k`. An address is never translated; the key goes
+on text.
 
 ## G0024 — `uses` file not found
 
@@ -1081,9 +1081,9 @@ Image hero source="res://assets/big.jpg", release=unused
 ```
 
 An Image showing an atlas slice (`source=stars[3]`) declares nothing —
-put the word on the `atlas` line. A picture the app draws itself
-(`source="collage://preview"`) has no file to decode again; its owner
-frees it.
+put the word on the `atlas` line. A picture the program's code hands
+over is in a `Surface`, which takes no `release=`: it has no file to
+decode again, and the code that made it frees it.
 
 ## G2021 — a picture not in this build (hot reload)
 
@@ -1103,6 +1103,33 @@ atlas as built. An `atlas` line that says something else than it did at
 build time, or one the build never saw, is refused at its line. Rebuild
 once; from then on the page reloads again. The rest of a page with
 atlases reloads like any other.
+
+## G2023 — an Image's `source=` names no picture file
+
+An Image shows a picture file (`res://…`) or an atlas slice. A name that
+is no file used to make an Image show what the program's code draws, and
+nothing on the line said so. A box that code fills is a `Surface`:
+`draw=picture` for one picture the code hands over
+(`Runtime::set_picture`).
+
+Wrong:
+
+```kdl error=G2023
+View page {
+    Image preview 240x80, source="preview://brush", fit=distort
+}
+```
+
+Fix:
+
+```kdl
+View page {
+    Surface preview 240x80, draw=picture, fit=distort
+}
+```
+
+An Image whose file the code picks while the program runs writes
+`source=""` (no picture yet), and the code writes the file's key.
 
 ## G3002 — an automatic slot property assigned
 
@@ -1415,18 +1442,13 @@ View menuPage {
 
 ## G7011 — unknown node type
 
-No kind, widget or registered code-control wears this word. The message
-suggests the nearest.
+No kind, widget or control wears this word. The message suggests the
+nearest. A box the program's code draws is a `Surface`.
 
 ## G7012 — `View` is the screen root only
 
 Inside the tree — and as a widget's body — use `Layers` (free
 placement) or `Panel` (a styled box).
-
-## G7013 — a code-drawn control (warning)
-
-The host declared this word as code-drawn; gogo lays out an empty box
-of its declared size and the host paints it.
 
 ## G7014 — a child inside a shape
 
@@ -1436,6 +1458,9 @@ over the shape, and a shape with no size of its own would not grow to
 hold it. Put the two side by side in a `Layers` (they stack), or use a
 `Panel`, which draws a plate and holds content. A shape's block still
 takes its `when` and `transition` lines.
+
+A `Surface` holds nothing either: the program's code draws all of it.
+What goes over a Surface is a node after it in the same `Layers`.
 
 Wrong:
 
@@ -1454,6 +1479,57 @@ View page {
     Panel badge 80x24, background=red {
         Label text="New"
     }
+}
+```
+
+## G7015 — a Surface without `draw=`
+
+A `Surface` is a box the program's code draws, and its line says how:
+`draw=picture` (the code hands over one picture) or `draw=commands` (the
+code writes gogo draw commands). There is no default, so nobody gets one
+kind of drawing by forgetting to ask for another.
+
+Wrong:
+
+```kdl error=G7015
+View page {
+    Surface board width=fill, height=fill
+}
+```
+
+Fix:
+
+```kdl
+View page {
+    Surface board draw=commands, width=fill, height=fill
+}
+```
+
+The same code answers `draw=` written in a `when` block. The build gives
+the Surface's name in the code a type by its `draw=` (`PictureSurface`,
+`CommandSurface`), so the word is fixed when the page is built: write it
+on the Surface's own line.
+
+## G7016 — a word of another `draw=` on a Surface
+
+`fit=`, `window=` and `sampling=` place a picture: they belong to a
+`draw=picture` Surface. `clip_contents=` cuts draw commands at the
+Surface's edge: it belongs to a `draw=commands` one. Written beside the
+other `draw=`, the word would build and change nothing.
+
+Wrong:
+
+```kdl error=G7016
+View page {
+    Surface board draw=commands, fit=cover, width=fill, height=fill
+}
+```
+
+Fix:
+
+```kdl
+View page {
+    Surface board draw=commands, width=fill, height=fill
 }
 ```
 
@@ -1485,8 +1561,8 @@ Label text="Leon Shaw"/_                // stays English on purpose
 ```
 
 A whole file that stays English (a dev page, release notes) starts with
-the line `allow untranslated`. Not checked: paths and picture addresses
-(`res://…`, `collage://before`), `areas=` rows, and text with no letter
+the line `allow untranslated`. Not checked: paths (`res://…`), `areas=`
+rows, and text with no letter
 (`"100%"`, `"1/1"`). A string in a `uses` file is reported with that
 file's name, and only that file's `allow untranslated` covers it.
 

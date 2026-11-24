@@ -127,6 +127,14 @@ pub enum Draw {
     /// (`swing_focal`).
     SwingPush { angle: f32, pivot_x: f32, cx: f32, cy: f32, focal: f32 },
     SwingPop,
+    /// The place of a `Surface draw=commands` in the list: the draw
+    /// commands code wrote for `surface` (`Page::surface_commands`) show
+    /// here, each moved by `rect`'s corner and faded by `alpha`.
+    ///
+    /// Needed as a mark, not as the commands themselves: code that writes
+    /// its commands again changes nothing in this list, and a page that
+    /// changes does not ask code for the commands again.
+    Surface { rect: Rect, surface: NodeId, alpha: f32 },
 }
 
 impl Draw {
@@ -158,6 +166,7 @@ impl Draw {
             Draw::RotatePop => Draw::RotatePop,
             Draw::SwingPush { angle, pivot_x, cx, cy, focal } => Draw::SwingPush { angle: *angle, pivot_x: pivot_x + dx, cx: cx + dx, cy: cy + dy, focal: *focal },
             Draw::SwingPop => Draw::SwingPop,
+            Draw::Surface { rect, surface, alpha: own } => Draw::Surface { rect: mv(rect), surface: *surface, alpha: own * alpha },
         }
     }
 
@@ -957,7 +966,16 @@ fn walk(page: &Page, res: &Resolved, rects: &[Rect], id: NodeId, opacity: f32, s
                 }
             }
         }
-        Kind::Image => {
+        // The mark alone: the commands code wrote stay with the page
+        // (`Draw::Surface`). A Surface of no area shows nothing.
+        Kind::Surface if res.ident(page, id, PropKey::Draw) == Some("commands") => {
+            if rect.w > 0.0 && rect.h > 0.0 && opacity > 0.0 {
+                out.push(Draw::Surface { rect, surface: id, alpha: opacity });
+            }
+        }
+        // A `draw=picture` Surface shows the picture code handed it
+        // (`Runtime::set_picture`) as an Image shows its file.
+        Kind::Image | Kind::Surface => {
             let src: ImageKey = match res.prop(page, id, PropKey::Source) {
                 Some(Value::VImage(key)) => key,
                 _ => NO_IMAGE,

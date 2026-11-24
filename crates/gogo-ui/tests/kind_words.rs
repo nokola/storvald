@@ -127,18 +127,25 @@ fn a_child_aimed_when_response_is_checked_against_the_childs_kind() {
     assert_eq!(code, "G2001");
 }
 
-/// A code control takes the shared row (box, plate, padding) and refuses
-/// the rest — `GradientEdit foo=1` used to build with no diagnostic.
+/// A Surface takes the words every box takes and refuses the rest, each
+/// with what to write in its place: gogo draws nothing of a Surface, so
+/// it has no plate, no padding and no picture file.
 #[test]
-fn a_code_control_takes_the_shared_row() {
-    let options = CompileOptions { code_controls: &["GradientEdit"], ..Default::default() };
-    let c = compile_with("View v { GradientEdit g width=100, height=40, background=red, padding=4 }", &|_| None, options);
+fn a_surface_takes_a_box_s_words_and_no_plate() {
+    let options = CompileOptions::default();
+    let c = compile_with("View v { Surface g draw=commands, width=100, height=40, opacity=0.5, margin_left=4 }", &|_| None, options);
     assert!(!gogo_ui::has_errors(&c.diags), "{:#?}", c.diags);
-    let c = compile_with("View v { GradientEdit g width=100, stops=[red, blue] }", &|_| None, options);
-    assert!(gogo_ui::has_errors(&c.diags), "{:#?}", c.diags);
-    assert!(c.diags.iter().any(|d| d.code == "G2002" && d.message.contains("code control")), "{:#?}", c.diags);
-    let c = compile_with("View v { GradientEdit g width=100, foo=1 }", &|_| None, options);
+    let c = compile_with("View v { Surface g draw=commands, width=100, background=red }", &|_| None, options);
+    assert!(c.diags.iter().any(|d| d.code == "G2002" && d.message.contains("gogo draws nothing of a Surface")), "{:#?}", c.diags);
+    let c = compile_with("View v { Surface g draw=picture, width=100, source=\"res://a.png\" }", &|_| None, options);
+    assert!(c.diags.iter().any(|d| d.code == "G2002" && d.message.contains("Runtime::set_picture")), "{:#?}", c.diags);
+    let c = compile_with("View v { Surface g draw=commands, width=100, stops=[red, blue] }", &|_| None, options);
+    assert!(c.diags.iter().any(|d| d.code == "G2002"), "{:#?}", c.diags);
+    let c = compile_with("View v { Surface g draw=commands, width=100, foo=1 }", &|_| None, options);
     assert!(c.diags.iter().any(|d| d.code == "G2001"), "{:#?}", c.diags);
+    // `draw=` is a Surface's word alone.
+    let c = compile_with("View v { Panel p draw=commands }", &|_| None, options);
+    assert!(c.diags.iter().any(|d| d.code == "G2002" && d.message.contains("gogo draws a Panel itself")), "{:#?}", c.diags);
 }
 
 /// `for=` on a style names a kind (checked) and is not a property of the

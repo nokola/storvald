@@ -846,6 +846,34 @@ mod tests {
         assert_eq!(program.app().paper_frames_drawn, 0, "no GPU, no GPU drawing");
     }
 
+    /// Page writes the draw commands of its `Surface draw=commands` when
+    /// the Surface first shows and when its size changes, with no GPU.
+    /// In every other frame the engine keeps them and does not ask.
+    ///
+    /// Needed because such a page runs in a test like any other: what it
+    /// draws is checked with no GPU.
+    #[test]
+    fn a_page_writes_its_surface_s_commands_with_no_gpu() {
+        use crate::paper_page::{MARGIN, MARGIN_FROM_RIGHT_EPX, MARGIN_WIDTH_EPX};
+        use turbodot::gogo::{Color_Straight_Srgb_4xU8_RGBA, Draw};
+        let margin: NodeId = crate::ui::paper_page::NAMES.margin.node();
+        let line = |width: f32, height: f32| Draw::Quad { rect: Rect::new(width - MARGIN_FROM_RIGHT_EPX, 0.0, MARGIN_WIDTH_EPX, height), color: Color_Straight_Srgb_4xU8_RGBA(MARGIN), corner: 0.0, border: 0.0, border_color: Color_Straight_Srgb_4xU8_RGBA::TRANSPARENT };
+
+        let mut program: Program<AppState> = started(AppState::default());
+        program.tap(HOME.open_paper, 1.0);
+        let_the_slides_end(&mut program);
+        let (width, height): (f32, f32) = program.size();
+        assert_eq!(program.ui().page.surface_commands(margin), [line(width, height)], "written when the Surface first showed");
+        // The page's own list holds the Surface's place, not its commands.
+        let whole: Rect = program.ui().rect(margin);
+        assert_eq!((whole.w, whole.h), (width, height));
+        assert!(program.ui().draws.contains(&Draw::Surface { rect: whole, surface: margin, alpha: 1.0 }), "{:?}", program.ui().draws);
+
+        // A window of another size: asked again, for that size.
+        program.frame(width - 100.0, height + 50.0, 0.016);
+        assert_eq!(program.ui().page.surface_commands(margin), [line(width - 100.0, height + 50.0)]);
+    }
+
     /// Page's own GPU picture comes in with its nodes: where an anim
     /// has page's root, and as see-through.
     ///
@@ -864,9 +892,31 @@ mod tests {
         let pose: turbodot::pages::PagePose = program.ui().drawn_pose(crate::ui::paper_page::NAMES.paper_page).expect("the paper page is on its way in");
         assert!(pose.alpha < 0.2, "nearly clear on its first frame: {pose:?}");
         let picture: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
+        // The paper is in this picture, the first with the page in it:
+        // its texture was handed over while the picture was drawn.
+        assert!(program.ui().draws.iter().any(|draw| matches!(draw, turbodot::gogo::Draw::Image { .. })), "{:?}", program.ui().draws);
         let row_px: u32 = picture.height / PAPER_SIDE_TEXELS;
         let between_lines: [u8; 4] = picture.at(picture.width - 10, (LINE_EVERY_TEXELS - 6) * row_px + row_px / 2);
         assert!((0..3).all(|c| between_lines[c].abs_diff(PAPER[c]) > 60), "the home page shows through the paper: {between_lines:?}");
+        // The margin line is draw commands of the same page: it moves and
+        // fades with the page too. Read half way in, where the line is
+        // neither clear nor solid.
+        let mut pose: turbodot::pages::PagePose = pose;
+        while pose.alpha < 0.3 {
+            frame(&mut program, 0.016);
+            pose = program.ui().drawn_pose(crate::ui::paper_page::NAMES.paper_page).expect("the paper page is still on its way in");
+        }
+        assert!(pose.alpha < 0.8, "half way in: {pose:?}");
+        let picture: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
+        let margin_x: f32 = picture.width as f32 - crate::paper_page::MARGIN_FROM_RIGHT_EPX + pose.offset_x;
+        assert!(margin_x >= 8.0 && margin_x < picture.width as f32 - 2.0, "the margin line is inside the picture: {margin_x} of {}, {pose:?}", picture.width);
+        let y: u32 = (LINE_EVERY_TEXELS - 6) * row_px + row_px / 2;
+        let on_the_margin: [u8; 4] = picture.at(margin_x.round() as u32, y);
+        let beside_it: [u8; 4] = picture.at(margin_x.round() as u32 - 6, y);
+        assert!(on_the_margin[0].abs_diff(crate::paper_page::MARGIN[0]) > 15, "the home page shows through the margin line: {on_the_margin:?}");
+        // The line is drawn over the paper, each as clear as the page:
+        // redder than the paper beside it, and not yet its own red.
+        assert!(on_the_margin[0] > beside_it[0] + 20, "the margin line shows where the page is now: {on_the_margin:?} beside {beside_it:?}");
     }
 
     /// Page's own picture shows under its nodes, and engine calls page's
@@ -893,6 +943,13 @@ mod tests {
         let line: [u8; 4] = picture.at(far_right, (LINE_EVERY_TEXELS - 1) * row_px + row_px / 2);
         assert!((0..4).all(|c| line[c].abs_diff(LINE[c]) <= 8), "a ruled line: {line:?}");
         assert_eq!(picture.at(far_right, (LINE_EVERY_TEXELS - 6) * row_px + row_px / 2), PAPER, "paper between two lines");
+        // The margin line, draw commands of the page's second Surface:
+        // over the paper, under the page's nodes, from top to bottom.
+        let margin_x: u32 = picture.width - crate::paper_page::MARGIN_FROM_RIGHT_EPX as u32;
+        for y in [2, picture.height / 2, picture.height - 3] {
+            assert_eq!(picture.at(margin_x, y), crate::paper_page::MARGIN, "the margin line at row {y}");
+            assert_ne!(picture.at(margin_x - 2, y), crate::paper_page::MARGIN, "paper left of the margin line at row {y}");
+        }
         let title: Rect = program.ui().rect(crate::ui::paper_page::NAMES.title);
         let ink: usize = (title.y as u32..(title.y + title.h) as u32).flat_map(|y| (title.x as u32..(title.x + title.w) as u32).map(move |x| (x, y))).filter(|&(x, y)| picture.at(x, y) == [0x20, 0x20, 0x20, 0xFF]).count();
         assert!(ink > 20, "page's title is drawn over the paper: {ink} text-colored pixels");
@@ -900,8 +957,12 @@ mod tests {
 
         let on_screen: u32 = program.app().paper_frames_drawn;
         assert!(on_screen >= 1);
-        gpu.draw_program(&mut program).expect("the pages are drawn");
+        // A second picture is drawn by a renderer made new: the page
+        // handed its texture over once, and the new renderer gets it
+        // again.
+        let second: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
         assert_eq!(program.app().paper_frames_drawn, on_screen + 1, "each frame while page is on screen");
+        assert_eq!(second.at(far_right, (LINE_EVERY_TEXELS - 6) * row_px + row_px / 2), PAPER, "the paper in the second picture of the page");
 
         program.go(SettingsPage::new(0));
         let_the_slides_end(&mut program);
@@ -1131,26 +1192,33 @@ mod tests {
         assert!(program.ui().runtime.locale.is_some(), "page opened later");
     }
 
-    /// Picture page's code makes has its size in the frame after it was
-    /// made, with no GPU; a second one of another size moves the page
-    /// again.
+    /// Picture page's code makes shows in its Surface from the frame
+    /// after it was made, with no GPU. The Surface keeps the size its
+    /// file gives it: a second picture of another size moves nothing.
     ///
     /// Needed because such a page runs in a test like any other: its
     /// layout is checked with no GPU.
     #[test]
-    fn a_picture_made_in_code_has_its_size_with_no_gpu() {
+    fn a_picture_made_in_code_shows_in_its_surface_with_no_gpu() {
         let mut program: Program<AppState> = started(AppState::default());
         open_settings(&mut program, 1.0);
         let side: f32 = MADE_PICTURE_SIDE_PX as f32;
-        let made: Rect = program.ui().rect(SETTINGS.made_in_code);
-        assert_eq!((made.w, made.h), (side, side), "the size the page's code said");
+        let made: Rect = program.ui().rect(SETTINGS.made_in_code.node());
+        assert_eq!((made.w, made.h), (side, side), "the size the file says");
+        let shows_a_picture = |program: &Program<AppState>| -> bool {
+            let ui = program.ui();
+            let rect: Rect = ui.rect(SETTINGS.made_in_code.node());
+            ui.draws.iter().any(|draw| matches!(draw, turbodot::gogo::Draw::Image { rect: drawn, .. } if *drawn == rect))
+        };
+        assert!(shows_a_picture(&program), "the Surface draws the picture the page's code made");
         program.ui_mut().set_picture(SETTINGS.made_in_code, 20, 6, vec![0xFF; 20 * 6 * 4]);
         frame(&mut program, 0.016);
-        let made: Rect = program.ui().rect(SETTINGS.made_in_code);
-        assert_eq!((made.w, made.h), (20.0, 6.0), "the second picture's size");
+        let made: Rect = program.ui().rect(SETTINGS.made_in_code.node());
+        assert_eq!((made.w, made.h), (side, side), "the second picture is fitted into the same Surface");
+        assert!(shows_a_picture(&program));
     }
 
-    /// Picture page's code makes shows its pixels where its Image sits,
+    /// Picture page's code makes shows its pixels where its Surface sits,
     /// in every picture of the page; a second one takes its place; page
     /// freed, then made again, shows it again.
     ///
@@ -1164,7 +1232,7 @@ mod tests {
         let mut program: Program<AppState> = started(AppState::default());
         let gpu: turbodot::Gpu = turbodot::Gpu::new().expect("this test needs a GPU adapter");
         open_settings(&mut program, 1.0);
-        let (x, y): (u32, u32) = center(program.ui().rect(SETTINGS.made_in_code));
+        let (x, y): (u32, u32) = center(program.ui().rect(SETTINGS.made_in_code.node()));
         for round in 0..2 {
             let picture: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
             assert_eq!(picture.at(x, y), MADE_PICTURE_COLOR, "the pixels the page made, picture {round} of the page");
@@ -1182,7 +1250,7 @@ mod tests {
         program.free_cached_pages();
         gpu.draw_program(&mut program).expect("the pages are drawn");
         open_settings(&mut program, 5.0);
-        let (x, y): (u32, u32) = center(program.ui().rect(SETTINGS.made_in_code));
+        let (x, y): (u32, u32) = center(program.ui().rect(SETTINGS.made_in_code.node()));
         let picture: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
         assert_eq!(picture.at(x, y), MADE_PICTURE_COLOR, "the page made again shows its own picture");
     }

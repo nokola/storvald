@@ -21,7 +21,7 @@ use std::time::Instant;
 use gogo_ui::draw::{Draw, Fit, GradientKind, Sampling, TextAlign};
 use gogo_ui::layout::Rect;
 use gogo_ui::locale::Locale;
-use gogo_ui::page::{NO_STR, Page};
+use gogo_ui::page::{NO_STR, NodeId, Page};
 use gogo_ui::ImageKey;
 use gogo_text::{TextEngine, TextPx};
 
@@ -229,6 +229,10 @@ pub struct UiRenderer {
     wedges: Vec<[f32; 4]>,
     swings: Vec<([f32; 4], [f32; 4])>,
     glyphs: Vec<gogo_text::GlyphQuad>,
+    /// The commands of the `Surface draw=commands` being walked, moved to
+    /// where the Surface is and faded with it. Kept so a frame with such
+    /// a Surface allocates nothing once warm.
+    surface_draws: Vec<Draw>,
     screen: (u32, u32),
     /// Slot 0 is the atlas (rebuilt when the engine's atlas changes size).
     textures: Vec<Texture>,
@@ -353,6 +357,7 @@ impl UiRenderer {
             wedges: Vec::new(),
             swings: Vec::new(),
             glyphs: Vec::new(),
+            surface_draws: Vec::new(),
             screen: (1, 1),
             textures: Vec::new(),
             free_slots: Vec::new(),
@@ -858,6 +863,7 @@ impl UiRenderer {
         let mut wedges: Vec<[f32; 4]> = std::mem::take(&mut self.wedges);
         let mut swings: Vec<([f32; 4], [f32; 4])> = std::mem::take(&mut self.swings);
         let mut glyphs: Vec<gogo_text::GlyphQuad> = std::mem::take(&mut self.glyphs);
+        let mut surface_draws: Vec<Draw> = std::mem::take(&mut self.surface_draws);
         clips.clear();
         rots.clear();
         wedges.clear();
@@ -873,16 +879,35 @@ impl UiRenderer {
         let mut text_secs: f32 = 0.0;
         // Text is timed only when a host asked: otherwise no clock is read.
         let text_is_timed: bool = self.timings.is_some();
-        pages.for_each_list(&mut |draws: &[Draw], page: &Page| {
+        pages.for_each_list(&mut |page_draws: &[Draw], page: &Page| {
+        // A `Draw::Surface` mark stops the walk of the page's list: the
+        // commands code wrote for that Surface are walked from
+        // `surface_draws`, then the page's list goes on at `resume`. The
+        // clip, the turn and the swing in force at the mark hold for
+        // them, as for any command at that place.
+        let mut is_in_surface: bool = false;
+        let mut resume: usize = 0;
+        let mut mark: Option<(NodeId, f32, f32, f32)> = None;
         // Indexed: a Gradient entry owns the stop records after it.
         let mut i: usize = 0;
+        loop {
+        let draws: &[Draw] = if is_in_surface { &surface_draws } else { page_draws };
         while i < draws.len() {
             let d = &draws[i];
             i += 1;
-            if self.no_ui && !self.drawn_without_ui(d) {
+            // What code wrote for a Surface is no UI of gogo's.
+            if self.no_ui && !is_in_surface && !self.drawn_without_ui(d) {
                 continue;
             }
             match d {
+                Draw::Surface { rect, surface, alpha } => {
+                    // A mark among a Surface's own commands shows
+                    // nothing: code writes commands, not other Surfaces.
+                    if !is_in_surface {
+                        mark = Some((*surface, rect.x, rect.y, *alpha));
+                        break;
+                    }
+                }
                 Draw::Quad { rect, color, corner, border, border_color } => {
                     self.push_quad(current, Quad { rect: px(rect), color: color.to_f32(), border_color: border_color.to_f32(), params: [corner * epx, border * epx, KIND_RECT, 0.0], uv: NO_UV, rot, wedge, swing, eye });
                 }
@@ -1158,8 +1183,24 @@ impl UiRenderer {
                 }
             }
         }
+        match mark.take() {
+            Some((surface, dx, dy, alpha)) => {
+                resume = i;
+                surface_draws.clear();
+                surface_draws.extend(page.surface_commands(surface).iter().map(|command| command.posed(dx, dy, alpha)));
+                is_in_surface = true;
+                i = 0;
+            }
+            None if is_in_surface => {
+                is_in_surface = false;
+                i = resume;
+            }
+            None => break,
+        }
+        }
         });
         self.close_batch(&mut batch_first, current, current_tex, current_pixel);
+        self.surface_draws = surface_draws;
         self.clips = clips;
         self.rots = rots;
         self.wedges = wedges;
@@ -1228,6 +1269,8 @@ impl UiRenderer {
         match d {
             Draw::Image { image, .. } => self.externals.iter().any(|e| e.key == *image) || self.host_layer_of(*image).is_some(),
             Draw::ClipPush(_) | Draw::ClipPop | Draw::RotatePush { .. } | Draw::RotatePop | Draw::WedgePush { .. } | Draw::WedgePop | Draw::SwingPush { .. } | Draw::SwingPop => true,
+            // The program's code draws a Surface, not gogo.
+            Draw::Surface { .. } => true,
             _ => false,
         }
     }

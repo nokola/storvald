@@ -79,7 +79,7 @@ painting) is in REFERENCE.md, "Host API".
 | Kind   | Syntax                  | Notes |
 |--------|-------------------------|-------|
 | string | `"Paint"`, `"new stroke"/newStroke` | Escapes: `\"` `\\` `\n` `\t`. No interpolation in v1. Optional `/key` suffix = translation term (see below). |
-| path   | `"res://icons/undo.png"`, `"preview://brush"` | A string on a resource property (`source=`, `font=`), scheme always written (G0071 — a bare word could be a label or a path). `res://` is an asset under the build's resource root, checked and embedded at build time. Any other scheme on an `Image`'s `source=` is a **host picture**: the app's code registers pixels under that exact name at run time (a live preview, a canvas tile); the build bakes the name as the picture's id, and the box shows nothing until the code registers it. `""` = no picture. Never translated — `/key` on a path is an error. |
+| path   | `"res://icons/undo.png"` | A string on a resource property (`source=`, `font=`), scheme always written (G0071 — a bare word could be a label or a path). `res://` is an asset under the build's resource root, checked and embedded at build time. An `Image`'s `source=` names such a file and nothing else (G2023): a picture the program's code makes goes in a `Surface draw=picture`. `""` = no picture. Never translated — `/key` on a path is an error. |
 | slice  | `animals[12]`, `toolbar.play`, `bubble` | An **atlas slice** on `source=` (and in a theme value or widget param that feeds one): a grid cell by number, a named slice, or a whole-picture atlas — see Atlases. A bare word on `source=` always names an atlas (a path is quoted); `[n]` touches the name, no space. |
 | number | `36`, `0.5`, `-4`       | A number on a *length* property is **epx** (effective pixels, density-independent); the suffix `epx` may be written. There is no device-pixel unit: `px` is refused (G0038). `%` is legal only where a rule names it (an anim's `from=`/`to=`, `key_unit=`). On a scalar property (e.g. `Slider.value`) `px` and `%` are refused the same way; `epx` there is accepted and means nothing. |
 | bool   | `true`, `false`         | |
@@ -413,7 +413,7 @@ These are ordinary nodes to the parser; the resolver gives them meaning:
   text: on `Layers`, the `View` root, stacks and slot lines it insets
   every child's placement and adds onto the box's minimum, and
   `Label`/`Input` inset their own text (WPF's TextBlock/TextBox Padding,
-  verbatim). Drawing leaves (`Rectangle`/`Circle`/`Arc`/`Gradient`/`Image`)
+  verbatim). Drawing leaves (`Rectangle`/`Circle`/`Arc`/`Gradient`/`Image`/`Surface`)
   have nothing inside — outer air is `margin`, and a child written in a
   shape's block is refused (G7014): hold the two in a `Layers`, or use a
   `Panel`.
@@ -1640,7 +1640,7 @@ Rules:
   rule mirrored); an Image showing a slice declares nothing. Hiding or
   scrolling never frees: the host sweeps only after a page is freed or
   when page code asks after swapping its pictures. G2020 for any other
-  value, a slice's Image, or a host picture. The build emits
+  value, or a slice's Image. The build emits
   `RELEASE_UNUSED: &[ImageKey]`.
 
 ## Vocabulary (D83 — designed and built 2026-07-11)
@@ -1672,6 +1672,21 @@ to the goals rather than to muscle memory from WPF or an engine (`Label`,
   step), and under mirror stop at 0.5. One stop = G2003 (a solid is a
   `Rectangle`). Stops stay live as `stop_N_color`/`stop_N_offset`
   properties — whens/anims drive them.
+- **`Surface`** — a box the program's code draws (design:
+  `docs/design/2026-11-24-surface.md`). `draw=` is REQUIRED and has no
+  default (G7015): `picture` (the code hands over one picture, drawn as
+  an Image draws a file: `fit=`, `window=`, `sampling=`) or `commands`
+  (the code writes gogo draw commands in the Surface's own space; gogo
+  keeps them and asks again when the size changed or the code said the
+  content changed; `clip_contents=` cuts them at the edge). A leaf: no
+  child (G7014), no size of its own, no plate. The words of the other
+  `draw=` are refused (G7016). `draw=` is written on the Surface's own
+  line only, because the build types the Surface's name by it
+  (`PictureSurface`, `CommandSurface`): code that fills it another way
+  does not compile. With `interactive=true` and `on:pointer=` it takes
+  every finger that lands on it, each with its own press; any other box
+  holds one finger at a time. An `Image` names a picture FILE: any other
+  `source=` name is G2023, toward `Surface draw=picture`.
 - **`choice` / `Radio` / `Check`** — one-of-N with a lexical home: `choice`
   is erased structure (children parent flat); every `Radio` descendant joins
   one exclusive group. A

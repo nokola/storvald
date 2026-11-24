@@ -177,7 +177,6 @@ fn a_uses_line_takes_one_path() {
 
 #[test]
 fn a_translation_key_on_a_picture_address_is_refused() {
-    refused("View v { Image i source=\"preview://brush\"/k }", "G0023", "`/k`");
     refused("View v { Image i source=\"res://a.png\"/k }", "G0023", "`/k`");
 }
 

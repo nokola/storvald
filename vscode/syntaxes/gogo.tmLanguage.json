@@ -36,7 +36,7 @@
     },
     "builtin-type": {
       "comment": "The capitalization law: a capitalized first word is an addressable node. These are gogo's own kinds (page.rs KIND_WORDS; tests/vscode_grammar.rs keeps the list equal).",
-      "match": "(?:^|(?<=[{;]))\\s*(View|Panel|Column|Row|Flow|Layers|Scroll|Grid|Tiles|Label|Button|Image|Rectangle|Circle|Arc|Gradient|Slider|Input|Check|Toggle|Radio|List|ListItem)\\b",
+      "match": "(?:^|(?<=[{;]))\\s*(View|Panel|Column|Row|Flow|Layers|Scroll|Grid|Tiles|Label|Button|Image|Rectangle|Circle|Arc|Gradient|Surface|Slider|Input|Check|Toggle|Radio|List|ListItem)\\b",
       "captures": {
         "1": { "name": "support.class.gogo" }
       }

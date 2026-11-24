@@ -33,6 +33,7 @@ pub mod parser;
 mod placement;
 pub mod reload;
 pub mod runtime;
+pub mod surface;
 pub mod tree;
 
 pub use compile::{CompileOptions, Compiled, compile, compile_with};
@@ -46,6 +47,7 @@ pub use runtime::{AnimName, ArrangementName, HandlerName, Hook, ThemeName};
 pub use page::{ArrangementId, BASE, BEHAVIOR_SLOTS, BUILTIN_BEHAVIORS, BehaviorSpec, ImageKey, ImageSlice, Images, Kind, KeyId, KEYS_ARROWS, KEYS_ENTER, KEYS_HOME_END, KEYS_SPACE, NO_IMAGE, NO_KEY, NO_NODE, NO_STR, NodeId, Orientation, Page, Payload, PropKey, Color_Straight_Srgb_4xU8_RGBA, ScreenClass, StaticPage, StrId, Value};
 pub use anim::{Easing, Finish, Motion};
 pub use runtime::{Resolved, Runtime, resolve, resolve_animated};
+pub use surface::{CommandSurface, PictureSurface, SurfaceAsk, SurfaceCommands, SurfaceDraw};
 
 use std::path::{Path, PathBuf};
 
@@ -393,7 +395,7 @@ pub fn build_pages(dir: &Path, out: &Path, options: BuildOptions<'_>) -> Result<
             Ok(code) => source.push_str(&code),
             Err(e) => errors.push_str(&e),
         }
-        source.push_str(&emit::emit_build(&built, &images.atlases, options.compile.code_controls, options.compile.behaviors, options.compile.require_keys));
+        source.push_str(&emit::emit_build(&built, &images.atlases, options.compile.behaviors, options.compile.require_keys));
     }
     if !errors.is_empty() {
         return Err(errors);

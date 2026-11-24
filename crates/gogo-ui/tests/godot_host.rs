@@ -531,26 +531,24 @@ fn view_root_minimum_answers_live_and_forgets_a_transient() {
     assert_eq!((resolve(&page, &rt).placement[0].min_width, resolve(&page, &rt).placement[0].min_height), (0.0, 0.0));
 }
 
-// ---------------------------------------------------------------- custom controls
+// ---------------------------------------------------------------- a box code draws
 
 /// `_custom_control_registry_tests` 11058-11064, 11069 (reg.resolver-
-/// builds, resolver-type, resolver-props, create-unknown-null): a node type
-/// the host registers (`CompileOptions::code_controls`) builds like any
-/// element — it keeps the registered type and its layout words — while an
-/// unregistered name is refused loudly (G7011), never half-built.
+/// builds, resolver-type, resolver-props, create-unknown-null): a box the
+/// program's code draws is a `Surface`, which builds like any element
+/// and keeps its layout words, while a node type nobody knows is refused
+/// loudly (G7011), never half-built.
 #[test]
-fn registered_code_control_builds_and_an_unknown_name_is_refused() {
-    let options = CompileOptions { code_controls: &["TestCustomControl"], ..CompileOptions::default() };
-    let c = compile_with("View v {\n    TestCustomControl demo width=200\n}\n", &|_| None, options);
+fn a_surface_builds_and_an_unknown_name_is_refused() {
+    let c = compile_with("View v {\n    Surface demo draw=commands, width=200\n}\n", &|_| None, CompileOptions::default());
     assert!(!gogo_ui::has_errors(&c.diags), "{:#?}", c.diags);
     let page = c.page;
     let demo = id(&page, "demo");
-    assert_eq!(page.nodes[demo.index()].kind, Kind::Custom);
-    assert_eq!(page.str(page.nodes[demo.index()].type_name), "TestCustomControl");
+    assert_eq!(page.nodes[demo.index()].kind, Kind::Surface);
     let f = lay(&page, &Runtime::new(&page), 400.0, 400.0);
     let (_, r) = (f.look(), f.rects());
     assert_eq!(r[demo.index()].w, 200.0, "{r:?}");
-    let unknown = compile_with("View v {\n    NoSuchControl demo width=200\n}\n", &|_| None, options);
+    let unknown = compile_with("View v {\n    NoSuchControl demo width=200\n}\n", &|_| None, CompileOptions::default());
     assert!(unknown.diags.iter().any(|d| d.code == "G7011"), "{:#?}", unknown.diags);
     assert!(gogo_ui::has_errors(&unknown.diags));
 }

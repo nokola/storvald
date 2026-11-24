@@ -1774,40 +1774,73 @@ falling through between its controls.
 
 First check whether gogo can say it. A bar that follows a value is
 `reveal_x=` or an `automatic=length` slot; a ring is an `Arc`; a fade is a
-`Gradient`. For pixels gogo cannot say (a chart, a color wheel), declare
-the box in gogo and let the host program draw what is inside. Two ways:
+`Gradient`. For what gogo cannot say (a chart, a color wheel, the pieces
+of a board game), put a `Surface` where it goes: a box that the program's
+code draws. Its line says how the code fills it, and there is no default:
 
-- **A host picture.** An `Image` whose `source=` names a picture your code
-  renders. That is the next recipe.
-- **A code control.** A node type the host draws itself. The host lists
-  the type names in `CompileOptions::code_controls`; in the file the node
-  is an empty box of its declared size (the compiler notes it with warning
-  G7013), laid out like any other:
+- `draw=commands`: the code writes gogo draw commands (rectangles,
+  circles, arcs, text), and gogo keeps them. This recipe.
+- `draw=picture`: the code hands over one picture. The next recipe.
 
-```kdl partial
-Layers wheelRow height=220 {
-    ColorWheel wheel width=200, height=200, halign=center, valign=center
+```kdl
+View scorePage {
+    Layers width=fill, height=fill {
+        Surface photo draw=picture, fit=cover, width=fill, height=fill
+        Surface score draw=commands, width=120, height=32, halign=right, valign=top
+    }
 }
 ```
 
-(`ColorWheel` is a name only a host declares, so the tests check this
-example's grammar only.) The host reads where the box landed from the last
-frame and draws there:
+One owner per thing: the file owns the box (where it is, how big, what is
+over it), the code owns what shows inside. A `Surface` has no size of its
+own and holds no child: what goes over it is a node after it in the same
+`Layers`.
+
+gogo asks for a Surface's commands when it shows for the first time and
+when its size changed. After each frame the host writes what gogo asks
+for, in the Surface's own space: (0, 0) is its top left corner.
 
 ```rust
-        let r: Rect = self.kept.rects()[node.index()];
+fn write_surfaces(host: &mut Hosted, points: u32) {
+    while let Some(ask) = host.rt.next_surface_to_draw() {
+        let mut out: SurfaceCommands = host.page.write_surface(ask);
+        let whole: Rect = Rect::new(0.0, 0.0, out.width(), out.height());
+        out.draw(Draw::Quad { rect: whole, color: Color_Straight_Srgb_4xU8_RGBA([0, 0, 0, 0x80]), corner: 6.0, border: 0.0, border_color: Color_Straight_Srgb_4xU8_RGBA::TRANSPARENT });
+        let text: StrId = out.text(&format!("{points} points"));
+        out.draw(Draw::Text { rect: whole, text, key: NO_KEY, font_size: 16.0, color: Color_Straight_Srgb_4xU8_RGBA::opaque(0xFFFFFF), halign: TextAlign::Center, valign: TextAlign::Center, wrap: false, font: NO_STR });
+    }
+}
 ```
 
-One owner per thing: gogo owns the box (where it is, how big), the host
-owns the pixels inside. To hear touches on the box, give it
-`interactive=true` and `on:pointer=<name>`: every sample of a press
-arrives as a `Pointer` event with the place inside the box, which finger
-it is, its pressure and the buttons down. Add `on:hover=<name>` for a
-mouse that moves over the box with no button down (a brush outline
+In every other frame gogo draws the commands it kept, and the code does
+nothing. When what they show is out of date (here the points changed),
+the code says so, and the next frame asks again:
+
+```rust
+    host.rt.surface_changed(&mut host.page, score);
+    host.frame(0.016);
+    write_surfaces(&mut host, 4);
+```
+
+`out.text(..)` gives the id a `Draw::Text` names its text by. A text that
+changes with every write goes into the string the write before used, so
+it adds no string to the page.
+
+A page of a TurboDot program writes the same commands in
+`Page::draw_surface` and says `host.ui.surface_changed(NAMES.score)`. The
+engine does the asking.
+
+To hear touches on a Surface, give it `interactive=true` and
+`on:pointer=<name>`: every sample of a press arrives as a `Pointer` event
+with the place inside the box, which finger it is, its pressure and the
+buttons down. A Surface takes every finger that lands on it, each with a
+press of its own, so the code can tell a drag (one finger) from a zoom
+(two). Any other box holds one finger at a time. Add `on:hover=<name>`
+for a mouse that moves over the box with no button down (a brush outline
 follows it), and `on:wheel=<name>` for its wheel (a zoom at the mouse):
 
 ```kdl
-Panel pad width=200, height=200, interactive=true,
+Surface pad draw=commands, width=200, height=200, interactive=true,
     on:pointer=drawn, on:hover=aimed, on:wheel=zoomed
 ```
 
@@ -1815,36 +1848,59 @@ Panel pad width=200, height=200, interactive=true,
 
 ## How do I show a picture my code renders (a live preview, the canvas)?
 
-Declare an `Image` whose `source=` names a HOST picture — any scheme but
-`res://`, spelled the way your code will look it up — and let the code
-register the pixels under that name. The file owns the box (size, place,
-`fit=`), the code owns the picture:
+Put a `Surface` with `draw=picture` where the picture goes. The file owns
+the box (size, place, `fit=`), the code owns the picture:
 
 ```kdl
 Panel previewStrip background=#000000FF {
-    Image preview 240x80, halign=center, source="preview://brush", fit=distort
+    Surface preview 240x80, draw=picture, halign=center, fit=distort
 }
 ```
 
+A Surface's name has a type by its `draw=`: a built page has it in
+`NAMES` as a `PictureSurface`, and a page compiled while the program runs
+finds it by name. A picture cannot be handed to a box the file fills
+another way: that does not compile.
+
+```rust
+    let photo: PictureSurface = PictureSurface::find(&host.page, "photo").expect("photo");
+    let score: CommandSurface = CommandSurface::find(&host.page, "score").expect("score");
+```
+
+The code hands the Surface a key of the host's picture table:
+
+```rust
+    let picture: ImageKey = ImageKey::new(7);
+    host.rt.set_picture(photo, picture);
+```
+
+and hands its renderer the texture under the same key:
+
 ```rust partial
-// once: the id the build baked for that name, and a handle on the renderer
-let key = images.get("preview://brush").expect("the page names it");
-let on = ui.external_image(key);
-// whenever the picture changes: point the box at the new texture
+// once: a handle on the renderer for that key
+let on = ui.external_image(picture);
+// whenever the picture is another texture: point the key at it
 ui.set_external_image(&device, on, Tex_Image_Straight_Srgb_4xU8_RGBA::new(&texture));
 ```
 
-(`images` and `ui` here are the host's picture table and its renderer, not
+(`ui` here is the host's renderer, `gogo-wgpu`'s `UiRenderer`. It is not
 part of `gogo-ui`, so the tests do not compile this example. `gogo-ui`
-hands the renderer the picture's id in the draw list; showing the pixels
+hands the renderer the picture's key in the draw list; showing the pixels
 is the renderer's job.)
 
-The name in the file is the whole contract: the build bakes it as the
-picture's id, so a box with no `source=` (or a different spelling) is a
-picture of nothing and stays empty however much the code registers —
-the strip shows its background and nothing else. Until the first
-registration the box is empty too. One name per picture; the canvas
-draws one `Image` per tile (`canvas://tile`) the same way.
+The Surface shows nothing until the code hands it a picture. It draws the
+picture as an `Image` draws a file: `fit=`, `window=` and `sampling=`
+mean the same. It has no size of its own, so its line writes one, or
+`fill`. A canvas made of tiles is a `repeat` whose row is a Surface: each
+row gets its own key.
+
+A page of a TurboDot program keeps no key. It hands the Surface a texture
+in `Page::gpu_prepare`
+(`host.ui.set_picture_texture(NAMES.preview, texture)`), or pixels from
+anywhere (`host.ui.set_picture(NAMES.preview, width, height, rgba)`).
+
+An `Image` names a picture file and nothing else: `source="preview://brush"`
+on an Image is an error (G2023) that names the Surface to write.
 
 ---
 
@@ -2968,9 +3024,9 @@ generates.)
 - **A program with no build step**, which compiles its page when it
   starts, makes `Reloader::files(Sources::dir("ui"))` and hands the page
   over with `reload.follow(&mut page, "menu.gogo")`. `examples/window`
-  does this. A program that compiles with code controls or behaviors of
-  its own makes `Reloader::files_with(sources, options)` with the same
-  options, so a reload knows them too. A page with an `atlas` line is
+  does this. A program that compiles with behaviors of its own makes
+  `Reloader::files_with(sources, options)` with the same options, so a
+  reload knows them too. A page with an `atlas` line is
   still refused at its first edit: the picture reader is not kept.
 
 REFERENCE "Host API" lists what a reload keeps and what it refuses.

@@ -671,6 +671,18 @@ pub struct Runtime {
     /// `layout_retained`, `draw_retained`.
     retained_layout: LayoutCache,
     retained_draw: DrawCache,
+    /// The page's `Surface draw=commands` nodes, found once for
+    /// `command_surfaces_for` nodes: a page with none pays one compare a
+    /// frame.
+    command_surfaces: Vec<NodeId>,
+    /// The page's node count `command_surfaces` was found for;
+    /// `usize::MAX` before the first frame. A `repeat` that gains rows
+    /// adds nodes, and with them Surfaces.
+    command_surfaces_for: usize,
+    /// The Surfaces whose commands code must write, as the last
+    /// `frame_retained` found them, less the ones taken since
+    /// (`next_surface_to_draw`).
+    surface_asks: Vec<crate::surface::SurfaceAsk>,
 }
 
 impl Runtime {
@@ -741,6 +753,9 @@ impl Runtime {
             pending_rewrites: Vec::new(),
             retained_layout: LayoutCache::default(),
             retained_draw: DrawCache::default(),
+            command_surfaces: Vec::new(),
+            command_surfaces_for: usize::MAX,
+            surface_asks: Vec::new(),
             glide_start: None,
             glide_node_rules: Vec::new(),
             rect_tweens: Vec::new(),
@@ -813,6 +828,9 @@ impl Runtime {
             written: _,
             resolve_changes: _,
             pending_rewrites: _,
+            command_surfaces: _,
+            command_surfaces_for: _,
+            surface_asks: _,
             shown: _,
             last_rects: _,
             vis_seen: _,
@@ -2997,7 +3015,70 @@ impl Runtime {
             }
             None => self.retained_draw.run(page, &self.resolved, &self.resolve_changes, rects, draws),
         }
+        self.find_surface_asks(page, rects);
         self.dirty = false;
+    }
+
+    /// Fills `surface_asks`: each `Surface draw=commands` that shows
+    /// and has no commands for the size it has now.
+    ///
+    /// Needed in the frame road so no host can draw a Surface with
+    /// commands written for another size: every host's frame passes here.
+    fn find_surface_asks(&mut self, page: &Page, rects: &[Rect]) {
+        if self.command_surfaces_for != page.nodes.len() {
+            self.command_surfaces_for = page.nodes.len();
+            self.command_surfaces.clear();
+            self.command_surfaces.extend(page.node_ids().filter(|node| crate::surface::SurfaceDraw::of(page, *node) == Some(crate::surface::SurfaceDraw::Commands)));
+        }
+        self.surface_asks.clear();
+        for i in 0..self.command_surfaces.len() {
+            let node: NodeId = self.command_surfaces[i];
+            let Some(rect) = rects.get(node.index()) else { continue };
+            if rect.w <= 0.0 || rect.h <= 0.0 || self.resolved.gone(page, node) || self.resolved.hidden(page, node) {
+                continue;
+            }
+            let is_current: bool = page.surface_list(node).is_some_and(|list| list.is_written && !list.is_stale && list.size == (rect.w, rect.h));
+            if !is_current {
+                if let Some(surface) = crate::surface::CommandSurface::of(page, node) {
+                    self.surface_asks.push(crate::surface::SurfaceAsk { surface, width: rect.w, height: rect.h });
+                }
+            }
+        }
+    }
+
+    /// Takes the next `Surface draw=commands` whose draw commands code
+    /// must write before this frame is drawn (`Page::write_surface`): it
+    /// shows for the first time, has another size than its commands
+    /// were written for, or had `surface_changed` called. A host calls
+    /// it after `frame_retained` until it returns `None`.
+    ///
+    /// A Surface that is not shown, or has no area, is not asked for.
+    ///
+    /// Needed as a take: a host that lays a page out only when something
+    /// changed calls this every frame, and is asked once.
+    pub fn next_surface_to_draw(&mut self) -> Option<crate::surface::SurfaceAsk> {
+        if self.surface_asks.is_empty() { None } else { Some(self.surface_asks.remove(0)) }
+    }
+
+    /// Says the content of `surface` changed: the next frame asks for
+    /// its draw commands again (`next_surface_to_draw`).
+    ///
+    /// Needed because gogo keeps the commands and cannot know that what
+    /// they show is out of date: a score that rose, a board after a move.
+    pub fn surface_changed(&mut self, page: &mut Page, surface: crate::surface::CommandSurface) {
+        let at: usize = page.surface_list_index(surface.node());
+        page.surface_lists[at].is_stale = true;
+        self.dirty = true;
+    }
+
+    /// Shows `picture` in `surface`, as an Image shows its file: the
+    /// Surface's `fit=`, `window=` and `sampling=` apply. `NO_IMAGE`
+    /// shows nothing.
+    ///
+    /// `picture` is a key of the host's image table; the host hands the
+    /// renderer the texture under that key.
+    pub fn set_picture(&mut self, surface: crate::surface::PictureSurface, picture: ImageKey) {
+        self.set_prop(surface.node(), PropKey::Source, Value::VImage(picture));
     }
 
     /// Switches the retained layout and draw list (B36-DES stage 3) —

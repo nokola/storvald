@@ -17,14 +17,9 @@ use crate::placement::PlacementSlip;
 pub type Loader<'a> = &'a dyn Fn(&str) -> Option<String>;
 
 /// What the host program tells the compiler about its own world. gogo
-/// itself knows no host: a node type it cannot name is an error unless the
-/// host lists it here.
+/// itself knows no host.
 #[derive(Clone, Copy, Default)]
 pub struct CompileOptions<'a> {
-    /// Node types the host draws from code (no gogo body): each becomes an
-    /// empty box of its declared size with a G7013 warning, so the page
-    /// still lays out. Example: `&["GradientEdit"]`.
-    pub code_controls: &'a [&'a str],
     /// The host's own input behaviors (GP53): what a `behavior <name>`
     /// line may name beyond gogo's `slider` and `toggle`. Each spec's
     /// slots and key groups are checked against the control body here;
@@ -432,10 +427,10 @@ fn is_area_name(t: &str) -> bool {
 
 // ----- property words per kind (E8) --------------------------------------
 
-/// A kind as an error names it: its word, or "code control" for a node
-/// the host draws.
+/// A kind as an error names it: its word, or "node of an unknown type"
+/// for one the compiler could not name (it reported that already).
 fn kind_name(kind: Kind) -> &'static str {
-    if kind == Kind::Custom { "code control" } else { kind.word() }
+    if kind == Kind::Custom { "node of an unknown type" } else { kind.word() }
 }
 
 fn parent_name(parent: Option<Kind>) -> &'static str {
@@ -601,7 +596,7 @@ fn wrong_kind(key: PropKey, kind: Kind) -> String {
     let word = key.word();
     let name = kind_name(kind);
     let shows_text = legal(kind, PropKey::Text);
-    let leaf = matches!(kind, Kind::Rectangle | Kind::Circle | Kind::Gradient | Kind::Image);
+    let leaf = matches!(kind, Kind::Rectangle | Kind::Circle | Kind::Gradient | Kind::Image | Kind::Surface);
     // A kind with words of its own and neither a fill nor a plate: a
     // seat, a Grid's `row`, a choice.
     let draws_nothing = !legal(kind, PropKey::Background) && !legal(kind, PropKey::Color) && kind != Kind::Gradient && !kind_words(kind).is_empty();
@@ -612,6 +607,9 @@ fn wrong_kind(key: PropKey, kind: Kind) -> String {
         PropKey::TextHalign | PropKey::TextValign if kind == Kind::Input => format!("`{word}=` places a Label's text in its box — an Input's text starts at its left edge, centered top to bottom"),
         PropKey::Value if kind == Kind::Input => "`value=` on an Input — the field's text is `text=`".to_string(),
         PropKey::Valign | PropKey::Aspect | PropKey::Overlay if kind == Kind::ListItem => format!("`{word}=` on a ListItem moves nothing — a List places its rows itself; a row takes `halign=`, `width=`, `max_width=` and `max_height=`"),
+        PropKey::Source | PropKey::Loading | PropKey::Release if kind == Kind::Surface => format!("`{word}=` is for a picture file, an Image's — a Surface's picture comes from the program's code (`Runtime::set_picture`)"),
+        PropKey::Background | PropKey::Color | PropKey::ColorA | PropKey::CornerRadius | PropKey::BorderThickness | PropKey::BorderColor if kind == Kind::Surface => format!("`{word}=` on a Surface — gogo draws nothing of a Surface, the program's code does; a plate is a Rectangle or a Panel under it in a `Layers`"),
+        PropKey::Draw => format!("`draw=` says how the program's code fills a Surface — gogo draws a {name} itself"),
         PropKey::Background | PropKey::Color | PropKey::ColorA if draws_nothing && kind == Kind::Seat => format!("`{word}=` on a seat — a seat draws nothing: it is an empty socket, and the plate belongs to the node that sits in it"),
         PropKey::Background | PropKey::Color | PropKey::ColorA if draws_nothing => format!("`{word}=` on a {name} — a {name} draws nothing of its own; a plate is a Panel's `background=`, around it or inside it"),
         PropKey::Color if shows_text => format!("`color=` on a {name} — text is `font_color=`, the plate is `background=`"),
@@ -897,7 +895,7 @@ pub struct Compiled {
     pub uses: Vec<String>,
 }
 
-/// `compile` with no host options (no code controls).
+/// `compile` with no host options.
 pub fn compile(source: &str, loader: Loader<'_>) -> Compiled {
     compile_with(source, loader, CompileOptions::default())
 }
@@ -1087,7 +1085,7 @@ fn untranslated_in_value(v: &AstValue, found: &mut Vec<(u32, String)>) {
     match v {
         AstValue::Str { text, key: None, line } => {
             let lower = text.to_ascii_lowercase();
-            // A path or a host picture address (`res://`, `collage://before`).
+            // A path, or any other address with a scheme.
             let is_asset = text.contains("://") || IMAGE_EXTS.iter().chain(FONT_EXTS).chain(HOST_PICTURE_EXTS).any(|e| lower.ends_with(e));
             if !is_asset && text.chars().any(char::is_alphabetic) {
                 found.push((*line, text.clone()));
@@ -1849,7 +1847,7 @@ impl<'a> Compiler<'a> {
     /// merges anything, so `allow untranslated` covers exactly the text
     /// written in the file that says it (a widget's body follows its own
     /// file, an instance line's `caption="…"` the page's). Skipped: asset
-    /// paths and host picture addresses (`collage://before`), `areas=` rows, `atlas`/`arrangement`/`uses` lines, and text
+    /// paths and any other address with a scheme, `areas=` rows, `atlas`/`arrangement`/`uses` lines, and text
     /// with no letter in it ("100%", "1/1", "16:9").
     fn untranslated_check(&mut self, doc: &Document, file: &str) {
         if !self.options.require_keys {
@@ -4330,15 +4328,22 @@ impl<'a> Compiler<'a> {
                 if !text.starts_with("res://") && is_asset {
                     self.error("G0071", line, format!("`{text}` names an asset — write `res://{text}` (every asset path carries the scheme)"));
                 }
-                // Whatever `source=` names is an address: a host picture
-                // (`preview://brush`) has no extension to tell it by.
+                // Whatever `source=` names is an address, with or without
+                // an extension to tell it by.
                 if let (Some(k), true) = (term, is_asset || key == Some(PropKey::Source)) {
                     self.error("G0023", line, format!("`/{k}` on an asset path — a path is never translated; the key goes on text"));
                 }
-                // An image is its own value: whatever `source=` names (a
-                // host picture like `preview://brush` too), and a literal
-                // naming an image file anywhere (a theme `$icon` a
-                // `source=$icon` reads) — so a draw carries the build-wide
+                // `source=` names a picture FILE. Needed because a name
+                // that is no file (`preview://brush`) made an Image show
+                // what the program's code draws, and nothing on the line
+                // said so: that is a `Surface draw=picture`.
+                if key == Some(PropKey::Source) && !text.is_empty() && !text.starts_with("res://") && !is_asset {
+                    self.error("G2023", line, format!("`source=\"{text}\"` names no picture file — an Image shows a file (`res://…`) or an atlas slice; a picture the program's code hands over goes in a Surface: `Surface <name> draw=picture`"));
+                    return Value::VImage(NO_IMAGE);
+                }
+                // An image is its own value: whatever `source=` names, and
+                // a literal naming an image file anywhere (a theme `$icon`
+                // a `source=$icon` reads) — so a draw carries the build-wide
                 // id and never a string.
                 let is_image = key == Some(PropKey::Source) || IMAGE_EXTS.iter().any(|e| lower.ends_with(e));
                 if is_image {
@@ -4559,6 +4564,10 @@ impl<'a> Compiler<'a> {
         }
         if in_when && key == PropKey::SelectedProp && legal(kind, key) {
             self.error("G0054", line, "`selected=` in a `when` — a `when` answers a state, it sets none; `selected` changes by a tap, a key or code (`Runtime::set_state`), and `selected=true` on the node's own line is where it starts");
+            return false;
+        }
+        if in_when && key == PropKey::Draw && kind == Kind::Surface {
+            self.error("G7015", line, "`draw=` in a `when` — how the program's code fills a Surface is fixed when the page is built (its name in the code has a type by it); write it on the Surface's own line");
             return false;
         }
         if in_when && key == PropKey::Value && kind == Kind::Toggle {
@@ -5268,12 +5277,6 @@ impl<'a> Compiler<'a> {
         };
         let kind = match Kind::from_word(&n.type_word) {
             Some(k) => k,
-            None if self.options.code_controls.contains(&n.type_word.as_str()) => {
-                // A control whose look comes from the host's code: an empty
-                // box of its declared size, so the page still lays out.
-                self.warning("G7013", n.line, format!("`{}` is drawn by code — an empty box here", n.type_word));
-                Kind::Custom
-            }
             None if n.type_word == "allow" => {
                 self.error("G8003", n.line, "`allow untranslated` covers a whole file — it goes at the top of the file, not inside a node");
                 Kind::Custom
@@ -5285,7 +5288,6 @@ impl<'a> Compiler<'a> {
             None => {
                 let mut pool: Vec<String> = KIND_WORDS.iter().map(|(w, _)| w.to_string()).collect();
                 pool.extend(self.widgets.keys().cloned());
-                pool.extend(self.options.code_controls.iter().map(|s| s.to_string()));
                 let hint = suggest(&n.type_word, &pool);
                 let tail = if hint.is_empty() { String::new() } else { format!(" — {hint}") };
                 self.error("G7011", n.line, format!("unknown node type `{}`{tail}", n.type_word));
@@ -5795,15 +5797,10 @@ impl<'a> Compiler<'a> {
                 _ => None,
             };
             // The line declares its picture for `release=` (the atlas line
-            // declares an atlas picture; a host picture has no file).
+            // declares an atlas picture).
             match source {
                 Some(Value::VImage(k)) if slice.is_none() && k != crate::page::NO_IMAGE => {
-                    let is_file: bool = self.with_images(|im| im.names.get(k.index()).is_some_and(|n| n.starts_with("res://")));
-                    if is_file {
-                        self.with_images(|im| im.release_lines.push((k, release)));
-                    } else if release {
-                        self.error("G2020", n.line, "`release=unused` frees a built-in picture — this Image shows one the app draws itself, which its owner frees");
-                    }
+                    self.with_images(|im| im.release_lines.push((k, release)));
                 }
                 _ if release && slice.is_some() => {
                     self.error("G2020", n.line, "this Image shows an atlas slice — the `atlas` line declares the picture, so `release=unused` goes there");
@@ -5816,6 +5813,31 @@ impl<'a> Compiler<'a> {
                 }
                 if s.has_edge() && tmp.props.iter().any(|pr| pr.key == PropKey::Fit) {
                     self.error("G2018", n.line, "`fit=` does nothing on a 9-slice (a slice with `edge=`) — it always fills the Image's rectangle; drop `fit=`");
+                }
+            }
+        }
+        // A Surface says how the program's code fills it, and takes the
+        // words of that way of drawing alone.
+        if kind == Kind::Surface {
+            let word: Option<&str> = tmp.props.iter().rev().find(|pr| pr.key == PropKey::Draw).and_then(|pr| match pr.value {
+                Value::VIdent(word) => Some(self.page.str(word)),
+                _ => None,
+            });
+            let draw: Option<crate::surface::SurfaceDraw> = match word {
+                Some("picture") => Some(crate::surface::SurfaceDraw::Picture),
+                Some("commands") => Some(crate::surface::SurfaceDraw::Commands),
+                _ => None,
+            };
+            // A `draw=` with a word that is none of the set was refused
+            // where it was read (G0057): one error for one slip.
+            if draw.is_none() && !n.props.iter().any(|p| p.key == "draw") {
+                self.error("G7015", n.line, "a Surface says how the program's code fills it — write `draw=picture` (code hands over one picture) or `draw=commands` (code writes gogo draw commands); there is no default");
+            }
+            for (key, of) in [(PropKey::Fit, crate::surface::SurfaceDraw::Picture), (PropKey::Window, crate::surface::SurfaceDraw::Picture), (PropKey::Sampling, crate::surface::SurfaceDraw::Picture), (PropKey::ClipContents, crate::surface::SurfaceDraw::Commands)] {
+                if let (Some(draw), true) = (draw, tmp.props.iter().any(|pr| pr.key == key)) {
+                    if draw != of {
+                        self.error("G7016", n.line, format!("`{}=` belongs to a `draw={}` Surface — this one says `draw={}`", key.word(), of.word(), draw.word()));
+                    }
                 }
             }
         }
@@ -5913,7 +5935,7 @@ impl<'a> Compiler<'a> {
         // A shape draws itself and holds nothing. Needed because a child
         // written in its block is placed over the shape, and a shape with
         // no size of its own does not grow to hold it.
-        if matches!(kind, Kind::Rectangle | Kind::Circle | Kind::Arc | Kind::Gradient | Kind::Image) {
+        if matches!(kind, Kind::Rectangle | Kind::Circle | Kind::Arc | Kind::Gradient | Kind::Image | Kind::Surface) {
             let child: Option<&AstNode> = n.children.iter().find_map(|c| match c {
                 AstItem::Node(c) if !matches!(c.type_word.as_str(), "when" | "transition" | "theme") => Some(c),
                 _ => None,
@@ -8268,11 +8290,8 @@ mod tests {
     }
 
     #[test]
-    fn removed_words_and_code_controls() {
+    fn removed_words() {
         assert!(codes("View v { Border b }").contains(&"G7011".to_string()));
-        let code = compile_with("View v { GradientEdit g width=100, height=40 }", &|_| None, CompileOptions { code_controls: &["GradientEdit"], ..Default::default() });
-        assert!(code.diags.iter().any(|d| d.code == "G7013"), "{:?}", code.diags);
-        assert!(!crate::diag::has_errors(&code.diags), "{:?}", code.diags);
         assert!(codes("View v { Panel p width=host }").contains(&"G0055".to_string()));
         assert!(codes("View v { Button b on:pressed=x }").contains(&"G0049".to_string()));
         // Kind-checked gesture events: the pointer/interpreted conflict is

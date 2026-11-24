@@ -1,15 +1,20 @@
-// Page with a GPU picture of its own: ruled paper, drawn by the page into
-// a texture and shown under its nodes. Root has no background: the picture
-// covers the screen.
+// Page with two parts its own code draws, under its nodes. `paper`: ruled
+// paper, a texture the page draws on the GPU. `margin`: the red margin
+// line, gogo draw commands the page writes. Root has no background: the
+// paper covers the screen.
 uses "look.gogo"
 uses "sliding_page.gogo"
 
 View paperPage .SlidingPage {
-    Column spacing=10, padding=16, width=fill, height=fill {
-        Label title text="Paper", font_size=24, font_color=#202020
-        Label hint text="The lines are a texture this page draws.", font_color=#404040
-        Row spacing=8 {
-            Button goBack .Plain text="Back"
+    Layers width=fill, height=fill {
+        Surface paper draw=picture, fit=distort, width=fill, height=fill
+        Surface margin draw=commands, width=fill, height=fill
+        Column spacing=10, padding=16, width=fill, height=fill {
+            Label title text="Paper", font_size=24, font_color=#202020
+            Label hint text="The lines are a texture this page draws.", font_color=#404040
+            Row spacing=8 {
+                Button goBack .Plain text="Back"
+            }
         }
     }
 }

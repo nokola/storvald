@@ -318,19 +318,18 @@ fn a_saved_file_in_a_watched_folder_wakes_the_host() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// A page that names a control the host draws itself (`Knob`) and a
-/// control whose behavior the host runs (`edge`).
-const HOSTED: &str = "control Handle $value=0, $min=0, $max=1 {\n    behavior edge by $value in $min..$max\n    state_builtin held\n    Layers width=90, height=30 {\n        slot track width=fill, height=fill { Rectangle width=fill, height=fill, color=#333333FF }\n    }\n}\nView root {\n    Column col {\n        Knob volume width=100, height=40\n        Handle grip\n        Label note text=\"Volume\"\n    }\n}\n";
+/// A page with a control whose behavior the host runs (`edge`).
+const HOSTED: &str = "control Handle $value=0, $min=0, $max=1 {\n    behavior edge by $value in $min..$max\n    state_builtin held\n    Layers width=90, height=30 {\n        slot track width=fill, height=fill { Rectangle width=fill, height=fill, color=#333333FF }\n    }\n}\nView root {\n    Column col {\n        Surface volume draw=commands, width=100, height=40\n        Handle grip\n        Label note text=\"Volume\"\n    }\n}\n";
 
 static EDGE_SPEC: BehaviorSpec = BehaviorSpec { name: "edge", slots: &["track"], keys: 0, payload: Payload::Number };
 
-/// A program with no build that compiles its pages with code controls
-/// and behaviors of its own gives the reloader the options it compiles
-/// with, and a save of such a page shows. A reloader told nothing does
-/// not know the host's words and refuses the save.
+/// A program with no build that compiles its pages with behaviors of its
+/// own gives the reloader the options it compiles with, and a save of
+/// such a page shows. A reloader told nothing does not know the host's
+/// behavior and refuses the save.
 #[test]
 fn a_files_reloader_compiles_with_the_options_the_host_gave() {
-    let options = CompileOptions { code_controls: &["Knob"], behaviors: &[EDGE_SPEC], ..CompileOptions::default() };
+    let options = CompileOptions { behaviors: &[EDGE_SPEC], ..CompileOptions::default() };
     let file: Arc<Mutex<String>> = Arc::new(Mutex::new(HOSTED.to_string()));
     let sources = |file: &Arc<Mutex<String>>| -> Sources {
         let file = file.clone();
@@ -362,7 +361,7 @@ fn a_files_reloader_compiles_with_the_options_the_host_gave() {
     untold.mark_changed();
     let refused: Refused = untold.refresh(&mut page, &mut rt).unwrap_err();
     let said: String = refused.to_string();
-    assert!(said.starts_with("menu.gogo:") && (said.contains("Knob") || said.contains("edge")), "{said}");
+    assert!(said.starts_with("menu.gogo:") && said.contains("edge"), "{said}");
     assert_eq!(note(&page, &rt), "Volume", "the page stays as it was");
 }
 

@@ -107,15 +107,8 @@ pub struct Program<A = ()> {
     hover_events: Vec<(PageId, Event)>,
     /// Width and height of last frame, in epx.
     size: (f32, f32),
-    /// What each page put under its nodes this frame (`gpu_draw_screen`),
-    /// by page's id in `stack`.
-    #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
-    layer_draws: Vec<Vec<Draw>>,
-    /// Keys of each page's own pictures, by page's id in `stack`.
-    #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
-    picture_keys: Vec<Vec<ImageKey>>,
-    /// Pictures of freed pages: renderer lets go of their textures at
-    /// next GPU frame.
+    /// Keys of freed pages' textures (`PageUi::set_picture_texture`):
+    /// renderer lets go of them at next GPU frame.
     #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
     pictures_to_release: Vec<ImageKey>,
     /// Page on screen that got its `arrived` call. `None` from an open
@@ -188,7 +181,7 @@ impl<A: 'static> Program<A> {
         let fonts: Vec<(&str, Vec<u8>)> = built.fonts.iter().map(|(key, bytes)| (*key, bytes.to_vec())).collect();
         let assets: UiAssets = UiAssets::new(TextEngine::new(&fonts), crate::pictures::image_table(built.tables, built.release_unused));
         let platform: PagePlatform = PagePlatform::new([0.0; 4], Orientation::from_view(1.0, 1.0), ScreenClass::from_view(1.0, 1.0), None);
-        let mut program: Program<A> = Program { app, assets, platform, stack: PageStack::new(), objects: Vec::new(), back_stack: Vec::new(), cached: Vec::new(), is_kind_checked: Vec::new(), has_played_entrances: Vec::new(), on_their_way: Vec::new(), nav: Nav::new(), reload, is_screen_from_host: false, epx: 1.0, mouse_buttons: Buttons::NONE, hover_events: Vec::new(), size: (0.0, 0.0), layer_draws: Vec::new(), picture_keys: Vec::new(),
+        let mut program: Program<A> = Program { app, assets, platform, stack: PageStack::new(), objects: Vec::new(), back_stack: Vec::new(), cached: Vec::new(), is_kind_checked: Vec::new(), has_played_entrances: Vec::new(), on_their_way: Vec::new(), nav: Nav::new(), reload, is_screen_from_host: false, epx: 1.0, mouse_buttons: Buttons::NONE, hover_events: Vec::new(), size: (0.0, 0.0),
             pictures_to_release: Vec::new(),
             code_pictures_to_release: Vec::new(),
             arrived: None,
@@ -457,6 +450,7 @@ impl<A: 'static> Program<A> {
             self.place_code_pictures();
             is_moving |= self.frame_pages(0.0, size_px);
         }
+        self.draw_surfaces();
         #[cfg(debug_assertions)]
         self.check_page_kinds();
         is_moving | is_page_asking_for_frames
@@ -489,12 +483,32 @@ impl<A: 'static> Program<A> {
         self.platform.locale = locale;
     }
 
-    /// Gives each picture a page made in code (`PageUi::set_picture`) its
-    /// key and hands layout its size. Its Image names the key from then
-    /// on.
+    /// Asks each drawn page for the draw commands of its `Surface
+    /// draw=commands` nodes that need them (`Page::draw_surface`): one
+    /// that shows for the first time, one whose size changed, one whose
+    /// page called `PageUi::surface_changed`.
     ///
-    /// Needed before the pages are laid out: page then sits at its new
-    /// picture's size in the same frame, with no GPU.
+    /// Needed after the pages are laid out, when each Surface's size is
+    /// known, and with no GPU, so a test that runs `Program` alone sees
+    /// the commands.
+    fn draw_surfaces(&mut self) {
+        for i in 0..self.stack.order.len() {
+            let id: PageId = self.stack.order[i];
+            let page_ui: &mut PageUi = self.stack.get_mut(id);
+            while let Some(ask) = page_ui.runtime.next_surface_to_draw() {
+                let mut out: gogo_ui::SurfaceCommands<'_> = page_ui.page.write_surface(ask);
+                if let Some(object) = self.objects[id.index()].as_ref() {
+                    object.draw_surface(&self.app, ask.surface, &mut out);
+                }
+            }
+        }
+    }
+
+    /// Gives each picture a page made in code (`PageUi::set_picture`) its
+    /// key. Its Surface names the key from then on.
+    ///
+    /// Needed with no GPU: a test that runs `Program` alone sees which
+    /// picture a Surface shows.
     fn place_code_pictures(&mut self) {
         let Program { stack, assets, .. } = self;
         for (id, page_ui) in stack.iter_mut() {
@@ -511,10 +525,12 @@ impl<A: 'static> Program<A> {
                         // takes the key over, so none is made per open.
                         let key: ImageKey = assets.images.intern(&format!("turbodot://page/{}/node/{}", id.index(), node.index()));
                         page_ui.code_pictures[i].key = Some(key);
-                        page_ui.runtime.set_prop(node, PropKey::Source, Value::VImage(key));
                         key
                     }
                 };
+                // Written at every new picture: the Surface may have
+                // shown a texture in between (`set_picture_texture`).
+                page_ui.runtime.set_prop(node, PropKey::Source, Value::VImage(key));
                 if assets.images.set_size(key, width, height) {
                     page_ui.runtime.dirty = true;
                 }
@@ -939,9 +955,10 @@ impl<A: 'static> Program<A> {
         self.hand_events(id, &events);
     }
 
-    /// Pages' own GPU drawing for one frame: each drawn page's
-    /// `gpu_draw_textures`, then its `gpu_draw_screen`. A window calls it
-    /// after `frame` and before renderer prepares the pages.
+    /// Pages' own GPU work for one frame: each drawn page's
+    /// `gpu_prepare`, then the textures it handed its Surfaces go to
+    /// the renderer. A window calls it after `frame` and before renderer
+    /// prepares the pages.
     ///
     /// A page that is not drawn (under a fullscreen page, or cached) is
     /// not called: its GPU work would be for a picture nobody sees.
@@ -995,6 +1012,9 @@ impl<A: 'static> Program<A> {
             for picture in page_ui.code_pictures.iter_mut() {
                 picture.is_uploaded = false;
             }
+            for picture in page_ui.picture_textures.iter_mut() {
+                picture.is_new = true;
+            }
         }
     }
 
@@ -1044,13 +1064,41 @@ impl<A: 'static> Program<A> {
             let Some(mut object) = self.objects[id.index()].take() else { continue };
             self.nav.caller = Some(id);
             let mut host: Host<'_, A> = Host { app: &mut self.app, ui: self.stack.get_mut(id), nav: &mut self.nav };
-            object.gpu_draw_textures(&mut host, gpu);
-            let draws: &mut Vec<Draw> = &mut self.layer_draws[id.index()];
-            draws.clear();
-            let mut layers: crate::page::Layers<'_> = crate::page::Layers { draws, renderer: &mut *renderer, device: &gpu.device, images: &mut self.assets.images, keys: &mut self.picture_keys[id.index()], used: 0, page_index: id.index() };
-            object.gpu_draw_screen(&host, &mut layers);
+            object.gpu_prepare(&mut host, gpu);
             self.nav.caller = None;
             self.objects[id.index()] = Some(object);
+            // Textures the page handed its Surfaces, to the renderer.
+            let page_ui: &mut PageUi = self.stack.get_mut(id);
+            for k in 0..page_ui.picture_textures.len() {
+                if !page_ui.picture_textures[k].is_new {
+                    continue;
+                }
+                page_ui.picture_textures[k].is_new = false;
+                let node: NodeId = page_ui.picture_textures[k].node;
+                let key: ImageKey = match page_ui.picture_textures[k].key {
+                    Some(key) => key,
+                    None => {
+                        // Named by page and node: next page in this place
+                        // takes the key over, so none is made per open.
+                        let key: ImageKey = self.assets.images.intern(&format!("turbodot://page/{}/texture/{}", id.index(), node.index()));
+                        page_ui.picture_textures[k].key = Some(key);
+                        key
+                    }
+                };
+                // Written at every new texture: the Surface may have
+                // shown pixels in between (`set_picture`).
+                page_ui.runtime.set_prop(node, PropKey::Source, Value::VImage(key));
+                let external: gogo_wgpu::ExternalImage = renderer.external_image(key);
+                renderer.set_external_image(&gpu.device, external, gogo_wgpu::Tex_Image_Straight_Srgb_4xU8_RGBA::new(&page_ui.picture_textures[k].texture));
+            }
+            // What page wrote in `gpu_prepare` shows in the frame being
+            // drawn. Needed because a Surface names its first texture
+            // here, after the pages were laid out: without this the user
+            // sees an empty place for one frame.
+            if page_ui.runtime.dirty && self.size != (0.0, 0.0) {
+                let size_px: (u32, u32) = (((self.size.0 * self.epx).round() as u32).max(1), ((self.size.1 * self.epx).round() as u32).max(1));
+                page_ui.relayout(size_px, self.epx, &self.assets);
+            }
         }
         self.carry_out_requests();
     }
@@ -1180,8 +1228,6 @@ impl<A: 'static> Program<A> {
             self.objects.resize_with(id.index() + 1, || None);
             self.is_kind_checked.resize(id.index() + 1, false);
             self.has_played_entrances.resize(id.index() + 1, false);
-            self.layer_draws.resize_with(id.index() + 1, Vec::new);
-            self.picture_keys.resize_with(id.index() + 1, Vec::new);
             self.placed_in.resize(id.index() + 1, None);
         }
         self.placed_in[id.index()] = None;
@@ -1202,10 +1248,10 @@ impl<A: 'static> Program<A> {
         self.placed_in[id.index()] = None;
         self.on_their_way.retain(|moving| moving.page != id);
         self.code_pictures_to_release.extend(self.stack.get(id).code_pictures.iter().filter_map(|picture| picture.key));
+        #[cfg(feature = "gpu")]
+        self.pictures_to_release.extend(self.stack.get(id).picture_textures.iter().filter_map(|picture| picture.key));
         self.stack.remove(id);
         self.objects[id.index()] = None;
-        self.layer_draws[id.index()].clear();
-        self.pictures_to_release.extend(self.picture_keys[id.index()].iter().copied());
         self.has_freed_a_page = true;
     }
 
@@ -1410,8 +1456,9 @@ impl<A: 'static> Program<A> {
     /// overlay with opaque root makes engine draw a page nobody sees.
     ///
     /// WARNING: panics for fullscreen page whose root does not cover the
-    /// window, unless page says it draws its own GPU picture. First page
-    /// is not checked: nothing is under it.
+    /// window, unless a `Surface` of the page covers it: the program's
+    /// code draws there, and gogo cannot see what. First page is not
+    /// checked: nothing is under it.
     #[cfg(debug_assertions)]
     fn check_page_kinds(&mut self) {
         for i in 1..self.back_stack.len() {
@@ -1422,11 +1469,12 @@ impl<A: 'static> Program<A> {
                 continue;
             }
             self.is_kind_checked[id.index()] = true;
-            let Some((kind, draws_gpu_picture)) = self.objects[id.index()].as_ref().map(|object| (object.kind(), object.draws_gpu_picture())) else { continue };
+            let Some(kind) = self.objects[id.index()].as_ref().map(|object| object.kind()) else { continue };
+            let has_surface_over_window: bool = page.has_surface_over_viewport();
             let root = &page.page.nodes[0];
             let name: &str = if root.name == gogo_ui::NO_STR { "(no name)" } else { page.page.str(root.name) };
             match (kind, page.covers_viewport()) {
-                (PageKind::Fullscreen, false) if !draws_gpu_picture => panic!("page `{name}` is `PageKind::Fullscreen`, but its root does not cover the window with an opaque `background=`: the page under it is not drawn, so a hole shows. Give the root an opaque background, or write `const KIND: PageKind = PageKind::Overlay;` in the page. A page that covers the screen with its own GPU picture writes `const DRAWS_GPU_PICTURE: bool = true;`"),
+                (PageKind::Fullscreen, false) if !has_surface_over_window => panic!("page `{name}` is `PageKind::Fullscreen`, but its root does not cover the window with an opaque `background=`: the page under it is not drawn, so a hole shows. Give the root an opaque background, or write `const KIND: PageKind = PageKind::Overlay;` in the page. A page whose own code draws all of it has a `Surface` that covers the window"),
                 (PageKind::Overlay, true) => eprintln!("page `{name}` is `PageKind::Overlay`, but its root covers the window with an opaque background: the page under it is drawn and never seen. Take `const KIND` out of the page"),
                 _ => {}
             }
@@ -1434,24 +1482,24 @@ impl<A: 'static> Program<A> {
     }
 }
 
-/// Pages as renderer draws them: bottom first, each page's own pictures
-/// under its nodes, both moved and faded as page's root's anim says, a
-/// page placed in a node moved and faded with that node.
+/// Pages as renderer draws them: bottom first, each moved and faded as
+/// page's root's anim says, a page placed in a node moved and faded with
+/// that node. A page's Surfaces move and fade with it: their marks are
+/// commands of the page's list.
 #[cfg(feature = "gpu")]
 impl<A> gogo_wgpu::DrawLists for Program<A> {
     fn for_each_list<'a>(&'a self, f: &mut dyn FnMut(&[Draw], &'a gogo_ui::Page)) {
         for id in &self.stack.order {
             let page: &'a PageUi = self.stack.get(*id);
-            for draws in [self.layer_draws[id.index()].as_slice(), page.draws.as_slice()] {
-                match page.pose {
-                    _ if draws.is_empty() => {}
-                    None => f(draws, &page.page),
-                    Some(pose) => {
-                        let mut posed = self.posed.borrow_mut();
-                        posed.clear();
-                        posed.extend(draws.iter().map(|draw| draw.posed(pose.offset_x, pose.offset_y, pose.alpha)));
-                        f(posed.as_slice(), &page.page);
-                    }
+            let draws: &[Draw] = page.draws.as_slice();
+            match page.pose {
+                _ if draws.is_empty() => {}
+                None => f(draws, &page.page),
+                Some(pose) => {
+                    let mut posed = self.posed.borrow_mut();
+                    posed.clear();
+                    posed.extend(draws.iter().map(|draw| draw.posed(pose.offset_x, pose.offset_y, pose.alpha)));
+                    f(posed.as_slice(), &page.page);
                 }
             }
         }

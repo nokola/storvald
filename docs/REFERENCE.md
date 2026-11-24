@@ -36,6 +36,7 @@ WPF spelling is an unknown type: G7011, with the nearest gogo names):
 | `Circle` | discs and rings; radius self-derives from the box |
 | `Arc` | ring segments: `thickness=` strokes, `from=`/`sweep=` degrees |
 | `Gradient` | generated gradient fills (see Gradient) |
+| `Surface` | a box the program's code draws: a picture it hands over, or draw commands it writes (see Surface) |
 | `Button` | press / toggle |
 | `Radio` | one-of-N inside `choice { }`; a body makes it TEMPLATED (see choice) |
 | `Check` | independent on/off; a body makes it TEMPLATED (see choice) |
@@ -54,8 +55,8 @@ with four deliberate exceptions that need an address: `choice` (its name
 is the handler its `Change` event names), `repeat` (the `set_items`
 target), `slot` (the region a fill block names) and `seat` (where a `when`
 moves a node). A type word that is none of these, nor a `widget` or
-`control` the file declares, nor a code control the host listed
-(`CompileOptions::code_controls`), is a build error (G7011).
+`control` the file declares, is a build error (G7011). A box the
+program's code draws is a `Surface`.
 Deliberately NOT types: Divider (`Rectangle` is honest), Switch/Card/Chip
 (**types name mechanisms, styles name looks, widgets name composites**),
 dialogs (patterns).
@@ -829,27 +830,23 @@ another kind G2002. The words:
 | `interactive=true/false` | THE input switch: `true` claims input for this control, `false` makes it hit-invisible (unlike `disabled`, no restyle). Per control — never the subtree. Interactive controls answer input by default, everything else is transparent; see Input. |
 | `overlay=true` | THE layout-negotiation switch (D139), completing the node-role trio: `interactive=` is a control's relationship to input routing, `overlay=` to layout negotiation, `visibility=` to rendering presence. It cuts exactly one thing — the box's upward size contribution: no ancestor hug/minimum (and no scroll range) counts it. Everything else is untouched: placement (signed margins may hang it past the parent), draw order (declaration order, as always), clipping (a `Scroll` viewport still cuts it — a box that must beat a scroller is a popup, a different concept), hit-testing (hit order is draw order, last declared wins), focus, event routing. For boxes that sit on a parent without sizing it: touch-slop surfaces, finger pucks, drag markers, badges. Free parents only — permanent law, not a v1 gap: a flowed child holds a SEAT it can't refuse, and `Column { Layers { content ... overlay } }` already spells that case. The overlay's own inside still checks: its children validate against ITS box; a nested overlay is exempt only at its own parent boundary. Refused: with `visibility=space_only` (a seat-holder is not an overlay — a hidden overlay is `gone`), and `fill` on an axis the parent hugs with no non-overlay child (nothing determines the size). |
 | `color` | The fill of nodes that OWN a plain color (`Rectangle`, `Circle`) — their fill *is* their color; it is also an `Arc`'s stroke and the filled part of a `Slider`'s track. On anything else it's an error that points to the right channel: text is `font_color=`, fill is `background=`, a `Gradient` paints its `stops=`, whole-control fade is `opacity=`. |
-| `source` | The picture: `res://path` (an asset embedded at build time) or `<host>://name` (a host picture the app's code registers at run time under that exact name — a live preview, a canvas tile). See "Resource paths" below. |
+| `source` | An Image's picture file: `res://path` (an asset embedded at build time), or an atlas slice. A picture the program's code makes goes in a `Surface draw=picture`. See "Resource paths" below. |
 | `on:<event>=...` | Wiring — see Events and triggers. |
 
 Resource paths. Resource-typed properties take path strings that always
 carry a scheme (`source="res://icons/undo.png"`; a bare `undo.png` is
 refused, G0071 — a bare word could be a label or a path). `res://` is an
 asset under the build's resource root, checked and embedded at build
-time. Any other scheme on an `Image`'s `source=` — `preview://brush`,
-`canvas://tile`, `crop://source` — is a **host picture**: the app's code
-hands the renderer pixels under that exact name at run time, and the
-box shows nothing until it does. The name in the file is the contract:
-the build bakes it as the picture's id, code looks the id up by the same
-string, and an `Image` with no `source=` is a
-picture of nothing however much the code registers. An **empty string
-means null** — no load attempt (safe widget `$icon=""` defaults). A
-non-empty `res://` path that fails to load is a build error.
+time. An `Image`'s `source=` names such a file (or an atlas slice) and
+nothing else: any other name — `preview://brush` — is a build error
+(G2023) that names what to write, a `Surface draw=picture`, the box for
+a picture the program's code makes. An **empty string means null** — no
+load attempt (safe widget `$icon=""` defaults). A non-empty `res://`
+path that fails to load is a build error.
 
 Type names — one friendly name per concept: see the **Vocabulary** table at
-the top. An unknown type word is a build error with a suggestion (G7011);
-the host may add node types it draws itself
-(`CompileOptions::code_controls`). A property spelled in another dialect
+the top. An unknown type word is a build error with a suggestion (G7011).
+A property spelled in another dialect
 is refused toward the gogo word (G2001, G0041): there is no alias table.
 
 **`font_size` and `font_color` flow down to the text inside.**
@@ -1597,6 +1594,70 @@ The rules, per axis:
   page names it and decode it again when one does; default: kept for the
   session. See Directives → Atlases for the rule (every declaring line
   must say it).
+
+### Surface
+
+`Surface` is a box that the program's code draws: a painting, a chart, a
+game's world. The file says where the box is and what is over it, and
+its `draw=` says how the code fills it. `draw=` is required and has no
+default (G7015), so nobody gets one kind of drawing by forgetting to ask
+for another.
+
+| `draw=` | The code hands over | Cost while nothing changes | gogo does |
+|---|---|---|---|
+| `picture` | one picture (`Runtime::set_picture`) | none | `fit=`, `sampling=`, `window=`, turn, slide, fade, clip |
+| `commands` | gogo draw commands: rectangles, circles, arcs, text | none: gogo keeps them | turn, slide, fade, clip |
+
+```kdl
+View main {
+    Layers width=fill, height=fill {
+        Surface painting draw=picture, fit=distort, width=fill, height=fill,
+            interactive=true, on:pointer=painting_pointer
+        Surface chart draw=commands, width=200, height=120,
+            halign=right, valign=top
+        Panel toolbar valign=bottom, height=56 { }
+    }
+}
+```
+
+- **No size of its own.** gogo does not know what the code draws, so the
+  Surface's line writes its size, or `fill`. With no size word it is 0 by
+  0 in a parent that asks its children for their size.
+- **No child, no plate.** What goes over a Surface is a node after it in
+  the same `Layers` (the toolbar above); a child in its block is an error
+  (G7014). gogo draws nothing of a Surface, so it takes no `background=`:
+  a plate under it is a `Rectangle` before it in the `Layers`.
+- **`draw=picture`** shows the picture the code handed over, as an `Image`
+  shows a file: `fit=` (default `contain`), `window=` and `sampling=`
+  mean the same. Until the code hands one over it shows nothing.
+- **`draw=commands`** shows draw commands the code writes in the
+  Surface's own space: (0, 0) is its top left corner, in epx. gogo keeps
+  them and draws them every frame, moved to where the Surface is and
+  faded with it. It asks the code for them again in three cases: the
+  Surface shows for the first time, its size changed, or the code said
+  its content changed. New commands do not make gogo build the page's
+  own draw list again, and a page that changes does not ask for the
+  commands again. Commands may reach past the Surface's edge;
+  `clip_contents=true` cuts them there. A `scale=` on the Surface moves
+  its corner and does not shrink what the code drew.
+- **Fingers.** With `interactive=true` and `on:pointer=<name>` a Surface
+  takes every finger that lands on it, each with a press of its own from
+  its landing to its lift: the code tells one finger (a stroke) from two
+  (a zoom). Any other box holds one finger at a time. A Surface with
+  neither word lets a finger through to what is under it.
+- **A typed name.** The build writes a Surface's name with a type by its
+  `draw=`: `NAMES.painting` is a `PictureSurface`, `NAMES.chart` a
+  `CommandSurface`. `Runtime::set_picture` takes the first and nothing
+  else, so code that fills a Surface another way than its file says does
+  not compile. `.node()` gives the node, for what every node takes
+  (`set_visible`, its rectangle). `draw=` is therefore written on the
+  Surface's own line only, never in a `when`.
+- The words of the other `draw=` are refused (G7016): `fit=`, `window=`
+  and `sampling=` on a `draw=commands` Surface, `clip_contents=` on a
+  `draw=picture` one.
+
+COOKBOOK has both recipes: "How do I draw custom visuals from code" and
+"How do I show a picture my code renders".
 
 ### Circle
 
@@ -2619,8 +2680,8 @@ Label tip text="new stroke"/newStroke, font_size=15
 - **The missing-key check**: a build that ships in several
   languages sets `CompileOptions::require_keys`, and every displayed string
   with no key is an error (`G8002`) naming the file and line. Not checked:
-  paths and picture addresses (`res://`, `collage://before`), `areas=`
-  rows, and text with no letter in it (`"100%"`, `"1/1"`). `allow` takes
+  paths (`res://`), `areas=` rows, and text with no letter in it
+  (`"100%"`, `"1/1"`). `allow` takes
   exactly `untranslated`, at the top of a file (`G8003`).
 
 ```kdl
@@ -2756,7 +2817,8 @@ program the tests compile and run.
 **Compile.** A shipping app compiles its pages at build time:
 `gogo_ui::build_pages(dir, out, BuildOptions::new(res_root))`, called from
 `build.rs`, turns every `.gogo` page in a folder into one Rust file. Per
-page it holds a module with `PAGE`, `NAMES` (every named node), the enum
+page it holds a module with `PAGE`, `NAMES` (every named node, a Surface
+with the type of its `draw=`), the enum
 `Handler`, and the enums `Arrangement`, `Anim` and `Theme` where the page
 declares arrangements, anims or theme values; for the whole build,
 `KEYS` with `enum Key`, the embedded `IMAGES` and `FONTS`, and the
@@ -2850,12 +2912,16 @@ glide freezes mid-flight until the next input.
 | `input.touch` / `key` / `wheel` / `hover` | Feed input; `touch`, `key` and `wheel` answer with the events they caused, `hover` only sets `hovered`. |
 | `input.register(behavior)`, `input.focused()`, `input.focus_on` | A host's own control behavior; who has keyboard focus; move it. |
 | `gogo_ui::hit(&page, frame, x, y, any)` | The node under a point of the last frame. |
+| `rt.set_picture(surface, key)` | Shows a picture of the host's picture table in a `Surface draw=picture`. `NO_IMAGE` shows nothing. |
+| `rt.next_surface_to_draw()`, `page.write_surface(ask)` | After `frame_retained`, until the first returns `None`: takes a `Surface draw=commands` whose commands the code must write (it first shows, has a new size, or had `surface_changed`), and starts its commands anew to write: `out.width()`, `out.height()`, `out.draw(..)`, `out.text(..)`. |
+| `rt.surface_changed(&mut page, surface)` | Says what a `draw=commands` Surface shows is out of date: the next frame asks for its commands again. |
+| `page.surface_commands(node)` | A Surface's commands as written last. A renderer reads them where it meets `Draw::Surface { rect, surface, alpha }` in a draw list, and draws each moved by the rect's corner and faded by `alpha` (`Draw::posed`). `gogo-wgpu` does. |
+| `PictureSurface::find(&page, name)`, `CommandSurface::find` | A Surface of a page compiled while the program runs, by its name and its `draw=`. A built page has its Surfaces in `NAMES`. |
 | `reload::Reloader` (`open`, `refresh`), `reload::Sources` | Hot reload (below). |
 
-Options the compiler takes from the host (`CompileOptions`):
-`code_controls` (node types the host draws itself), `behaviors` (its own
-control behaviors), `require_keys` (every displayed string needs a
-translation key).
+Options the compiler takes from the host (`CompileOptions`): `behaviors`
+(its own control behaviors), `require_keys` (every displayed string needs
+a translation key).
 
 **Hot reload.** With the cargo feature `hot-reload` on, a page follows
 its `.gogo` file while the program runs: save the file, and the page on

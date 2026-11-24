@@ -60,7 +60,7 @@ fn one_declaring_line_without_the_word_keeps_the_picture() {
 fn release_errors() {
     assert_eq!(codes("atlas stars source=\"res://s/stars.jpg\", cell=80x80, release=gone"), vec!["G2020"], "one word only");
     assert_eq!(codes("atlas stars source=\"res://s/stars.jpg\", cell=80x80\nView v { Image a 20x20, source=stars[1], release=unused }"), vec!["G2020"], "a slice's picture is declared by its atlas line");
-    assert_eq!(codes("View v { Image a 20x20, source=\"collage://preview\", release=unused }"), vec!["G2020"], "a picture the app draws itself has no file to decode again");
+    assert_eq!(codes("View v { Surface a draw=picture, width=20, height=20, release=unused }"), vec!["G2002"], "a picture the program's code hands over has no file to decode again: `release=` is no word of a Surface");
     assert!(!codes("View v { Image a 20x20, source=\"res://s/big.png\", release=never }").is_empty(), "`unused` is the only value");
     assert!(!codes("View v { Rectangle r 20x20, release=unused }").is_empty(), "an Image word");
 }

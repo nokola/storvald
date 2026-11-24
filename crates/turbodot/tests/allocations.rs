@@ -13,7 +13,7 @@
 #![cfg(feature = "ui")]
 
 use gogo_text::TextEngine;
-use gogo_ui::{Buttons, Event, EventKind, EventList, Images, MOUSE_ID, NodeId, Orientation, Phase, Rect, ScreenClass, Touch, compile, has_errors};
+use gogo_ui::{Buttons, Color_Straight_Srgb_4xU8_RGBA, CommandSurface, Draw, Event, EventKind, EventList, ImageKey, Images, MOUSE_ID, NO_KEY, NO_STR, NodeId, Orientation, Phase, PictureSurface, Rect, ScreenClass, StrId, TextAlign, Touch, compile, has_errors};
 use turbodot::alloc_count::{self, CountingAlloc};
 use turbodot::pages::{PageUi, ImageTable, PageId, PagePlatform, PageStack, UiAssets};
 
@@ -253,4 +253,101 @@ fn a_pointer_sample_a_hover_and_a_wheel_turn_allocate_nothing() {
     assert_eq!(allocations_of(|| shown.frame()), 0, "the frame after");
     assert_eq!(allocations_of(|| drop(shown.pointer(Touch { phase: Phase::Up, x: right.x + 34.0, y: right.y + 30.0, t: 1.07, id: 2, ..Touch::PLAIN }))), 0, "the second finger lifts");
     assert_eq!(allocations_of(|| drop(shown.pointer(pen(Phase::Up, left.x + 36.0, left.y + 32.0, 1.08, 1)))), 0, "the first pointer lifts");
+}
+
+/// A page with three boxes its code draws: a photo it hands over, the
+/// points it writes as draw commands, and a pad that takes fingers.
+const SURFACES: &str = r#"
+View page background=#202020 {
+    Layers width=fill, height=fill {
+        Surface photo draw=picture, fit=cover, width=fill, height=fill
+        Surface score draw=commands, width=120, height=32, halign=right, valign=top
+        Surface pad draw=commands, width=fill, height=200, valign=bottom, interactive=true, on:pointer=drawn
+    }
+}
+"#;
+
+/// Writes the draw commands of every Surface the page asks for, as a
+/// host does after its frame: a plate over the whole Surface and
+/// `points` as text. Returns the count of Surfaces written.
+fn write_surfaces(shown: &mut Shown, points: &str) -> usize {
+    let ui: &mut PageUi = shown.stack.get_mut(shown.id);
+    let mut written: usize = 0;
+    while let Some(ask) = ui.runtime.next_surface_to_draw() {
+        let mut out = ui.page.write_surface(ask);
+        let whole: Rect = Rect::new(0.0, 0.0, out.width(), out.height());
+        out.draw(Draw::Quad { rect: whole, color: Color_Straight_Srgb_4xU8_RGBA([0, 0, 0, 0x80]), corner: 6.0, border: 0.0, border_color: Color_Straight_Srgb_4xU8_RGBA::TRANSPARENT });
+        let text: StrId = out.text(points);
+        out.draw(Draw::Text { rect: whole, text, key: NO_KEY, font_size: 16.0, color: Color_Straight_Srgb_4xU8_RGBA::opaque(0xFFFFFF), halign: TextAlign::Center, valign: TextAlign::Center, wrap: false, font: NO_STR });
+        written += 1;
+    }
+    written
+}
+
+/// A Surface whose draw commands are written again every frame allocates
+/// nothing, with the text they show changing each time. Neither does a
+/// frame in which nothing changed, another picture handed to a Surface,
+/// or a second finger on a Surface that holds one.
+///
+/// Needed because a game writes its world's commands every frame and a
+/// painting takes two fingers for a zoom: an allocation there repeats
+/// sixty times a second.
+#[test]
+fn a_surface_written_every_frame_allocates_nothing() {
+    let _alone = ONE_TEST_AT_A_TIME.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut shown: Shown = Shown::of(SURFACES);
+    let photo: PictureSurface = PictureSurface::find(&shown.page().page, "photo").expect("photo");
+    let score: CommandSurface = CommandSurface::find(&shown.page().page, "score").expect("score");
+    let pad: CommandSurface = CommandSurface::find(&shown.page().page, "pad").expect("pad");
+
+    // First frames: both command Surfaces are asked for, once.
+    shown.frame();
+    assert_eq!(write_surfaces(&mut shown, "3 points"), 2);
+    shown.frame();
+    assert_eq!(write_surfaces(&mut shown, "3 points"), 0, "nothing changed: nothing asked");
+    assert_eq!(allocations_of(|| shown.frame()), 0, "a frame in which nothing changed");
+
+    // The commands of one Surface, written again every frame. The first
+    // round grows what the later ones use.
+    for points in ["4 points", "5 points"] {
+        shown.stack.get_mut(shown.id).surface_changed(score);
+        shown.frame();
+        assert_eq!(write_surfaces(&mut shown, points), 1);
+    }
+    for points in ["6 points", "7 points", "8 points"] {
+        let allocations: u64 = allocations_of(|| {
+            shown.stack.get_mut(shown.id).surface_changed(score);
+            shown.frame();
+            assert_eq!(write_surfaces(&mut shown, points), 1);
+        });
+        assert_eq!(allocations, 0, "commands written again, showing `{points}`");
+    }
+    let page: &PageUi = shown.page();
+    assert!(matches!(page.page.surface_commands(score.node())[1], Draw::Text { text, .. } if page.page.str(text) == "8 points"));
+
+    // A picture handed to the picture Surface, then another one.
+    // The first two grow what the later ones use.
+    for key in [1, 2] {
+        shown.stack.get_mut(shown.id).runtime.set_picture(photo, ImageKey::new(key));
+        shown.frame();
+    }
+    for key in [3, 4, 5] {
+        let allocations: u64 = allocations_of(|| {
+            shown.stack.get_mut(shown.id).runtime.set_picture(photo, ImageKey::new(key));
+            shown.frame();
+        });
+        assert_eq!(allocations, 0, "another picture in a Surface, key {key}");
+    }
+
+    // Two fingers on one Surface: each has a press of its own.
+    let on: Rect = shown.page().rect(pad.node());
+    assert_eq!(shown.pointer(Touch { phase: Phase::Down, x: on.x + 30.0, y: on.y + 30.0, t: 1.0, id: 1, ..Touch::PLAIN }).len(), 1);
+    assert_eq!(shown.pointer(Touch { phase: Phase::Down, x: on.x + 90.0, y: on.y + 30.0, t: 1.01, id: 2, ..Touch::PLAIN }).len(), 1, "the second finger on the Surface is heard too");
+    drop(shown.pointer(Touch { phase: Phase::Move, x: on.x + 32.0, y: on.y + 30.0, t: 1.02, id: 1, ..Touch::PLAIN }));
+    drop(shown.pointer(Touch { phase: Phase::Move, x: on.x + 92.0, y: on.y + 30.0, t: 1.03, id: 2, ..Touch::PLAIN }));
+    shown.frame();
+    shown.frame();
+    assert_eq!(allocations_of(|| drop(shown.pointer(Touch { phase: Phase::Move, x: on.x + 34.0, y: on.y + 31.0, t: 1.04, id: 1, ..Touch::PLAIN }))), 0, "a sample of the first finger on the Surface");
+    assert_eq!(allocations_of(|| drop(shown.pointer(Touch { phase: Phase::Move, x: on.x + 94.0, y: on.y + 31.0, t: 1.05, id: 2, ..Touch::PLAIN }))), 0, "a sample of the second finger on the Surface");
+    assert_eq!(allocations_of(|| shown.frame()), 0, "the frame after");
 }

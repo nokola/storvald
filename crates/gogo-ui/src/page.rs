@@ -410,6 +410,9 @@ pub enum Kind {
     Empty,
     /// A widget instance whose body was not expanded (unknown type).
     Custom,
+    /// `Surface`: a box the program's code draws. `draw=` says how
+    /// (`SurfaceDraw`). A leaf with no size of its own.
+    Surface,
 }
 
 /// `automatic=` on a slot line, solved at compile time (no code-behind
@@ -619,7 +622,7 @@ pub struct ValueFollow {
 }
 
 /// Every node-type word and its kind, in the order the docs list them.
-/// `Custom` has no word (a code control or an unknown type).
+/// `Custom` has no word (a node of an unknown type).
 pub const KIND_WORDS: &[(&str, Kind)] = &[
     ("View", Kind::View),
     ("Panel", Kind::Panel),
@@ -637,6 +640,7 @@ pub const KIND_WORDS: &[(&str, Kind)] = &[
     ("Circle", Kind::Circle),
     ("Arc", Kind::Arc),
     ("Gradient", Kind::Gradient),
+    ("Surface", Kind::Surface),
     ("Slider", Kind::Slider),
     ("Input", Kind::Input),
     ("Check", Kind::Check),
@@ -885,6 +889,10 @@ pub enum PropKey {
     /// the picture's decoded copy once no live page names it, and decode
     /// it again when one does. Default: kept for the whole session.
     Release,
+    /// `draw=picture|commands` on a Surface: how the program's code fills
+    /// it (`SurfaceDraw`). The file's line alone writes it: the build
+    /// gives the Surface's name a type by it.
+    Draw,
     TouchTarget,
     TapPulse,
     AccessibilityName,
@@ -1005,6 +1013,7 @@ pub const WORDS: &[(&str, PropKey)] = &[
     ("full_row", PropKey::FullRow),
     ("loading", PropKey::Loading),
     ("release", PropKey::Release),
+    ("draw", PropKey::Draw),
     ("touch_target", PropKey::TouchTarget),
     ("tap_pulse", PropKey::TapPulse),
     ("accessibility_name", PropKey::AccessibilityName),
@@ -1107,6 +1116,7 @@ impl PropKey {
             PropKey::Loading => Some(&["lazy", "eager"]),
             PropKey::Release => Some(&["unused"]),
             PropKey::Sampling => Some(&["smooth", "pixel"]),
+            PropKey::Draw => Some(&["picture", "commands"]),
             _ => None,
         }
     }
@@ -1236,9 +1246,7 @@ const TEXT: &[PropKey] = &[PropKey::Text, PropKey::FontSize, PropKey::FontColor,
 /// A press surface's words (`disabled=` is every box's: it cascades down
 /// a subtree, so a Panel can switch off everything in it).
 const PRESS: &[PropKey] = &[PropKey::TapPulse];
-/// The shared row: a code control (drawn by the host) takes the box, its
-/// plate and padding, nothing of its own — declaring host-read words per
-/// control is docs/todo-gogo.md G13 (LATER).
+/// The shared row: a box with a plate and padding, and no word of its own.
 const SHARED: &[&[PropKey]] = &[BOX, PLATE, PADDING];
 
 /// A Grid cell's words — legal on any box whose parent is a Grid row.
@@ -1261,6 +1269,10 @@ fn kind_row(kind: Kind) -> &'static [&'static [PropKey]] {
         Kind::Label => &[BOX, PLATE, PADDING, TEXT, &[PropKey::TextFit, PropKey::TextFlip]],
         Kind::Button => &[BOX, PLATE, PADDING, TEXT, PRESS, &[PropKey::ToggleMode, PropKey::SelectedProp]],
         Kind::Image => &[BOX, PLATE, &[PropKey::Source, PropKey::Fit, PropKey::Loading, PropKey::Release, PropKey::Window, PropKey::Sampling]],
+        // The three picture words are a `draw=picture` Surface's alone,
+        // `clip_contents=` a `draw=commands` one's: the compiler refuses
+        // each beside another `draw=`.
+        Kind::Surface => &[BOX, &[PropKey::Draw, PropKey::Fit, PropKey::Window, PropKey::Sampling, PropKey::ClipContents]],
         Kind::Rectangle => &[BOX, &[PropKey::Color, PropKey::ColorA, PropKey::CornerRadius, PropKey::CornerRadiusTopLeft, PropKey::CornerRadiusTopRight, PropKey::CornerRadiusBottomRight, PropKey::CornerRadiusBottomLeft, PropKey::BorderThickness, PropKey::BorderColor, PropKey::BorderDash]],
         Kind::Circle => &[BOX, &[PropKey::Color, PropKey::ColorA, PropKey::BorderThickness, PropKey::BorderColor, PropKey::BorderDash]],
         // `corner_radius` (Q9, user 2026-09-05): a rounded or disc-shaped
@@ -2001,6 +2013,10 @@ pub struct Page {
     pub file_nodes: u32,
     /// Which file the page follows in a hot reload (`reload::Reloader`).
     pub follows: crate::reload::Follows,
+    /// The draw commands code wrote for the page's `Surface
+    /// draw=commands` nodes, one list per Surface that has some
+    /// (`Page::surface_commands`). Empty on a page as built.
+    pub(crate) surface_lists: Vec<crate::surface::SurfaceList>,
 }
 
 /// The claimable key GROUPS of a `control`'s `keys` line (GP26) —
@@ -2105,6 +2121,7 @@ impl Page {
             slices: std::borrow::Cow::Borrowed(s.slices),
             file_nodes: s.nodes.len() as u32,
             follows: crate::reload::Follows::of_built(s),
+            surface_lists: Vec::new(),
         }
     }
 

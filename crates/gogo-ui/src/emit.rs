@@ -10,6 +10,7 @@
 
 use crate::locale::Keys;
 use crate::page::*;
+use crate::surface::SurfaceDraw;
 
 /// Rust's keywords: a node named `box` or `type` becomes the field
 /// `r#box` / `r#type` — the name the file wrote, kept legal.
@@ -192,12 +193,34 @@ fn emit_anims(page: &Page, out: &mut String) -> Result<(), String> {
     Ok(())
 }
 
-/// One entry of a `Names` struct: a plain named node, or a widget
-/// instance (its own struct, `<Widget>Names`).
+/// One entry of a `Names` struct: a plain named node, a `Surface` (typed
+/// by its `draw=`), or a widget instance (its own struct,
+/// `<Widget>Names`).
 #[derive(Clone, Debug, PartialEq)]
 pub enum NameEntry {
     Node(NodeId),
+    /// Needed so code that fills a Surface another way than its file
+    /// says does not compile: `Runtime::set_picture` takes a
+    /// `PictureSurface`, and the name of a `draw=commands` one is none.
+    Surface(NodeId, SurfaceDraw),
     Instance { root: NodeId, widget: String, body: Vec<(String, NameEntry)> },
+}
+
+/// The entry of a plain node: a `Surface` by its `draw=`, any other
+/// node by its id.
+fn node_entry(page: &Page, id: NodeId) -> NameEntry {
+    match SurfaceDraw::of(page, id) {
+        Some(draw) => NameEntry::Surface(id, draw),
+        None => NameEntry::Node(id),
+    }
+}
+
+/// The Rust type of a Surface's name, as written in a build's code.
+fn surface_type(draw: SurfaceDraw) -> &'static str {
+    match draw {
+        SurfaceDraw::Picture => "gogo_ui::PictureSurface",
+        SurfaceDraw::Commands => "gogo_ui::CommandSurface",
+    }
 }
 
 /// The Rust struct name for widget `SliderPhone`: `SliderPhoneNames`.
@@ -238,7 +261,7 @@ fn name_entries(page: &Page, prefix: &str) -> Result<Vec<(String, NameEntry)>, S
             }
             NameEntry::Instance { root: NodeId::from_index(i), widget: page.str(n.widget).to_string(), body }
         } else {
-            NameEntry::Node(NodeId::from_index(i))
+            node_entry(page, NodeId::from_index(i))
         };
         if let Some((f, other)) = out.iter().find(|(f, _)| *f == field) {
             if *other != entry {
@@ -255,6 +278,7 @@ fn name_entries(page: &Page, prefix: &str) -> Result<Vec<(String, NameEntry)>, S
 fn entry_type(e: &NameEntry) -> String {
     match e {
         NameEntry::Node(_) => "NodeId".to_string(),
+        NameEntry::Surface(_, draw) => surface_type(*draw).to_string(),
         NameEntry::Instance { widget, .. } => format!("super::{}", widget_struct(widget)),
     }
 }
@@ -263,6 +287,7 @@ fn entry_type(e: &NameEntry) -> String {
 fn entry_value(e: &NameEntry, indent: usize) -> String {
     match e {
         NameEntry::Node(id) => format!("{id:?}"),
+        NameEntry::Surface(id, draw) => format!("{}::from_build(gogo_ui::{id:?})", surface_type(*draw)),
         NameEntry::Instance { root, widget, body } => {
             let pad = " ".repeat(indent);
             let mut s = format!("super::{} {{\n{pad}    root: {root:?},\n", widget_struct(widget));
@@ -280,7 +305,8 @@ fn entry_value(e: &NameEntry, indent: usize) -> String {
 struct WidgetRow {
     /// The Rust field (`root_check`).
     field: String,
-    /// `NodeId`, or `super::<Widget>Names` for a nested instance.
+    /// `NodeId`, a Surface's type (`gogo_ui::PictureSurface`), or
+    /// `super::<Widget>Names` for a nested instance.
     ty: String,
     /// The body node's own name in the page (`rootCheck`), the last
     /// segment of its full name — what `bind` looks the node up by.
@@ -301,7 +327,7 @@ fn collect_widget_shapes(page: &Page, entries: &[(String, NameEntry)], shapes: &
             let mut rows: Vec<WidgetRow> = vec![WidgetRow { field: "root".to_string(), ty: "NodeId".to_string(), local: String::new() }];
             for (f, be) in body {
                 let id = match be {
-                    NameEntry::Node(id) => *id,
+                    NameEntry::Node(id) | NameEntry::Surface(id, _) => *id,
                     NameEntry::Instance { root, .. } => *root,
                 };
                 rows.push(WidgetRow { field: f.clone(), ty: entry_type(be), local: local_name(page, id) });
@@ -373,6 +399,10 @@ fn names_impl(struct_name: &str, rows: &[WidgetRow], indent: &str) -> String {
             s.push_str(&format!("{indent}            root: page.find(instance)?,\n"));
         } else if r.ty == "NodeId" {
             s.push_str(&format!("{indent}            {}: page.find(&format!(\"{{instance}}/{}\"))?,\n", r.field, r.local));
+        } else if r.ty.starts_with("gogo_ui::") {
+            // A Surface: found by name AND by its `draw=`, so a body
+            // that fills it another way binds nothing.
+            s.push_str(&format!("{indent}            {}: {}::find(page, &format!(\"{{instance}}/{}\"))?,\n", r.field, r.ty, r.local));
         } else {
             s.push_str(&format!("{indent}            {}: {}::bind(page, &format!(\"{{instance}}/{}\"))?,\n", r.field, plain_type(&r.ty), r.local));
         }
@@ -483,7 +513,11 @@ fn emit_slots(page: &Page, out: &mut String) -> Result<(), String> {
         let template: NodeId = page.repeats.iter().find(|r| r.node == repeat).map(|r| r.template).expect("a repeat has a template");
         // The template root carries the prefix too (`rows/item/row`): it IS
         // the slot, so it is the `root` field, not a part.
-        let is_root = |e: &NameEntry| matches!(e, NameEntry::Node(n) if *n == template) || matches!(e, NameEntry::Instance { root, .. } if *root == template);
+        let is_root = |e: &NameEntry| matches!(e, NameEntry::Node(n) | NameEntry::Surface(n, _) if *n == template) || matches!(e, NameEntry::Instance { root, .. } if *root == template);
+        // The row itself, typed like any other name: a row that is a
+        // Surface is filled through `root`.
+        let root_entry: NameEntry = node_entry(page, template);
+        let root_node: &str = if matches!(root_entry, NameEntry::Surface(..)) { ".node()" } else { "" };
         let entries: Vec<(String, NameEntry)> = name_entries(page, &prefix)?.into_iter().filter(|(_, e)| !is_root(e)).collect();
         if entries.iter().any(|(f, _)| f == "root") {
             return Err(format!("repeat `{name}`: a template node named `root` clashes with the slot's `root` field — rename it\n"));
@@ -491,17 +525,17 @@ fn emit_slots(page: &Page, out: &mut String) -> Result<(), String> {
         // A repeat inside a widget instance is `inst/marks`: the path
         // joins into one name (`InstMarksSlot`).
         let struct_name = format!("{}Slot", pascal_case(&name.replace('/', "_")));
-        out.push_str(&format!("\n    /// One row of `repeat {name}`: the template's named parts by id (`root` = the row itself).\n    #[allow(dead_code)]\n    #[derive(Clone, Copy, Debug)]\n    pub struct {struct_name} {{\n        pub root: NodeId,\n"));
+        out.push_str(&format!("\n    /// One row of `repeat {name}`: the template's named parts by id (`root` = the row itself).\n    #[allow(dead_code)]\n    #[derive(Clone, Copy, Debug)]\n    pub struct {struct_name} {{\n        pub root: {},\n", entry_type(&root_entry)));
         for (f, e) in &entries {
             out.push_str(&format!("        pub {f}: {},\n", entry_type(e)));
         }
         out.push_str("    }\n\n");
-        out.push_str(&format!("    impl {struct_name} {{\n        /// The hidden template the rows are cloned from.\n        pub const TEMPLATE: {struct_name} = {struct_name} {{\n            root: {template:?},\n"));
+        out.push_str(&format!("    impl {struct_name} {{\n        /// The hidden template the rows are cloned from.\n        pub const TEMPLATE: {struct_name} = {struct_name} {{\n            root: {},\n", entry_value(&root_entry, 12)));
         for (f, e) in &entries {
             out.push_str(&format!("            {f}: {},\n", entry_value(e, 12)));
         }
-        out.push_str(&format!("        }};\n\n        /// The row whose root is `slot_root` (one of `Runtime::items`).\n        pub const fn at(slot_root: NodeId) -> {struct_name} {{\n            {struct_name}::TEMPLATE.rebase({struct_name}::TEMPLATE.root, slot_root)\n        }}\n    }}\n\n"));
-        let mut rows: Vec<(String, String)> = vec![("root".to_string(), "NodeId".to_string())];
+        out.push_str(&format!("        }};\n\n        /// The row whose root is `slot_root` (one of `Runtime::items`).\n        pub const fn at(slot_root: NodeId) -> {struct_name} {{\n            {struct_name}::TEMPLATE.rebase({struct_name}::TEMPLATE.root{root_node}, slot_root)\n        }}\n    }}\n\n"));
+        let mut rows: Vec<(String, String)> = vec![("root".to_string(), entry_type(&root_entry))];
         rows.extend(entries.iter().map(|(f, e)| (f.clone(), entry_type(e))));
         out.push_str(&rebase_impl(&struct_name, &rows, "    "));
     }
@@ -600,7 +634,7 @@ pub struct BuiltPageRow {
 /// later reaches every host through this constant, with no host code
 /// changed. A program that never reloads does not reference it, so the
 /// linker leaves it out.
-pub fn emit_build(pages: &[BuiltPageRow], atlases: &[AtlasDecl], code_controls: &[&str], behaviors: &[BehaviorSpec], require_keys: bool) -> String {
+pub fn emit_build(pages: &[BuiltPageRow], atlases: &[AtlasDecl], behaviors: &[BehaviorSpec], require_keys: bool) -> String {
     let key = |k: &ImageKey| format!("gogo_ui::ImageKey::new({})", k.index());
     let mut out = String::from("/// Everything a hot reload needs to know about this build: hand it whole to `gogo_ui::reload::Reloader::new`.\npub static BUILD: gogo_ui::reload::BuildTables<'static> = gogo_ui::reload::BuildTables {\n    keys: KEYS,\n    images: IMAGES,\n    slices: &SLICES,\n    atlases: &[\n");
     for a in atlases {
@@ -612,7 +646,7 @@ pub fn emit_build(pages: &[BuiltPageRow], atlases: &[AtlasDecl], code_controls: 
         out.push_str(&format!("        gogo_ui::reload::BuiltAtlas {{ name: {:?}, said: &[{}], shape: {shape} }},\n", a.name, a.said.iter().map(|s| s.to_string()).collect::<Vec<_>>().join(", ")));
     }
     out.push_str("    ],\n");
-    out.push_str(&format!("    code_controls: &{code_controls:?},\n    behaviors: &[\n"));
+    out.push_str("    behaviors: &[\n");
     for b in behaviors {
         out.push_str(&format!("        gogo_ui::page::BehaviorSpec {{ name: {:?}, slots: &{:?}, keys: {}, payload: gogo_ui::Payload::{:?} }},\n", b.name, b.slots, b.keys, b.payload));
     }
