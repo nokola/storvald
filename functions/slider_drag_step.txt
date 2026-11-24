@@ -1,0 +1,95 @@
+# `slider_drag_step` at commit 7a72309bafe555456af3837d09bfb157aea8d1eb: instructions by function, 144129 in all.
+# A function's own code only: what it calls is counted at the called function.
+36144 <gogo_ui::layout::LookCopy>::diff
+28968 __memcpy_avx_unaligned_erms
+15588 gogo_ui::draw::walk'2
+15240 <gogo_ui::draw::DrawCache>::patch
+5988 <gogo_ui::page::Page>::kind_default::{closure#0}
+5535 <gogo_ui::tree::Children as core::iter::traits::iterator::Iterator>::next
+5454 <gogo_ui::runtime::Resolved>::prop
+5068 <gogo_ui::runtime::Resolved>::override_of
+4513 <gogo_ui::page::Page>::prop
+4479 gogo_ui::runtime::resolve_into
+2361 <gogo_ui::layout::LayoutCache>::patch
+1656 <gogo_ui::runtime::Runtime>::set_screen
+920 <(gogo_ui::page::NodeId, gogo_ui::page::Prop) as core::slice::cmp::SlicePartialEq<(gogo_ui::page::NodeId, gogo_ui::page::Prop)>>::equal_same_length
+836 gogo_ui::runtime::settle_seats
+823 <gogo_ui::layout::LayoutCache>::run
+781 <gogo_ui::draw::DrawCache>::run
+684 gogo_ui::input::event_action
+680 gogo_ui::runtime::deref
+617 gogo_ui::draw::clips
+606 gogo_ui::draw::walk
+525 <gogo_ui::input::Input>::touch
+513 __memcmp_avx2_movbe
+342 <gogo_ui::runtime::Runtime>::tick
+270 <gogo_ui::draw::DrawCache>::emit
+250 <gogo_ui::runtime::Resolved as core::clone::Clone>::clone_from
+240 <gogo_ui::runtime::Resolved>::snap_slider
+217 <gogo_ui::runtime::Resolved>::gone
+204 gogo_ui::draw::own_opacity
+200 roundf
+192 <gogo_ui::runtime::Resolved>::color
+189 gogo_ui::runtime::resolve_into::{closure#44}
+184 <turbodot::pages::PageUi>::frame
+179 <gogo_ui::draw::DrawCache>::remember
+167 <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as core::hash::Hasher>::write
+163 <gogo_ui::runtime::Runtime>::frame_retained
+146 <turbodot::program::Program<storvald_perf::AppState>>::frame
+125 <gogo_ui::input::Input>::tick
+123 <turbodot::program::Program<storvald_perf::AppState>>::frame_pages
+121 <gogo_text::EpxMeasure as gogo_ui::layout::TextMeasure>::identity
+118 gogo_ui::runtime::ladder_motion_and_seat
+111 <gogo_ui::tree::PlacedTree as core::clone::Clone>::clone_from
+108 <turbodot::pages::PageUi>::relayout
+108 gogo_ui::draw::push_shown
+102 __memset_avx2_unaligned_erms
+94 gogo_ui::layout::mark_differing
+93 <gogo_ui::runtime::Runtime>::root_pose
+85 <gogo_ui::runtime::Runtime>::set_prop
+83 gogo_ui::runtime::compose_anim
+82 gogo_ui::runtime::ladder_node
+75 <gogo_ui::runtime::Runtime>::compose_motion
+74 gogo_ui::runtime::compose_anim::{closure#0}
+72 core::ptr::drop_glue::<gogo_ui::runtime::Resolved>
+71 <turbodot::program::Program<storvald_perf::AppState>>::hand_events
+69 <core::iter::adapters::chain::Chain<core::slice::iter::Iter<(gogo_ui::page::NodeId, gogo_ui::page::Prop)>, core::slice::iter::Iter<(gogo_ui::page::NodeId, gogo_ui::page::Prop)>> as core::iter::traits::iterator::Iterator>::try_fold::<(), core::iter::traits::iterator::Iterator::any::check<&(gogo_ui::page::NodeId, gogo_ui::page::Prop), gogo_ui::layout::keys_differ<gogo_ui::layout::inherits>::{closure#1}>::{closure#0}, core::ops::control_flow::ControlFlow<()>>
+69 <gogo_ui::input::Input>::push_event
+68 gogo_ui::input::slider_value
+66 <turbodot::program::Program<storvald_perf::AppState>>::carry_out_requests
+63 <core::iter::adapters::chain::Chain<core::slice::iter::Iter<(gogo_ui::page::NodeId, gogo_ui::page::Prop)>, core::slice::iter::Iter<(gogo_ui::page::NodeId, gogo_ui::page::Prop)>> as core::iter::traits::iterator::Iterator>::try_fold::<(), core::iter::traits::iterator::Iterator::any::check<&(gogo_ui::page::NodeId, gogo_ui::page::Prop), gogo_ui::layout::keys_differ<gogo_ui::layout::mark_differing::{closure#0}>::{closure#1}>::{closure#0}, core::ops::control_flow::ControlFlow<()>>
+63 <gogo_ui::page::Value as core::cmp::PartialEq>::eq
+63 gogo_ui::layout::diff_pairs::<f32>
+61 <gogo_ui::layout::LookCopy>::take
+60 <turbodot::pages::PageStack>::pointer_to
+58 <gogo_ui::runtime::Resolved>::push_override
+58 <turbodot::program::Program<storvald_perf::AppState>>::pointer
+56 gogo_ui::runtime::copy_repeat_rows
+54 <core::iter::adapters::chain::Chain<core::slice::iter::Iter<(gogo_ui::page::NodeId, gogo_ui::page::Prop)>, core::slice::iter::Iter<(gogo_ui::page::NodeId, gogo_ui::page::Prop)>> as core::iter::traits::iterator::Iterator>::try_fold::<(), core::iter::traits::iterator::Iterator::any::check<&(gogo_ui::page::NodeId, gogo_ui::page::Prop), gogo_ui::layout::keys_differ<gogo_ui::layout::mark_differing::{closure#1}>::{closure#1}>::{closure#0}, core::ops::control_flow::ControlFlow<()>>
+52 <turbodot::pages::PageUi>::root_pose
+50 <turbodot::program::Program<storvald_perf::AppState>>::place_code_pictures
+50 gogo_ui::draw::walk::{closure#2}
+46 <gogo_ui::runtime::Runtime>::glide_in_place
+42 gogo_ui::layout::diff_pairs::<bool>
+41 <turbodot::page::Plain<storvald_perf::pages::ControlsPage, storvald_perf::ui::controls_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::handle
+40 <alloc::vec::Vec<gogo_ui::anim::Player> as core::ops::drop::Drop>::drop
+40 <gogo_ui::runtime::Resolved>::slider_value
+39 storvald_perf::counts::counted::<storvald_perf::scenarios::slider_drag_step::{closure#1}>::{closure#0}
+38 gogo_ui::runtime::own_word
+32 <gogo_ui::runtime::Resolved>::num
+31 <gogo_ui::input::EventList as core::ops::drop::Drop>::drop
+31 core::ptr::drop_glue::<gogo_ui::tree::PlacedTree>
+31 gogo_ui::runtime::push_tail
+30 gogo_ui::input::value_of
+26 <gogo_ui::frame::KeptFrame>::frame_retained
+24 gogo_ui::layout::sym_diff_nodes
+22 <turbodot::pages::PageStack>::get_mut
+21 <gogo_ui::runtime::Runtime>::follow_value_with
+19 <gogo_ui::runtime::Resolved>::hidden
+13 <turbodot::pages::PageStack>::touched_by
+11 <turbodot::pages::PageStack>::get
+10 <&mut core::iter::traits::iterator::Iterator::any::check<&(gogo_ui::page::NodeId, gogo_ui::page::Prop), gogo_ui::layout::keys_differ<gogo_ui::layout::inherits>::{closure#1}>::{closure#0} as core::ops::function::FnMut<((), &(gogo_ui::page::NodeId, gogo_ui::page::Prop))>>::call_mut
+8 <(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>) as core::slice::cmp::SlicePartialEq<(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>)>>::equal_same_length
+4 <alloc::vec::Vec<gogo_ui::page::NodeId>>::retain::<<gogo_ui::layout::LayoutCache>::patch::{closure#2}>
+2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
+1 storvald_perf_measured

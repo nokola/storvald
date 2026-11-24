@@ -1,0 +1,95 @@
+# `scroll_step` at commit 7a72309bafe555456af3837d09bfb157aea8d1eb: instructions by function, 3455337 in all.
+# A function's own code only: what it calls is counted at the called function.
+662249 gogo_ui::draw::walk'2
+636741 <gogo_ui::page::Page>::kind_default::{closure#0}
+529684 <gogo_ui::runtime::Resolved>::override_of
+413841 <gogo_ui::page::Page>::prop
+383587 <gogo_ui::runtime::Resolved>::prop
+167102 __memcpy_avx_unaligned_erms
+137006 <gogo_ui::layout::LookCopy>::diff
+97152 <gogo_ui::runtime::Resolved>::written_from
+52910 gogo_ui::runtime::deref
+46871 gogo_ui::runtime::resolve_into
+39626 gogo_ui::draw::clips
+28850 <gogo_ui::runtime::Resolved>::inherited
+28575 <gogo_ui::layout::Lay>::show_under
+25326 gogo_ui::runtime::resolve_into::{closure#44}
+23079 <gogo_ui::tree::Children as core::iter::traits::iterator::Iterator>::next
+19181 <gogo_ui::tree::Subtree as core::iter::traits::iterator::Iterator>::next
+18955 <gogo_ui::draw::DrawCache>::patch
+16391 <gogo_ui::runtime::Resolved>::gone
+13838 gogo_ui::draw::own_opacity
+11658 <gogo_ui::runtime::Resolved>::push_override
+9760 <gogo_ui::runtime::Resolved>::color
+9240 <gogo_ui::page::Value as core::cmp::PartialEq>::eq
+8484 gogo_ui::draw::text_align
+8302 <gogo_ui::layout::LayoutCache>::patch
+7272 gogo_ui::draw::walk::{closure#3}
+7070 gogo_ui::draw::push_shown
+5628 gogo_ui::runtime::push_tail
+4444 <gogo_ui::runtime::Resolved>::font
+4140 roundf
+3894 <gogo_ui::runtime::Runtime>::set_screen
+3838 gogo_ui::input::scroll_range
+3315 core::slice::sort::stable::drift::sort::<gogo_ui::page::NodeId, <gogo_ui::page::NodeId as core::cmp::PartialOrd>::lt>
+3304 <(gogo_ui::page::NodeId, gogo_ui::page::Prop) as core::slice::cmp::SlicePartialEq<(gogo_ui::page::NodeId, gogo_ui::page::Prop)>>::equal_same_length
+3216 <gogo_ui::runtime::Resolved>::ident
+2922 gogo_ui::runtime::settle_seats
+2629 <gogo_ui::runtime::Resolved>::font_size
+2611 <gogo_ui::layout::LayoutCache>::run
+2569 <gogo_ui::draw::DrawCache>::run
+2093 __memcmp_avx2_movbe
+1606 gogo_ui::draw::walk
+1256 <(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>) as core::slice::cmp::SlicePartialEq<(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>)>>::equal_same_length
+501 <gogo_ui::input::Input>::touch
+334 <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as core::hash::Hasher>::write
+291 <gogo_ui::draw::DrawCache>::emit
+258 <gogo_ui::runtime::Runtime>::tick
+250 <gogo_ui::runtime::Resolved as core::clone::Clone>::clone_from
+242 <gogo_text::EpxMeasure as gogo_ui::layout::TextMeasure>::identity
+193 __memset_avx2_unaligned_erms
+189 gogo_ui::runtime::copy_repeat_rows
+184 <turbodot::pages::PageUi>::frame
+179 <gogo_ui::draw::DrawCache>::remember
+163 <gogo_ui::runtime::Runtime>::frame_retained
+146 <turbodot::program::Program<storvald_perf::AppState>>::frame
+142 <gogo_ui::layout::LayoutCache>::remember
+125 <gogo_ui::input::Input>::tick
+123 <turbodot::program::Program<storvald_perf::AppState>>::frame_pages
+117 gogo_ui::layout::list_is_row
+111 <gogo_ui::tree::PlacedTree as core::clone::Clone>::clone_from
+108 <turbodot::pages::PageUi>::relayout
+100 gogo_ui::draw::walk::{closure#2}
+93 <gogo_ui::runtime::Runtime>::root_pose
+83 gogo_ui::runtime::compose_anim
+75 <gogo_ui::runtime::Runtime>::compose_motion
+75 gogo_ui::layout::scroll_axes_of
+74 gogo_ui::runtime::compose_anim::{closure#0}
+72 core::ptr::drop_glue::<gogo_ui::runtime::Resolved>
+68 gogo_ui::input::apply_accum
+66 <turbodot::program::Program<storvald_perf::AppState>>::carry_out_requests
+63 gogo_ui::layout::diff_pairs::<f32>
+61 <gogo_ui::layout::LookCopy>::take
+60 <turbodot::pages::PageStack>::pointer_to
+58 <turbodot::program::Program<storvald_perf::AppState>>::pointer
+52 <turbodot::pages::PageUi>::root_pose
+50 <turbodot::program::Program<storvald_perf::AppState>>::place_code_pictures
+46 <gogo_ui::runtime::Runtime>::glide_in_place
+42 gogo_ui::layout::diff_pairs::<bool>
+40 <alloc::vec::Vec<gogo_ui::anim::Player> as core::ops::drop::Drop>::drop
+40 core::slice::sort::stable::driftsort_main::<gogo_ui::page::NodeId, <gogo_ui::page::NodeId as core::cmp::PartialOrd>::lt, alloc::vec::Vec<gogo_ui::page::NodeId>>
+39 storvald_perf::counts::counted::<storvald_perf::scenarios::scroll_step::{closure#1}>::{closure#0}
+34 core::ptr::drop_glue::<gogo_ui::layout::Tables>
+31 core::ptr::drop_glue::<gogo_ui::tree::PlacedTree>
+26 <gogo_ui::frame::KeptFrame>::frame_retained
+24 gogo_ui::layout::sym_diff_nodes
+20 <turbodot::program::Program<storvald_perf::AppState>>::hand_events
+19 <gogo_ui::runtime::Resolved>::hidden
+13 <turbodot::pages::PageStack>::touched_by
+11 <turbodot::pages::PageStack>::get
+11 <turbodot::pages::PageStack>::get_mut
+10 <alloc::vec::Vec<gogo_ui::layout::StackLists> as core::ops::drop::Drop>::drop
+4 <alloc::vec::Vec<gogo_ui::page::NodeId>>::retain::<<gogo_ui::layout::LayoutCache>::patch::{closure#2}>
+3 <gogo_ui::input::EventList as core::ops::drop::Drop>::drop
+2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
+1 storvald_perf_measured

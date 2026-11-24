@@ -1,0 +1,25 @@
+# `slide_frame` at commit 7a72309bafe555456af3837d09bfb157aea8d1eb: instructions by function, 3812 in all.
+# A function's own code only: what it calls is counted at the called function.
+1656 <gogo_ui::runtime::Runtime>::set_screen
+378 __memcmp_avx2_movbe
+342 <gogo_ui::runtime::Runtime>::tick
+234 <turbodot::program::Program<storvald_perf::AppState>>::frame
+178 <turbodot::pages::PageUi>::frame
+173 <gogo_ui::runtime::Runtime>::is_hook_playing
+125 <gogo_ui::anim::Player>::apply_at
+123 <turbodot::program::Program<storvald_perf::AppState>>::frame_pages
+118 <gogo_ui::input::Input>::tick
+96 <gogo_ui::runtime::Runtime>::root_pose
+62 <turbodot::pages::PageUi>::relayout
+50 <turbodot::program::Program<storvald_perf::AppState>>::place_code_pictures
+45 <turbodot::pages::PageUi>::root_pose
+44 <gogo_ui::anim::Easing>::apply
+40 <alloc::vec::Vec<gogo_ui::anim::Player> as core::ops::drop::Drop>::drop
+40 roundf
+34 gogo_ui::anim::ease_in
+27 <turbodot::program::Program<storvald_perf::AppState>>::carry_out_requests
+22 <turbodot::pages::PageStack>::get_mut
+11 <turbodot::pages::PageStack>::get
+9 storvald_perf::counts::counted::<storvald_perf::scenarios::slide_frame::{closure#0}>::{closure#0}
+4 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
+1 storvald_perf_measured
