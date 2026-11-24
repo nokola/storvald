@@ -175,7 +175,8 @@ pub fn page(rows: &[Row], scenarios: &[Scenario], repository: &str) -> String {
     page.push_str("What gogo and TurboDot cost in the measured program (`perf/` on `main`), counted on one of GitHub's Linux machines at every push to `main` and once a day.\n\n");
     page.push_str("- **Instructions**: counted by Valgrind while the step runs. Same code and same compiler give the same count within a small spread, on any machine.\n");
     page.push_str("- **Allocations, nodes placed, nodes measured**: exact. `perf/expected_counts.txt` on `main` holds them, and a test fails when one differs.\n");
-    page.push_str("- Every run is rows in [history.csv](history.csv): date, commit, compiler, machine, scenario, metric, value.\n\n");
+    page.push_str("- Every run is rows in [history.csv](history.csv): date, commit, compiler, machine, scenario, metric, value.\n");
+    page.push_str("- [functions/](functions) holds the last run's instructions by function, a scenario a file. The file's history has the runs before. After a rise, `storvald-perf functions-moved --before <file> --after <file>` names the functions that grew.\n\n");
     let runs: Vec<&[Row]> = runs(rows);
     let Some(latest) = runs.last() else {
         page.push_str("No run yet.\n");

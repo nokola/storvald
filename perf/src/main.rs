@@ -4,21 +4,25 @@
 //! - `run <scenario>`: runs one in this process, prints its counts.
 //! - `counts`: runs each in a process of its own, prints every count.
 //! - `write-expected`: writes those counts to `expected_counts.txt`.
-//! - `record`: runs each under Valgrind, adds a run to `history.csv` and
-//!   writes the page made from it. Linux, with `valgrind` installed.
+//! - `record`: runs each under Valgrind, adds a run to `history.csv`,
+//!   writes the page made from it and, a scenario a file, its
+//!   instructions by function. Linux, with `valgrind` installed.
 //! - `check-latest`: fails when an instruction count of the last run
 //!   in `history.csv` rose and neither compiler nor machine changed
 //!   with it. A count that fell is printed and passes; the exact counts
 //!   are held by the test of `expected_counts.txt`.
+//! - `functions-moved`: prints the functions whose instructions differ
+//!   between two of `record`'s lists of one scenario.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Output};
 
 use storvald_perf::counts::{INSTRUCTIONS, MEASURED_SYMBOL};
+use storvald_perf::functions::{self, FunctionCount, FunctionMove};
 use storvald_perf::history::{self, Move, Row};
 use storvald_perf::scenarios::{self, SCENARIOS, Scenario};
 
-const USAGE: &str = "usage: storvald-perf list | run <scenario> | counts | write-expected | record --history <file> --page <file> --date <utc> --commit <hash> --rustc <version> --machine <name> | check-latest --history <file>";
+const USAGE: &str = "usage: storvald-perf list | run <scenario> | counts | write-expected | record --history <file> --page <file> --functions <directory> --date <utc> --commit <hash> --rustc <version> --machine <name> | check-latest --history <file> | functions-moved --before <file> --after <file>";
 
 /// File of the exact counts, beside this crate's `Cargo.toml`.
 const EXPECTED_COUNTS_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/expected_counts.txt");
@@ -38,6 +42,7 @@ fn main() -> ExitCode {
         Some("write-expected") => write_expected(),
         Some("record") => record(&args[1..]),
         Some("check-latest") => check_latest(&args[1..]),
+        Some("functions-moved") => functions_moved(&args[1..]),
         Some(other) => Err(format!("no command `{other}`\n{USAGE}")),
         None => Err(USAGE.to_string()),
     };
@@ -99,11 +104,34 @@ fn instructions_in(callgrind_file: &Path) -> Result<u64, String> {
     total.ok_or_else(|| format!("{} has no `totals:` line", callgrind_file.display()))
 }
 
+/// A scenario's instructions by function as a file's text, from the
+/// file Valgrind wrote.
+///
+/// Needed apart from the total because a list that cannot be made must
+/// not lose the run its total: the reason then stands in the list's
+/// file and in the job's output.
+fn function_list(scenario: &Scenario, commit: &str, callgrind_file: &Path, instructions: u64) -> String {
+    let counts: Result<Vec<FunctionCount>, String> = std::fs::read_to_string(callgrind_file).map_err(|error| format!("{}: {error}", callgrind_file.display())).and_then(|callgrind| functions::counts_from_callgrind(&callgrind));
+    match counts {
+        Ok(counts) => {
+            if functions::total(&counts) != instructions {
+                eprintln!("{}: its functions sum to {} instructions, Valgrind's total is {instructions}", scenario.name, functions::total(&counts));
+            }
+            functions::list(scenario.name, commit, &counts)
+        }
+        Err(why) => {
+            eprintln!("{}: no list of its functions: {why}", scenario.name);
+            functions::list_without_counts(scenario.name, commit, &why)
+        }
+    }
+}
+
 /// Runs one scenario under Valgrind, which counts the instructions of
 /// its counted part alone.
 ///
-/// Returns the scenario's rows: its own counts and the instructions.
-fn rows_of(scenario: &Scenario, program: &Path, row: &dyn Fn(&str, &str, u64) -> Row) -> Result<Vec<Row>, String> {
+/// Returns the scenario's rows (its own counts and the instructions)
+/// and the text of its list of instructions by function.
+fn rows_of(scenario: &Scenario, program: &Path, commit: &str, row: &dyn Fn(&str, &str, u64) -> Row) -> Result<(Vec<Row>, String), String> {
     let callgrind_file: PathBuf = std::env::temp_dir().join(format!("storvald-perf-{}.callgrind", scenario.name));
     let valgrind = Command::new("valgrind")
         .arg("--tool=callgrind")
@@ -127,11 +155,12 @@ fn rows_of(scenario: &Scenario, program: &Path, row: &dyn Fn(&str, &str, u64) ->
         return Err(format!("valgrind counted no instruction in {}: it did not find `{MEASURED_SYMBOL}` in the program", scenario.name));
     }
     rows.push(row(scenario.name, INSTRUCTIONS, instructions));
-    Ok(rows)
+    Ok((rows, function_list(scenario, commit, &callgrind_file, instructions)))
 }
 
 fn record(args: &[String]) -> Result<(), String> {
     let (history_file, page_file): (&str, &str) = (flag(args, "history")?, flag(args, "page")?);
+    let functions_directory: &Path = Path::new(flag(args, "functions")?);
     let (date, commit, rustc, machine): (&str, &str, &str, &str) = (flag(args, "date")?, flag(args, "commit")?, flag(args, "rustc")?, flag(args, "machine")?);
     let row = |scenario: &str, metric: &str, value: u64| -> Row { Row { date: date.to_string(), commit: commit.to_string(), rustc: rustc.to_string(), machine: machine.to_string(), scenario: scenario.to_string(), metric: metric.to_string(), value } };
     let mut rows: Vec<Row> = match std::fs::read_to_string(history_file) {
@@ -140,10 +169,13 @@ fn record(args: &[String]) -> Result<(), String> {
         Err(error) => return Err(format!("{history_file}: {error}")),
     };
     let program: PathBuf = std::env::current_exe().map_err(|error| format!("this program's own path: {error}"))?;
+    std::fs::create_dir_all(functions_directory).map_err(|error| format!("{}: {error}", functions_directory.display()))?;
     for scenario in SCENARIOS {
-        let of_scenario: Vec<Row> = rows_of(scenario, &program, &row)?;
+        let (of_scenario, function_list): (Vec<Row>, String) = rows_of(scenario, &program, commit, &row)?;
         of_scenario.iter().for_each(|row| println!("{} {} {}", row.scenario, row.metric, row.value));
         rows.extend(of_scenario);
+        let list_file: PathBuf = functions_directory.join(format!("{}.txt", scenario.name));
+        std::fs::write(&list_file, function_list).map_err(|error| format!("{}: {error}", list_file.display()))?;
     }
     std::fs::write(history_file, history::csv_from_rows(&rows)).map_err(|error| format!("{history_file}: {error}"))?;
     std::fs::write(page_file, history::page(&rows, SCENARIOS, env!("CARGO_PKG_REPOSITORY"))).map_err(|error| format!("{page_file}: {error}"))?;
@@ -164,5 +196,25 @@ fn check_latest(args: &[String]) -> Result<(), String> {
         return Err(format!("{risen_by_the_code} instruction counts rose against the run before, on the same compiler and machine"));
     }
     println!("no instruction count rose by the code alone");
+    Ok(())
+}
+
+/// Prints the functions whose instructions differ between two lists of
+/// one scenario, largest difference first.
+///
+/// Needed when a scenario's total rose: the two lists are the files
+/// `record` wrote for the run before and for the run that rose.
+fn functions_moved(args: &[String]) -> Result<(), String> {
+    let counts_in = |name: &str| -> Result<Vec<FunctionCount>, String> {
+        let file: &str = flag(args, name)?;
+        let text: String = std::fs::read_to_string(file).map_err(|error| format!("{file}: {error}"))?;
+        functions::counts_from_list(&text).map_err(|why| format!("{file}: {why}"))
+    };
+    let (before, after): (Vec<FunctionCount>, Vec<FunctionCount>) = (counts_in("before")?, counts_in("after")?);
+    let moved: Vec<FunctionMove> = functions::moves(&before, &after);
+    for one in &moved {
+        println!("{:+} {}: {} to {}", one.difference(), one.function, one.before, one.after);
+    }
+    println!("{:+} in all: {} to {}, {} functions differ", functions::total(&after) as i64 - functions::total(&before) as i64, functions::total(&before), functions::total(&after), moved.len());
     Ok(())
 }

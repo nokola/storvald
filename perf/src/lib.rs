@@ -5,11 +5,14 @@
 //! - `counts`: counts of one scenario, and the part of it that is counted.
 //! - `pages`: the three pages' code. Their pictures are in `ui/`.
 //! - `history`: rows kept from run to run, and the page made from them.
+//! - `functions`: a scenario's instructions by function, and the
+//!   functions that differ between two such lists.
 //!
 //! `storvald-perf` (`src/main.rs`) runs them. `tests/expected_counts.rs`
 //! holds every exact count to `expected_counts.txt`.
 
 pub mod counts;
+pub mod functions;
 pub mod history;
 pub mod pages;
 pub mod scenarios;

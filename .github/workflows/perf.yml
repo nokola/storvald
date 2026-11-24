@@ -1,7 +1,8 @@
 # Counts what gogo and TurboDot cost in the measured program (`perf/`), at
 # every push to main and once a day, and keeps the counts on the
-# `perf-data` branch: `history.csv` (a row a number) and `README.md` (the
-# page people read).
+# `perf-data` branch: `history.csv` (a row a number), `README.md` (the
+# page people read) and `functions/` (each scenario's instructions by
+# function, so a count that rose names the function that grew).
 #
 # Needed because a change that makes a page do more work breaks no test,
 # and a time measured on a shared machine swings by more than the changes
@@ -60,13 +61,14 @@ jobs:
         run: |
           target/release/storvald-perf record \
             --history ../perf-data/history.csv --page ../perf-data/README.md \
+            --functions ../perf-data/functions \
             --date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --commit "$GITHUB_SHA" \
             --rustc "$(rustc --version | cut -d ' ' -f 2)" \
             --machine "github-$ImageOS"
       - name: Keep the counts
         run: |
           cd ../perf-data
-          git add history.csv README.md
+          git add history.csv README.md functions
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit --quiet -m "Counts of ${GITHUB_SHA:0:7}"
           git push origin HEAD:refs/heads/perf-data
       - name: Fail when the code made an instruction count rise
