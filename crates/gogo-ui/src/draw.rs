@@ -1696,7 +1696,7 @@ impl DrawCache {
         changed.clear();
         let mut inherited: Vec<NodeId> = std::mem::take(&mut self.inherited);
         inherited.clear();
-        self.look.diff(res, false, &mut changed, Some(&mut inherited));
+        self.look.diff(res, false, &mut changed, Some(&mut inherited), None);
         self.rect_changed.clear();
         self.rect_changed.resize(n, false);
         for i in 0..n {
