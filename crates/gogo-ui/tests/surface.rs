@@ -471,13 +471,13 @@ fn a_gpu_surface_puts_its_place_in_the_draw_list() {
     assert_eq!(SurfaceDraw::of(&fx.page, world.node()), Some(SurfaceDraw::Gpu));
     fx.frame(400.0, 800.0);
     let marks: Vec<&Draw> = fx.draws.iter().filter(|d| matches!(d, Draw::GpuSurface { .. })).collect();
-    assert_eq!(marks, [&Draw::GpuSurface { rect: Rect::new(20.0, 30.0, 200.0, 100.0), surface: world.node(), alpha: 0.5, has_depth: false }], "one place: a Surface that does not show has none");
+    assert_eq!(marks, [&Draw::GpuSurface { rect: Rect::new(20.0, 30.0, 200.0, 100.0), surface: world.node(), alpha: 0.5 }], "one place: a Surface that does not show has none");
     let at: usize = fx.draws.iter().position(|d| matches!(d, Draw::GpuSurface { .. })).unwrap();
     assert!(matches!(fx.draws[at - 1], Draw::Quad { .. }) && matches!(fx.draws[at + 1], Draw::Text { .. }), "over what comes before it, under what comes after: {:?}", fx.draws);
     // gogo asks for no commands of it: the code draws when the frame is drawn.
     assert_eq!(fx.rt.next_surface_to_draw(), None);
     // The place moves and fades with a page that slides.
-    assert_eq!(fx.draws[at].posed(10.0, -5.0, 0.5), Draw::GpuSurface { rect: Rect::new(30.0, 25.0, 200.0, 100.0), surface: world.node(), alpha: 0.25, has_depth: false });
+    assert_eq!(fx.draws[at].posed(10.0, -5.0, 0.5), Draw::GpuSurface { rect: Rect::new(30.0, 25.0, 200.0, 100.0), surface: world.node(), alpha: 0.25 });
 }
 
 /// The build writes a `draw=gpu` Surface's name as a `GpuSurface`.
@@ -507,8 +507,17 @@ fn depth_belongs_to_a_gpu_surface() {
     }
     let on_a_shape: String = message("View v { Rectangle r 10x10, depth=true, color=#FF0000FF }", "G2002");
     assert!(on_a_shape.contains("`depth=` gives the program's own draw calls a depth buffer") && on_a_shape.contains("`Surface draw=gpu`"), "{on_a_shape}");
-    // True or false, and no other word.
-    assert_eq!(codes("View v { Surface world draw=gpu, depth=maybe, width=10, height=10 }"), ["G0078"]);
+}
+
+/// `depth=` is written out, `true` or `false`: the build reads it off the
+/// Surface's line. Another word, a name or a row's field is an error.
+#[test]
+fn depth_is_written_out() {
+    for value in ["maybe", "$deep", "1"] {
+        let src = format!("$deep = true\nView v {{ Surface world draw=gpu, depth={value}, width=10, height=10 }}");
+        assert_eq!(codes(&src), ["G7018"], "{src}");
+        assert!(message(&src, "G7018").contains("written out as `true` or `false`"), "{src}");
+    }
 }
 
 /// Whether the program has a depth buffer is fixed when the program is
@@ -521,24 +530,16 @@ fn depth_is_written_on_the_surface_s_own_line() {
     assert!(message(src, "G7018").contains("fixed when the program is built"));
 }
 
-/// The place of a `draw=gpu` Surface in the draw list says whether the
-/// Surface has depth, so a renderer knows without reading the page.
+/// A page says of each node whether it is a Surface with `depth=true`:
+/// what a renderer asks where it meets the Surface's place in a draw
+/// list. The draw list itself carries no word of it.
 #[test]
-fn the_place_in_the_draw_list_says_whether_the_surface_has_depth() {
-    let mut fx = Fx::new("View v { Layers l width=fill, height=fill {\n Surface world draw=gpu, depth=true, width=fill, height=fill\n Surface flat draw=gpu, width=50, height=50, halign=left, valign=top\n Surface off draw=gpu, depth=false, width=50, height=50, halign=right, valign=top\n} }");
-    fx.frame(400.0, 800.0);
-    let depths: Vec<(NodeId, bool)> = fx
-        .draws
-        .iter()
-        .filter_map(|d| match d {
-            Draw::GpuSurface { surface, has_depth, .. } => Some((*surface, *has_depth)),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(depths, [(fx.id("world"), true), (fx.id("flat"), false), (fx.id("off"), false)]);
-    // A page that slides keeps it.
-    let world: usize = fx.draws.iter().position(|d| matches!(d, Draw::GpuSurface { has_depth: true, .. })).unwrap();
-    assert!(matches!(fx.draws[world].posed(10.0, 0.0, 0.5), Draw::GpuSurface { has_depth: true, .. }));
+fn a_page_says_which_surface_has_depth() {
+    let fx = Fx::new("View v { Layers l width=fill, height=fill {\n Surface world draw=gpu, depth=true, width=fill, height=fill\n Surface flat draw=gpu, width=50, height=50, halign=left, valign=top\n Surface off draw=gpu, depth=false, width=50, height=50, halign=right, valign=top\n} }");
+    assert!(fx.page.is_depth_surface(fx.id("world")));
+    assert!(!fx.page.is_depth_surface(fx.id("flat")));
+    assert!(!fx.page.is_depth_surface(fx.id("off")));
+    assert!(!fx.page.is_depth_surface(fx.id("l")), "a node that is no Surface");
 }
 
 /// A page says whether any of its Surfaces has depth: what a build asks

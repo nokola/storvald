@@ -1411,7 +1411,8 @@ A `ListItem` takes these less `valign`, `aspect`, `overlay`.
   **`Draw::GpuSurface`** marks a `draw=gpu` one's.
 - **`depth=true`** on a `draw=gpu` Surface is per build: `build_pages`
   writes `HAS_DEPTH_SURFACE`, and a host makes its renderer and its pass
-  with a depth buffer only when it is true. gogo's pipelines then name
+  with a depth buffer only when it is true. The draw list carries no
+  word of it: a renderer asks the page (`Page::is_depth_surface`). gogo's pipelines then name
   the depth format and leave depth alone (no write, compare `Always`).
   Before the draw calls of a `depth=true` Surface that is not the first
   code to draw in the frame, the renderer writes depth 1.0 over the part

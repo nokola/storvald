@@ -173,7 +173,16 @@ impl Page {
     /// buffer: one such Surface in any page, and every frame has one
     /// (`build_pages` writes `HAS_DEPTH_SURFACE`).
     pub fn has_depth_surface(&self) -> bool {
-        (0..self.nodes.len()).any(|index| self.nodes[index].kind == Kind::Surface && self.prop(NodeId::from_index(index), PropKey::Depth) == Some(Value::VBool(true)))
+        (0..self.nodes.len()).any(|index| self.is_depth_surface(NodeId::from_index(index)))
+    }
+
+    /// True when `node` is a `Surface` whose line says `depth=true`.
+    ///
+    /// Needed by a renderer, where it meets `Draw::GpuSurface`: the
+    /// program's draw calls there test and write depth. The file's line
+    /// alone says it, so the page is asked and no frame's state.
+    pub fn is_depth_surface(&self, node: NodeId) -> bool {
+        self.nodes.get(node.index()).is_some_and(|n| n.kind == Kind::Surface) && self.prop(node, PropKey::Depth) == Some(Value::VBool(true))
     }
 
     /// The kept list of `surface`, if code wrote one.

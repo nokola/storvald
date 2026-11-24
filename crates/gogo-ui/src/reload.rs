@@ -40,7 +40,7 @@ use std::cell::RefCell;
 use crate::compile::{BuiltNumbers, CompileOptions, Loader, compile_keeping_numbers};
 use crate::diag::{Diagnostic, Severity, has_errors};
 use crate::locale::Keys;
-use crate::page::{AtlasDecl, AtlasShape, BehaviorSpec, ImageKey, ImageSlice, Images, Kind, NodeId, Page, PropKey, StaticPage, Value};
+use crate::page::{AtlasDecl, AtlasShape, BehaviorSpec, ImageKey, ImageSlice, Images, Kind, NodeId, Page, StaticPage};
 use crate::runtime::Runtime;
 
 /// Everything a reload needs to know about the build an app was made
@@ -265,8 +265,7 @@ pub(crate) fn first_changed_node(old: &Page, new: &Page, from: usize, to: usize)
                     return Some(ShapeChange::Draw { name: old_name.to_string(), old: old_draw, new: new_draw });
                 }
             }
-            let says_depth = |page: &Page| page.prop(node, PropKey::Depth) == Some(Value::VBool(true));
-            if says_depth(old) != says_depth(new) {
+            if old.is_depth_surface(node) != new.is_depth_surface(node) {
                 return Some(ShapeChange::Depth { name: old_name.to_string() });
             }
         }

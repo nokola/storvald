@@ -1671,7 +1671,8 @@ View main {
   buffer EVERY pipeline drawn in a `draw=gpu` Surface names that format,
   also in a Surface without `depth=true`: the GPU refuses a pipeline
   with no depth format in a pass that has a depth buffer. Written on the
-  Surface's own line only, never in a `when` (G7018). No stencil, and
+  Surface's own line only, as `true` or `false`, never in a `when` and
+  never from a name or a row's field (G7018). No stencil, and
   no smoothing of edges for the whole pass (MSAA): a world that needs
   them draws into a texture of its own and shows it with
   `draw=picture`.
@@ -2959,8 +2960,8 @@ glide freezes mid-flight until the next input.
 | `rt.surface_changed(&mut page, surface)` | Says what a `draw=commands` Surface shows is out of date: the next frame asks for its commands again. |
 | `page.surface_commands(node)` | A Surface's commands as written last. A renderer reads them where it meets `Draw::Surface { rect, surface, alpha }` in a draw list, and draws each moved by the rect's corner and faded by `alpha` (`Draw::posed`). `gogo-wgpu` does. |
 | `PictureSurface::find(&page, name)`, `CommandSurface::find`, `GpuSurface::find` | A Surface of a page compiled while the program runs, by its name and its `draw=`. A built page has its Surfaces in `NAMES`. |
-| `Draw::GpuSurface { rect, surface, alpha, has_depth }` | The place of a `Surface draw=gpu` in a draw list. A renderer makes the program's own draw calls there. `gogo-wgpu`: `UiRenderer::render_with(&mut pass, &mut \|place, pass\| ..)` calls the host once for each, with the viewport and the scissor set (`SurfacePlace`: `rect_px`, `visible_px`, `epx`, `opacity`, `target_format`, `depth_format`, `has_depth`, `is_of(&page)`); plain `render` is for a host with no such Surface. |
-| `ui::HAS_DEPTH_SURFACE`, `page.has_depth_surface()` | Whether a `Surface` of the build (of one page) says `depth=true`. `gogo-wgpu`: a host hands `UiRenderer::new(&device, target_format, depth_format)` its depth buffer's format when the constant is true and `None` when it is false, and gives its pass a depth buffer of that format, cleared to 1.0 when the pass starts. TurboDot does both by itself (`turbodot::DEPTH_FORMAT`, 32-bit float). |
+| `Draw::GpuSurface { rect, surface, alpha }` | The place of a `Surface draw=gpu` in a draw list. A renderer makes the program's own draw calls there. `gogo-wgpu`: `UiRenderer::render_with(&mut pass, &mut \|place, pass\| ..)` calls the host once for each, with the viewport and the scissor set (`SurfacePlace`: `rect_px`, `visible_px`, `epx`, `opacity`, `target_format`, `depth_format`, `has_depth`, `is_of(&page)`); plain `render` is for a host with no such Surface. |
+| `ui::HAS_DEPTH_SURFACE`, `page.has_depth_surface()`, `page.is_depth_surface(node)` | Whether a `Surface` of the build (of one page; this node) says `depth=true`. `gogo-wgpu`: a host hands `UiRenderer::new(&device, target_format, depth_format)` its depth buffer's format when the constant is true and `None` when it is false, and gives its pass a depth buffer of that format, cleared to 1.0 when the pass starts. TurboDot does both by itself (`turbodot::DEPTH_FORMAT`, 32-bit float). |
 | `reload::Reloader` (`open`, `refresh`), `reload::Sources` | Hot reload (below). |
 
 Options the compiler takes from the host (`CompileOptions`): `behaviors`

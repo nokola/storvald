@@ -38,6 +38,7 @@ fn device() -> (wgpu::Device, wgpu::Queue) {
 }
 
 /// A page with three `Surface draw=gpu`, and their nodes in file order.
+/// The first two say `depth=true`; the third does not.
 fn page_with_gpu_surfaces() -> (Page, [NodeId; 3]) {
     let compiled = compile("View v { Layers l width=fill, height=fill {\n Surface first draw=gpu, depth=true, width=10, height=10\n Surface second draw=gpu, depth=true, width=10, height=10\n Surface third draw=gpu, width=10, height=10\n} }", &|_| None);
     assert!(!has_errors(&compiled.diags), "{:#?}", compiled.diags);
@@ -154,7 +155,7 @@ fn code_tests_depth_in_its_surface_and_gogo_draws_in_paint_order() {
     let draws: Vec<Draw> = vec![
         // In epx; a device pixel is half of one. Under the Surface's left part.
         quad(Rect::new(10.0, 10.0, 20.0, 20.0)),
-        Draw::GpuSurface { rect: Rect::new(10.0, 10.0, 60.0, 40.0), surface: first, alpha: 1.0, has_depth: true },
+        Draw::GpuSurface { rect: Rect::new(10.0, 10.0, 60.0, 40.0), surface: first, alpha: 1.0 },
         // Over the Surface's right part.
         quad(Rect::new(50.0, 10.0, 20.0, 20.0)),
     ];
@@ -190,13 +191,13 @@ fn a_later_depth_surface_finds_its_own_part_of_the_depth_cleared() {
     let (page, [first, second, third]) = page_with_gpu_surfaces();
     let draws: Vec<Draw> = vec![
         // Device pixels 20..140 by 20..100.
-        Draw::GpuSurface { rect: Rect::new(10.0, 10.0, 60.0, 40.0), surface: first, alpha: 1.0, has_depth: true },
+        Draw::GpuSurface { rect: Rect::new(10.0, 10.0, 60.0, 40.0), surface: first, alpha: 1.0 },
         // Device pixels 100..140 by 20..100, of which a clip keeps 100..120.
         Draw::ClipPush(Rect::new(50.0, 10.0, 10.0, 40.0)),
-        Draw::GpuSurface { rect: Rect::new(50.0, 10.0, 20.0, 40.0), surface: second, alpha: 1.0, has_depth: true },
+        Draw::GpuSurface { rect: Rect::new(50.0, 10.0, 20.0, 40.0), surface: second, alpha: 1.0 },
         Draw::ClipPop,
         // Over the first one again, with no `depth=true`.
-        Draw::GpuSurface { rect: Rect::new(10.0, 10.0, 60.0, 40.0), surface: third, alpha: 1.0, has_depth: false },
+        Draw::GpuSurface { rect: Rect::new(10.0, 10.0, 60.0, 40.0), surface: third, alpha: 1.0 },
     ];
     let (device, queue) = device();
     let (near, far, middle) = (fill_at_depth(&device, 0.1, GREEN), fill_at_depth(&device, 0.9, BLUE), fill_at_depth(&device, 0.5, RED));
@@ -228,8 +229,8 @@ fn a_later_depth_surface_finds_its_own_part_of_the_depth_cleared() {
 fn a_second_depth_surface_does_not_see_the_first_one_s_depth() {
     let (page, [first, second, _]) = page_with_gpu_surfaces();
     let draws: Vec<Draw> = vec![
-        Draw::GpuSurface { rect: Rect::new(10.0, 10.0, 60.0, 40.0), surface: first, alpha: 1.0, has_depth: true },
-        Draw::GpuSurface { rect: Rect::new(50.0, 10.0, 20.0, 40.0), surface: second, alpha: 1.0, has_depth: true },
+        Draw::GpuSurface { rect: Rect::new(10.0, 10.0, 60.0, 40.0), surface: first, alpha: 1.0 },
+        Draw::GpuSurface { rect: Rect::new(50.0, 10.0, 20.0, 40.0), surface: second, alpha: 1.0 },
     ];
     let (device, queue) = device();
     let (near, far) = (fill_at_depth(&device, 0.1, GREEN), fill_at_depth(&device, 0.9, BLUE));
@@ -249,8 +250,8 @@ fn a_second_depth_surface_does_not_see_the_first_one_s_depth() {
 fn the_clear_before_a_later_depth_surface_writes_no_color() {
     let (page, [first, second, _]) = page_with_gpu_surfaces();
     let draws: Vec<Draw> = vec![
-        Draw::GpuSurface { rect: Rect::new(10.0, 10.0, 60.0, 40.0), surface: first, alpha: 1.0, has_depth: true },
-        Draw::GpuSurface { rect: Rect::new(50.0, 10.0, 20.0, 40.0), surface: second, alpha: 1.0, has_depth: true },
+        Draw::GpuSurface { rect: Rect::new(10.0, 10.0, 60.0, 40.0), surface: first, alpha: 1.0 },
+        Draw::GpuSurface { rect: Rect::new(50.0, 10.0, 20.0, 40.0), surface: second, alpha: 1.0 },
     ];
     let (device, queue) = device();
     let near = fill_at_depth(&device, 0.1, GREEN);
@@ -271,7 +272,7 @@ fn the_clear_before_a_later_depth_surface_writes_no_color() {
 #[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
 fn a_renderer_with_no_depth_format_hands_out_places_with_none() {
     let (page, [_, _, third]) = page_with_gpu_surfaces();
-    let draws: Vec<Draw> = vec![Draw::GpuSurface { rect: Rect::new(10.0, 10.0, 60.0, 40.0), surface: third, alpha: 1.0, has_depth: false }];
+    let draws: Vec<Draw> = vec![Draw::GpuSurface { rect: Rect::new(10.0, 10.0, 60.0, 40.0), surface: third, alpha: 1.0 }];
     let (device, queue) = device();
     let ui: UiRenderer = UiRenderer::new(&device, FORMAT, None);
     assert_eq!(ui.depth_format(), None);
@@ -288,7 +289,7 @@ fn a_renderer_with_no_depth_format_hands_out_places_with_none() {
 #[cfg_attr(debug_assertions, should_panic(expected = "Surface `first` says `depth=true`, and this renderer was made for a pass with no depth buffer"))]
 fn a_depth_surface_in_a_pass_with_no_depth_buffer_stops_a_debug_build() {
     let (page, [first, _, _]) = page_with_gpu_surfaces();
-    let draws: Vec<Draw> = vec![Draw::GpuSurface { rect: Rect::new(10.0, 10.0, 60.0, 40.0), surface: first, alpha: 1.0, has_depth: true }];
+    let draws: Vec<Draw> = vec![Draw::GpuSurface { rect: Rect::new(10.0, 10.0, 60.0, 40.0), surface: first, alpha: 1.0 }];
     let (device, queue) = device();
     // A release build goes on and tells the code that it has no depth.
     assert_eq!(places_without_depth(&device, &queue, &draws, &page), [(None, false)]);

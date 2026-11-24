@@ -76,17 +76,17 @@ fn a_gpu_surface_is_handed_its_rectangle_and_the_part_that_shows() {
     let draws: Vec<Draw> = vec![
         quad(Rect::new(0.0, 0.0, 100.0, 80.0)),
         // Whole inside the target.
-        Draw::GpuSurface { rect: Rect::new(10.0, 20.0, 30.0, 40.0), surface: node, alpha: 0.5, has_depth: false },
+        Draw::GpuSurface { rect: Rect::new(10.0, 20.0, 30.0, 40.0), surface: node, alpha: 0.5 },
         // Past the target's left and top edge: a page that slides in.
-        Draw::GpuSurface { rect: Rect::new(-20.0, -5.0, 50.0, 30.0), surface: node, alpha: 1.0, has_depth: false },
+        Draw::GpuSurface { rect: Rect::new(-20.0, -5.0, 50.0, 30.0), surface: node, alpha: 1.0 },
         // Inside a clip that cuts its right half.
         Draw::ClipPush(Rect::new(40.0, 0.0, 20.0, 80.0)),
-        Draw::GpuSurface { rect: Rect::new(50.0, 10.0, 20.0, 20.0), surface: node, alpha: 1.0, has_depth: false },
+        Draw::GpuSurface { rect: Rect::new(50.0, 10.0, 20.0, 20.0), surface: node, alpha: 1.0 },
         // Inside the same clip, and wholly outside it: not drawn.
-        Draw::GpuSurface { rect: Rect::new(70.0, 10.0, 20.0, 20.0), surface: node, alpha: 1.0, has_depth: false },
+        Draw::GpuSurface { rect: Rect::new(70.0, 10.0, 20.0, 20.0), surface: node, alpha: 1.0 },
         Draw::ClipPop,
         // Wholly past the target's right edge: not drawn.
-        Draw::GpuSurface { rect: Rect::new(120.0, 10.0, 20.0, 20.0), surface: node, alpha: 1.0, has_depth: false },
+        Draw::GpuSurface { rect: Rect::new(120.0, 10.0, 20.0, 20.0), surface: node, alpha: 1.0 },
         quad(Rect::new(0.0, 0.0, 10.0, 10.0)),
     ];
     let places: Vec<SurfacePlace> = places_of(&draws, &page);
@@ -109,7 +109,7 @@ fn a_gpu_surface_is_handed_its_rectangle_and_the_part_that_shows() {
 #[cfg_attr(debug_assertions, should_panic(expected = "call `render_with`"))]
 fn render_without_the_surfaces_draw_calls_stops_a_debug_build() {
     let (page, surface) = page_with_a_gpu_surface();
-    let draws: Vec<Draw> = vec![Draw::GpuSurface { rect: Rect::new(10.0, 20.0, 30.0, 40.0), surface: surface.node(), alpha: 1.0, has_depth: false }];
+    let draws: Vec<Draw> = vec![Draw::GpuSurface { rect: Rect::new(10.0, 20.0, 30.0, 40.0), surface: surface.node(), alpha: 1.0 }];
     let (device, queue) = device();
     let mut ui: UiRenderer = UiRenderer::new(&device, FORMAT, None);
     let mut text: TextEngine = TextEngine::new(&[]);
@@ -136,7 +136,7 @@ fn render_without_the_surfaces_draw_calls_stops_a_debug_build() {
 #[cfg_attr(debug_assertions, should_panic(expected = "Surface `world` is `draw=gpu` and is turned"))]
 fn a_turned_gpu_surface_stops_a_debug_build() {
     let (page, surface) = page_with_a_gpu_surface();
-    let draws: Vec<Draw> = vec![Draw::RotatePush { angle: 30.0, cx: 50.0, cy: 40.0 }, Draw::GpuSurface { rect: Rect::new(10.0, 20.0, 30.0, 40.0), surface: surface.node(), alpha: 1.0, has_depth: false }, Draw::RotatePop];
+    let draws: Vec<Draw> = vec![Draw::RotatePush { angle: 30.0, cx: 50.0, cy: 40.0 }, Draw::GpuSurface { rect: Rect::new(10.0, 20.0, 30.0, 40.0), surface: surface.node(), alpha: 1.0 }, Draw::RotatePop];
     places_of(&draws, &page);
 }
 
@@ -174,10 +174,10 @@ fn code_draws_in_a_viewport_on_its_surface() {
         // pipeline is set when the code's calls start.
         quad(Rect::new(0.0, 0.0, 2.0, 2.0)),
         // In epx; a device pixel is half of one.
-        Draw::GpuSurface { rect: Rect::new(10.0, 10.0, 30.0, 20.0), surface: node, alpha: 1.0, has_depth: false },
+        Draw::GpuSurface { rect: Rect::new(10.0, 10.0, 30.0, 20.0), surface: node, alpha: 1.0 },
         // A clip that keeps the left quarter of the second Surface.
         Draw::ClipPush(Rect::new(50.0, 40.0, 10.0, 30.0)),
-        Draw::GpuSurface { rect: Rect::new(50.0, 40.0, 40.0, 30.0), surface: node, alpha: 1.0, has_depth: false },
+        Draw::GpuSurface { rect: Rect::new(50.0, 40.0, 40.0, 30.0), surface: node, alpha: 1.0 },
         Draw::ClipPop,
         // A quad of the page over the first Surface's top left corner.
         quad(Rect::new(10.0, 10.0, 5.0, 5.0)),

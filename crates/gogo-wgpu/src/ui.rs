@@ -1159,8 +1159,11 @@ impl UiRenderer {
                     let y = r[1] + (r[3] - h) / 2.0;
                     self.push_quad(current, Quad { rect: [x, y, (1.5 * epx).max(1.0), h], color: color.to_f32(), border_color: [0.0; 4], params: [0.0, 0.0, KIND_RECT, 0.0], uv: NO_UV, rot, wedge, swing, eye });
                 }
-                Draw::GpuSurface { rect, surface, alpha, has_depth } => {
-                    debug_assert!(!*has_depth || self.depth_format.is_some(), "Surface `{}` says `depth=true`, and this renderer was made for a pass with no depth buffer: hand `UiRenderer::new` the depth format when the build's `HAS_DEPTH_SURFACE` is true, and give the pass a depth buffer of that format", page.str(page.nodes[*surface].name));
+                Draw::GpuSurface { rect, surface, alpha } => {
+                    // The file's line alone says `depth=true`, so the
+                    // page knows it.
+                    let has_depth: bool = page.is_depth_surface(*surface);
+                    debug_assert!(!has_depth || self.depth_format.is_some(), "Surface `{}` says `depth=true`, and this renderer was made for a pass with no depth buffer: hand `UiRenderer::new` the depth format when the build's `HAS_DEPTH_SURFACE` is true, and give the pass a depth buffer of that format", page.str(page.nodes[*surface].name));
                     // The program's own draw calls run here, between what
                     // was drawn before and what comes after: a batch of
                     // no quads marks the place.
@@ -1181,7 +1184,7 @@ impl UiRenderer {
                     let bottom: f32 = (r[1] + r[3]).min(clip_bottom).min(screen.1 as f32).ceil();
                     let is_viewport_legal: bool = r[2] <= self.max_viewport_px && r[3] <= self.max_viewport_px;
                     if right > left && bottom > top && is_viewport_legal {
-                        self.gpu_places.push(SurfacePlace { page: page as *const Page as usize, surface: *surface, rect_px: r, visible_px: [left as u32, top as u32, (right - left) as u32, (bottom - top) as u32], epx, opacity: *alpha, target_format: self.target_format, depth_format: self.depth_format, has_depth: *has_depth && self.depth_format.is_some() });
+                        self.gpu_places.push(SurfacePlace { page: page as *const Page as usize, surface: *surface, rect_px: r, visible_px: [left as u32, top as u32, (right - left) as u32, (bottom - top) as u32], epx, opacity: *alpha, target_format: self.target_format, depth_format: self.depth_format, has_depth: has_depth && self.depth_format.is_some() });
                         self.batches.push(Batch { first: batch_first, count: 0, scissor: current, tex: ATLAS, pixel: false, plain: false, gpu_surface: Some((self.gpu_places.len() - 1) as u32) });
                     }
                 }

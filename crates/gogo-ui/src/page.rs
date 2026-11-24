@@ -950,9 +950,14 @@ pub enum PropKey {
     /// gives the Surface's name a type by it.
     Draw,
     /// `depth=true` on a `draw=gpu` Surface: the program's draw calls
-    /// there test and write depth. The file's line alone writes it: one
-    /// such Surface in a build gives every frame of the program a depth
-    /// buffer (`Page::has_depth_surface`).
+    /// there test and write depth. The file's line alone writes it,
+    /// written out as `true` or `false`: one such Surface in a build
+    /// gives every frame of the program a depth buffer
+    /// (`Page::has_depth_surface`).
+    ///
+    /// Not among the true-or-false words of `is_bool`: that function is
+    /// asked for each field of each row a list fills, and no row and no
+    /// `when` feeds this word. The compiler checks its value itself.
     Depth,
     Other(StrId),
 }
@@ -1097,7 +1102,7 @@ impl PropKey {
     /// Keys that are true or false: `overlay=maybe` is refused (G0078)
     /// where it would read as "not an overlay" with a clean build.
     pub fn is_bool(self) -> bool {
-        matches!(self, PropKey::Overlay | PropKey::Interactive | PropKey::Wrap | PropKey::ClipText | PropKey::ClipContents | PropKey::Disabled | PropKey::SelectedProp | PropKey::FullRow | PropKey::ToggleMode | PropKey::Depth)
+        matches!(self, PropKey::Overlay | PropKey::Interactive | PropKey::Wrap | PropKey::ClipText | PropKey::ClipContents | PropKey::Disabled | PropKey::SelectedProp | PropKey::FullRow | PropKey::ToggleMode)
     }
 
     /// The words a word key takes, when the set is closed (`halign=`,
@@ -1135,6 +1140,13 @@ impl PropKey {
 
     /// The word a key is written as (`PropKey::FontColor` → `font_color`);
     /// `Other` has no fixed spelling and gives "".
+    ///
+    /// Needed out of line, never folded into its caller: only messages
+    /// call it, and they sit in functions that run for each row of a
+    /// list (`runtime::item_fits`). Folded in, it changed those
+    /// functions' code each time the table of words grew by one.
+    #[cold]
+    #[inline(never)]
     pub fn word(self) -> &'static str {
         WORDS.iter().find(|(_, k)| *k == self).map_or("", |(w, _)| *w)
     }

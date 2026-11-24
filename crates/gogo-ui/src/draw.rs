@@ -139,9 +139,8 @@ pub enum Draw {
     /// GPU draw calls run here, between what was drawn before and what
     /// comes after, with the viewport on `rect` and the scissor on the
     /// part of it that shows. `alpha`: how see-through the Surface is;
-    /// the code applies it if it wants. `has_depth`: the file says
-    /// `depth=true`, so the draw calls test and write depth.
-    GpuSurface { rect: Rect, surface: NodeId, alpha: f32, has_depth: bool },
+    /// the code applies it if it wants.
+    GpuSurface { rect: Rect, surface: NodeId, alpha: f32 },
 }
 
 impl Draw {
@@ -174,7 +173,7 @@ impl Draw {
             Draw::SwingPush { angle, pivot_x, cx, cy, focal } => Draw::SwingPush { angle: *angle, pivot_x: pivot_x + dx, cx: cx + dx, cy: cy + dy, focal: *focal },
             Draw::SwingPop => Draw::SwingPop,
             Draw::Surface { rect, surface, alpha: own } => Draw::Surface { rect: mv(rect), surface: *surface, alpha: own * alpha },
-            Draw::GpuSurface { rect, surface, alpha: own, has_depth } => Draw::GpuSurface { rect: mv(rect), surface: *surface, alpha: own * alpha, has_depth: *has_depth },
+            Draw::GpuSurface { rect, surface, alpha: own } => Draw::GpuSurface { rect: mv(rect), surface: *surface, alpha: own * alpha },
         }
     }
 
@@ -985,7 +984,7 @@ fn walk(page: &Page, res: &Resolved, rects: &[Rect], id: NodeId, opacity: f32, s
         // when the frame is drawn (`Draw::GpuSurface`).
         Kind::Surface if res.ident(page, id, PropKey::Draw) == Some("gpu") => {
             if rect.w > 0.0 && rect.h > 0.0 && opacity > 0.0 {
-                out.push(Draw::GpuSurface { rect, surface: id, alpha: opacity, has_depth: res.bool(page, id, PropKey::Depth).unwrap_or(false) });
+                out.push(Draw::GpuSurface { rect, surface: id, alpha: opacity });
             }
         }
         // A `draw=picture` Surface shows the picture code handed it

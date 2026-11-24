@@ -1565,13 +1565,15 @@ View page {
 }
 ```
 
-## G7018 — `depth=` in a `when`
+## G7018 — `depth=` in a `when`, or not written out
 
 One `Surface` that says `depth=true` gives every frame of the program a
 depth buffer, and a program with none never makes one. So whether there
 is one is fixed when the program is built: the renderer's pipelines are
 made for it at start. A `when` changes a word while the program runs,
-which is too late.
+which is too late. For the same reason the word is written out as `true`
+or `false`: a name (`depth=$deep`) or a row's field is refused with this
+code too.
 
 Wrong:
 

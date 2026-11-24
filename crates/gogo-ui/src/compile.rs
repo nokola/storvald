@@ -5839,6 +5839,13 @@ impl<'a> Compiler<'a> {
             if draw.is_none() && !n.props.iter().any(|p| p.key == "draw") {
                 self.error("G7015", n.line, "a Surface says how the program's code fills it — write `draw=picture` (code hands over one picture), `draw=commands` (code writes gogo draw commands) or `draw=gpu` (code makes its own GPU draw calls); there is no default");
             }
+            // `depth=` is written out: the build reads it off the line to
+            // know whether the program has a depth buffer.
+            if let Some(depth) = tmp.props.iter().rev().find(|pr| pr.key == PropKey::Depth) {
+                if !matches!(depth.value, Value::VBool(_)) {
+                    self.error("G7018", n.line, "`depth=` is written out as `true` or `false` — whether the program has a depth buffer is fixed when the program is built, so no name and no row's field can say it");
+                }
+            }
             for (key, of) in [(PropKey::Fit, crate::surface::SurfaceDraw::Picture), (PropKey::Window, crate::surface::SurfaceDraw::Picture), (PropKey::Sampling, crate::surface::SurfaceDraw::Picture), (PropKey::ClipContents, crate::surface::SurfaceDraw::Commands), (PropKey::Depth, crate::surface::SurfaceDraw::Gpu)] {
                 if let (Some(draw), true) = (draw, tmp.props.iter().any(|pr| pr.key == key)) {
                     if draw != of {
