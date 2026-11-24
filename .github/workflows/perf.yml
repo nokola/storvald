@@ -51,13 +51,17 @@ jobs:
             git checkout --orphan perf-data
             git rm -rf --quiet .
           fi
+      # The machine's name holds its system and not the image's build
+      # number: two builds of one image are in use at once, counted the
+      # same, and a name that changed at every run would excuse every
+      # moved number.
       - name: Count
         run: |
           target/release/storvald-perf record \
             --history ../perf-data/history.csv --page ../perf-data/README.md \
             --date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --commit "$GITHUB_SHA" \
             --rustc "$(rustc --version | cut -d ' ' -f 2)" \
-            --machine "github-$ImageOS-$ImageVersion"
+            --machine "github-$ImageOS"
       - name: Keep the counts
         run: |
           cd ../perf-data
