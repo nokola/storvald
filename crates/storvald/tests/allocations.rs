@@ -29,7 +29,8 @@ fn frame(program: &mut Program<AppState>) {
 }
 
 /// Still pages allocate nothing: not a frame, not a mouse move inside one
-/// row or onto another, not a frame while a page slides in or out.
+/// row or onto another, not a frame while a page slides in or out, and
+/// not a page that leaves with the page under it coming back.
 ///
 /// Needed because a program does these most of the time: an allocation
 /// in one repeats every frame, and user sees stutter on a slow phone.
@@ -70,4 +71,33 @@ fn still_pages_a_mouse_move_and_a_slide_allocate_nothing() {
         frame(&mut program);
     }
     assert_eq!(allocations_of(|| frame(&mut program)), 0, "a frame of the page that slid in");
+
+    // About page leaves and skills page comes back from under it: two
+    // anims start in one turn and end. First two times make engine's
+    // and gogo's lists long enough; from then on they allocate nothing,
+    // not at the start of the two anims and not at their end.
+    let leave_and_come_back = |program: &mut Program<AppState>| {
+        assert!(program.back());
+        frame(program);
+        assert!(program.is_page_arriving_or_leaving());
+        while program.is_page_arriving_or_leaving() {
+            frame(program);
+        }
+        frame(program);
+    };
+    for round in 0..2 {
+        leave_and_come_back(&mut program);
+        program.tap(skills_page::NAMES.about_button, 2.0 + round as f64);
+        while program.is_page_arriving_or_leaving() {
+            frame(&mut program);
+        }
+        frame(&mut program);
+    }
+    // Three, none of them an anim's. One is the skills page's own: its
+    // `show` makes the line of text it writes. Two are the about page's,
+    // which is made new at every open: the second time such a page is
+    // resolved and the second time it is drawn, a list of each grows
+    // from nothing. Before, the two anims that start here and the look
+    // worked out for `on:uncover` made dozens more.
+    assert_eq!(allocations_of(|| leave_and_come_back(&mut program)), 3, "a page that leaves, and the page under it that comes back");
 }

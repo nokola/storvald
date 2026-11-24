@@ -281,19 +281,22 @@ impl Channel {
     /// `translate.x`, `scale`, `rotate`, `opacity`, `color.a` → channels
     /// (uniform `scale` = both axes). `modulate.a` is a Godot engine word,
     /// not a gogo one — the compiler names `opacity` as the fix.
-    pub fn parse(word: &str) -> Option<Vec<Channel>> {
+    ///
+    /// Returns a list that is part of the program, not a new one: a play
+    /// asks for every lane of its anim, and must allocate nothing.
+    pub fn parse(word: &str) -> Option<&'static [Channel]> {
         Some(match word {
-            "translate.x" => vec![Channel::TranslateX],
-            "translate.y" => vec![Channel::TranslateY],
-            "scale" => vec![Channel::ScaleX, Channel::ScaleY],
-            "scale.x" => vec![Channel::ScaleX],
-            "scale.y" => vec![Channel::ScaleY],
-            "rotate" => vec![Channel::Rotate],
-            "swing" => vec![Channel::Swing],
-            "opacity" => vec![Channel::Opacity],
-            "color.a" => vec![Channel::ColorA],
-            "reveal_x" => vec![Channel::RevealX],
-            "reveal_y" => vec![Channel::RevealY],
+            "translate.x" => &[Channel::TranslateX],
+            "translate.y" => &[Channel::TranslateY],
+            "scale" => &[Channel::ScaleX, Channel::ScaleY],
+            "scale.x" => &[Channel::ScaleX],
+            "scale.y" => &[Channel::ScaleY],
+            "rotate" => &[Channel::Rotate],
+            "swing" => &[Channel::Swing],
+            "opacity" => &[Channel::Opacity],
+            "color.a" => &[Channel::ColorA],
+            "reveal_x" => &[Channel::RevealX],
+            "reveal_y" => &[Channel::RevealY],
             _ => return None,
         })
     }
@@ -537,12 +540,23 @@ impl Player {
     /// memory): a `%` endpoint on a translate lane is that fraction of
     /// the node's width (x) or height (y); with no layout yet the box is
     /// empty and the endpoint is 0.
+    ///
+    /// `lists_of` is a player that ended. Its four lists are emptied and
+    /// filled for this play, so a play that has such a player makes no
+    /// list anew. Needed because a page slides in and out all day: with
+    /// new lists at every start, each start allocated.
     #[allow(clippy::too_many_arguments)]
-    pub fn new(page: &Page, anim: StrId, layer: &mut [Motion], live: &[Motion], held: &[(NodeId, Channel, f32)], pvals: &mut Vec<(NodeId, PropKey, Value)>, plive: &[(NodeId, PropKey, Value)], pheld: &[(NodeId, PropKey, Value)], variant: StrId, finish: Finish, boxes: &[Rect]) -> Player {
-        let mut tracks: Vec<Track> = Vec::new();
-        let mut ptracks: Vec<PropTrack> = Vec::new();
-        let mut owns = Vec::new();
-        let mut owns_props: Vec<(NodeId, PropKey)> = Vec::new();
+    pub fn new(page: &Page, anim: StrId, layer: &mut [Motion], live: &[Motion], held: &[(NodeId, Channel, f32)], pvals: &mut Vec<(NodeId, PropKey, Value)>, plive: &[(NodeId, PropKey, Value)], pheld: &[(NodeId, PropKey, Value)], variant: StrId, finish: Finish, boxes: &[Rect], lists_of: Option<Player>) -> Player {
+        let (mut tracks, mut ptracks, mut owns, mut owns_props): (Vec<Track>, Vec<PropTrack>, Vec<(NodeId, Channel)>, Vec<(NodeId, PropKey)>) = match lists_of {
+            Some(mut ended) => {
+                ended.tracks.clear();
+                ended.ptracks.clear();
+                ended.owns.clear();
+                ended.owns_props.clear();
+                (ended.tracks, ended.ptracks, ended.owns, ended.owns_props)
+            }
+            None => (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
+        };
         let head = page.anim_heads.iter().find(|h| h.anim == anim);
         for t in page.anims.iter().filter(|t| t.anim == anim) {
             let easing = if t.easing == NO_STR { Easing::LINEAR } else { Easing::parse(page.str(t.easing)).unwrap_or(Easing::LINEAR) };
@@ -576,7 +590,7 @@ impl Player {
                 }
                 continue;
             };
-            for channel in channels {
+            for &channel in channels {
                 let axis: f32 = match channel {
                     Channel::TranslateX => boxes.get(t.node.index()).map(|r| r.w).unwrap_or(0.0),
                     Channel::TranslateY => boxes.get(t.node.index()).map(|r| r.h).unwrap_or(0.0),
@@ -691,6 +705,19 @@ impl Player {
             t.base = base.0;
             t.base_held = base.1;
         }
+    }
+
+    /// The value channel `(node, channel)` had before this play, and
+    /// whether that value was a held end pose. `None`: this player has
+    /// no track on it. `owned_bases` gives the same for every owned
+    /// channel as a new list; this one allocates nothing.
+    pub fn base_of(&self, node: NodeId, channel: Channel) -> Option<(f32, bool)> {
+        self.tracks.iter().find(|t| t.node == node && t.channel == channel).map(|t| (t.base, t.base_held))
+    }
+
+    /// `base_of`, for a prop lane.
+    pub fn base_of_prop(&self, node: NodeId, key: PropKey) -> Option<(Value, bool)> {
+        self.ptracks.iter().find(|t| t.node == node && t.key == key).map(|t| (t.base, t.base_held))
     }
 
     /// `owned_bases`, for the prop lanes.

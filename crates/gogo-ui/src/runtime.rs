@@ -401,6 +401,11 @@ struct AutoGlide {
     shown: f32,
 }
 
+/// How many ended players a runtime keeps for their lists
+/// (`Runtime::spare_players`): more than the anims a page starts in one
+/// turn, and few enough to weigh nothing.
+const SPARE_PLAYERS_KEPT: usize = 8;
+
 pub struct Runtime {
     /// The pose in force (`BASE` = the rest pose); ask `arrangement_is`.
     pub arrangement: ArrangementId,
@@ -553,12 +558,29 @@ pub struct Runtime {
     /// channels (gogo_states.gd `_cancel_state_anim`).
     state_anims: Vec<(NodeId, State, StrId, Vec<(NodeId, Channel, f32, bool)>, Vec<(NodeId, PropKey, Value, bool)>)>,
     /// Anims that ended on their own since the last `take_finished`
-    /// (one entry per player that ran out). Needed because a host
+    /// (one entry per anim that ran out since the last take, however
+    /// many times it did: a page nobody takes the list from keeps a list
+    /// no longer than its anims). Needed because a host
     /// sequencing on an anim's end (Godot's `finished`) otherwise polls
     /// `is_playing` every frame and misses a finish that re-plays the
     /// same frame. `stop()` never reports (WPF Storyboard.Stop skips
     /// Completed).
     finished: Vec<StrId>,
+    /// Players that ended, kept for their lists: the next play empties
+    /// and fills them in place of making new ones (`Player::new`).
+    ///
+    /// Needed so an anim that played before allocates nothing when it
+    /// starts again. At most `SPARE_PLAYERS_KEPT` are kept.
+    spare_players: Vec<Player>,
+    /// `tick`'s list of the players that ended in one call, kept between
+    /// calls for its storage.
+    ended_players: Vec<Player>,
+    /// `play_id`'s copy of what every node shows, kept between plays for
+    /// its storage.
+    play_live: Vec<Motion>,
+    /// `play_hook_on_drawn_nodes`' list of the nodes to play, kept
+    /// between calls for its storage.
+    hook_nodes: Vec<NodeId>,
     /// Per node, what SHOWED after the last resolve: the
     /// composed motion, the node's own opacity and the fill's alpha — the
     /// live value a new play starts from.
@@ -694,6 +716,10 @@ impl Runtime {
             players: Vec::new(),
             state_anims: Vec::new(),
             finished: Vec::new(),
+            spare_players: Vec::new(),
+            ended_players: Vec::new(),
+            play_live: Vec::new(),
+            hook_nodes: Vec::new(),
             pools: Vec::new(),
             arrangement_count: page.arrangements.len(),
             customs: Vec::new(),
@@ -807,6 +833,10 @@ impl Runtime {
             follow_text: _,
             state_anims: _,
             finished: _,
+            spare_players: _,
+            ended_players: _,
+            play_live: _,
+            hook_nodes: _,
             pulses: _,
             glide_start: _,
             glide_node_rules: _,
@@ -1057,7 +1087,11 @@ impl Runtime {
         // layer of the player that owns it, else what the last resolve
         // showed (the ladder). Computed here so a play needs no frame in
         // between to know where it starts.
-        let mut live: Vec<Motion> = self.shown.clone();
+        // The list is kept between plays: no copy of every node's pose
+        // is made anew.
+        let mut live: Vec<Motion> = std::mem::take(&mut self.play_live);
+        live.clear();
+        live.extend_from_slice(&self.shown);
         live.resize(page.nodes.len(), Motion::IDENTITY);
         for p in self.players.iter().filter(|p| !p.stopped) {
             for (node, channel) in &p.owns {
@@ -1101,13 +1135,16 @@ impl Runtime {
                 plive.push((node, key, v));
             }
         }
-        let mut player = Player::new(page, anim, &mut self.motion, &live, &self.held, &mut self.prop_anim, &plive, &self.held_props, self.variant, finish, &self.last_rects);
+        let lists_of: Option<Player> = self.spare_players.pop();
+        let mut player = Player::new(page, anim, &mut self.motion, &live, &self.held, &mut self.prop_anim, &plive, &self.held_props, self.variant, finish, &self.last_rects, lists_of);
+        self.play_live = live;
         // The channels move to the new player; the older ones keep their
         // clocks (a deferred hide still hides on time) and hand over the
         // true base, so `stop(restore)` lands where the FIRST play found
         // the channel. A held end pose on the channel is the new play's
         // base (a standing value the author chose) and is no longer held.
-        for (node, channel) in player.owns.clone() {
+        for at in 0..player.owns.len() {
+            let (node, channel): (NodeId, Channel) = player.owns[at];
             for p in &mut self.players {
                 if let Some(base) = p.hand_over(node, channel) {
                     player.inherit_base(node, channel, base);
@@ -1115,7 +1152,8 @@ impl Runtime {
             }
             self.held.retain(|h| !(h.0 == node && h.1 == channel));
         }
-        for (node, key) in player.owns_props.clone() {
+        for at in 0..player.owns_props.len() {
+            let (node, key): (NodeId, PropKey) = player.owns_props[at];
             for p in &mut self.players {
                 if let Some(base) = p.hand_over_prop(node, key) {
                     player.inherit_base_prop(node, key, base);
@@ -1307,34 +1345,55 @@ impl Runtime {
     /// Plays `hook` of every node page draws. Node that is `gone`,
     /// `space_only`/`hidden`, or under such a node, gets none: its anim
     /// would play unseen.
+    ///
+    /// A page none of whose nodes has the hook costs one walk of its
+    /// handlers. Else the look kept from the last frame says which nodes
+    /// are drawn, when nothing changed since; only a page that changed,
+    /// or has had no frame, is resolved for it. Needed because a host
+    /// plays `on:uncover` each time a page comes back from under
+    /// another: resolving the whole page for it made dozens of lists
+    /// each time, to play the one anim of its root.
     fn play_hook_on_drawn_nodes(&mut self, page: &Page, hook: Hook) {
-        let res = resolve(page, self);
-        let unseen: Vec<bool> = (0..page.nodes.len()).map(|i| {
-            matches!(res.ident(page, NodeId::from_index(i), PropKey::Visibility), Some("gone") | Some("hidden") | Some("space_only"))
-        }).collect();
-        // Placed parents: a node seated under a hidden host is not drawn
-        // either, whatever its declared ancestors show (B25).
-        let placed: Vec<NodeId> = (0..page.nodes.len()).map(|i| res.placed_parent(page, NodeId::from_index(i))).collect();
-        drop(res);
-        for i in 0..page.nodes.len() {
-            let mut n = NodeId::from_index(i);
-            let mut hidden = false;
-            loop {
-                if unseen[n] {
-                    hidden = true;
-                    break;
-                }
-                let parent = placed[n];
-                if parent == NO_NODE {
-                    break;
-                }
-                n = parent;
-            }
-            if hidden {
-                continue;
-            }
-            self.play_action(page, NodeId::from_index(i), hook.event(), Finish::Nothing);
+        let event: StrId = page.intern_lookup(hook.event());
+        let plays = |h: &crate::page::OnHandler| h.event == event && matches!(h.action, Action::Play(_));
+        if !page.handlers.iter().any(plays) {
+            return;
         }
+        let mut nodes: Vec<NodeId> = std::mem::take(&mut self.hook_nodes);
+        nodes.clear();
+        {
+            let is_look_current: bool = !self.dirty && self.resolved.motion.len() == page.nodes.len();
+            let fresh: Option<Resolved> = if is_look_current { None } else { Some(resolve(page, self)) };
+            let res: &Resolved = fresh.as_ref().unwrap_or(&self.resolved);
+            for i in 0..page.nodes.len() {
+                let node: NodeId = NodeId::from_index(i);
+                let n = &page.nodes[node];
+                if !page.handlers[n.handlers.0 as usize..(n.handlers.0 + n.handlers.1) as usize].iter().any(plays) {
+                    continue;
+                }
+                // Placed parents: a node seated under a hidden host is
+                // not drawn either, whatever its declared ancestors show
+                // (B25).
+                let mut at: NodeId = node;
+                let is_drawn: bool = loop {
+                    if matches!(res.ident(page, at, PropKey::Visibility), Some("gone") | Some("hidden") | Some("space_only")) {
+                        break false;
+                    }
+                    let parent: NodeId = res.placed_parent(page, at);
+                    if parent == NO_NODE {
+                        break true;
+                    }
+                    at = parent;
+                };
+                if is_drawn {
+                    nodes.push(node);
+                }
+            }
+        }
+        for &node in &nodes {
+            self.play_action(page, node, hook.event(), Finish::Nothing);
+        }
+        self.hook_nodes = nodes;
     }
 
     /// A repeat's live rows, in display order (its `empty { }` child is
@@ -1929,6 +1988,22 @@ impl Runtime {
         std::mem::take(&mut self.finished)
     }
 
+    /// Takes the stopped players off the list. Each keeps its lists for a
+    /// later play (`spare_players`), as a player that ended does.
+    fn retire_stopped_players(&mut self) {
+        let mut at: usize = 0;
+        while at < self.players.len() {
+            if self.players[at].stopped {
+                let stopped: Player = self.players.remove(at);
+                if self.spare_players.len() < SPARE_PLAYERS_KEPT {
+                    self.spare_players.push(stopped);
+                }
+            } else {
+                at += 1;
+            }
+        }
+    }
+
     /// Stops `anim` (WPF Storyboard.Stop): `restore` puts every channel it
     /// owns back to its pre-play value; the player's finish action does
     /// not run. Nothing happens when it is not playing.
@@ -1944,13 +2019,13 @@ impl Runtime {
             if restore {
                 // Release the channels: the ladder shows again — except
                 // where the play found a held end pose, which comes back.
-                for (node, channel, base, base_held) in p.owned_bases() {
-                    if base_held {
+                for &(node, channel) in &p.owns {
+                    if let Some((base, true)) = p.base_of(node, channel) {
                         self.held.push((node, channel, base));
                     }
                 }
-                for (node, key, base, base_held) in p.owned_bases_props() {
-                    if base_held {
+                for &(node, key) in &p.owns_props {
+                    if let Some((base, true)) = p.base_of_prop(node, key) {
                         self.held_props.push((node, key, base));
                     }
                 }
@@ -1968,7 +2043,7 @@ impl Runtime {
             any = true;
         }
         if any {
-            self.players.retain(|p| !p.stopped);
+            self.retire_stopped_players();
             let players = &self.players;
             self.prop_anim.retain(|e| players.iter().any(|p| p.owns_props.contains(&(e.0, e.1))));
             self.dirty = true;
@@ -1990,7 +2065,7 @@ impl Runtime {
             for p in self.players.iter_mut().filter(|p| p.anim == anim) {
                 p.stop(false, &mut self.motion, &mut self.prop_anim);
             }
-            self.players.retain(|p| !p.stopped);
+            self.retire_stopped_players();
             for (n, channel, base, base_held) in displaced {
                 if self.players.iter().any(|p| p.owns.contains(&(n, channel))) {
                     continue;
@@ -2092,24 +2167,31 @@ impl Runtime {
         let before = self.tweens.len();
         self.tweens.retain(|t| t.elapsed < t.duration);
         moving |= before > 0;
-        let mut finished: Vec<(Finish, Vec<(NodeId, Channel)>, Vec<(NodeId, PropKey)>, StrId)> = Vec::new();
+        // A player that ends in this call moves to `ended` with its
+        // lists, in the order the players have: nothing is copied, and
+        // the lists serve a later play.
+        let mut ended: Vec<Player> = std::mem::take(&mut self.ended_players);
         let mut players = std::mem::take(&mut self.players);
-        players.retain_mut(|p| {
-            let alive = p.tick(dt, &mut self.motion, &mut self.prop_anim);
-            if !alive {
-                finished.push((p.finish, p.owns.clone(), p.owns_props.clone(), p.anim));
+        let mut at: usize = 0;
+        while at < players.len() {
+            if players[at].tick(dt, &mut self.motion, &mut self.prop_anim) {
+                at += 1;
+            } else {
+                ended.push(players.remove(at));
             }
-            alive
-        });
+        }
         // A play that moves only lanes host draws itself changes no
         // node's look: page is not resolved and drawn again for it. One
         // that ends and puts its lanes back does: what was written on
         // the root shows again.
-        let is_look_moving: bool = moving || players.iter().any(|p| !self.is_root_pose_only(&p.owns, &p.owns_props)) || finished.iter().any(|(finish, owns, owns_props, _)| *finish != Finish::Nothing || !self.is_root_pose_only(owns, owns_props));
-        moving |= !players.is_empty() || !finished.is_empty();
+        let is_look_moving: bool = moving || players.iter().any(|p| !self.is_root_pose_only(&p.owns, &p.owns_props)) || ended.iter().any(|p| p.finish != Finish::Nothing || !self.is_root_pose_only(&p.owns, &p.owns_props));
+        moving |= !players.is_empty() || !ended.is_empty();
         self.players = players;
-        for (f, owns, owns_props, anim) in finished {
-            self.finished.push(anim);
+        for p in &ended {
+            let f: Finish = p.finish;
+            if !self.finished.contains(&p.anim) {
+                self.finished.push(p.anim);
+            }
             if f != Finish::Nothing {
                 if let Finish::Hide(node) = f {
                     // The code door hides by writing the prop; a `when`-
@@ -2124,12 +2206,12 @@ impl Runtime {
                 // The hide anim may have moved DESCENDANTS too — every
                 // driven channel goes back to identity, or the re-show
                 // finds them displaced (GPAR110, gogo_visibility_fx.gd).
-                for (n, channel) in owns {
+                for &(n, channel) in &p.owns {
                     self.motion[n].set(channel, Motion::IDENTITY.get(channel));
                 }
                 // Prop lanes release outright on a hide: the layer entry
                 // goes and the ladder look comes back for the re-show.
-                for (n, key) in owns_props {
+                for &(n, key) in &p.owns_props {
                     self.prop_anim.retain(|e| !(e.0 == n && e.1 == key));
                 }
             } else {
@@ -2138,7 +2220,7 @@ impl Runtime {
                 // target HIDDEN mid-anim keeps nothing — its pose means
                 // nothing off screen, and holding it would show a
                 // displaced box on the next show (GPAR85).
-                for (node, channel) in owns {
+                for &(node, channel) in &p.owns {
                     self.held.retain(|h| !(h.0 == node && h.1 == channel));
                     if self.shown_with_ancestors(page, node) {
                         self.held.push((node, channel, self.motion[node].get(channel)));
@@ -2146,7 +2228,7 @@ impl Runtime {
                         self.motion[node].set(channel, Motion::IDENTITY.get(channel));
                     }
                 }
-                for (node, key) in owns_props {
+                for &(node, key) in &p.owns_props {
                     self.held_props.retain(|h| !(h.0 == node && h.1 == key));
                     let v = get_pval(&self.prop_anim, node, key);
                     self.prop_anim.retain(|e| !(e.0 == node && e.1 == key));
@@ -2158,6 +2240,14 @@ impl Runtime {
                 }
             }
         }
+        // An ended player keeps its lists for a later play; a few are
+        // enough.
+        while let Some(p) = ended.pop() {
+            if self.spare_players.len() < SPARE_PLAYERS_KEPT {
+                self.spare_players.push(p);
+            }
+        }
+        self.ended_players = ended;
         if is_look_moving {
             self.dirty = true;
         }

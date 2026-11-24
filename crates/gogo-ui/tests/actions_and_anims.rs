@@ -243,6 +243,25 @@ View v { Panel p width=20, height=10 }", &|_| None).page;
     assert!(plain.rt.dirty && plain.rt.root_pose() == gogo_ui::DrawnShift::NONE);
 }
 
+/// An anim that ended several times is in the list of finished anims
+/// once.
+///
+/// Needed because a page nobody takes that list from (a page of a
+/// program) would else keep a list that grows with every anim that
+/// ends, for as long as the page lives.
+#[test]
+fn an_anim_that_ended_several_times_is_listed_as_finished_once() {
+    let mut fx = Fx::new("anim grow { p.scale from=0.9, to=1, duration=0.1 }
+View v { Panel p width=10, height=10 }");
+    let grow = fx.anim("grow");
+    for _ in 0..3 {
+        fx.rt.play_id(&fx.page, grow, Finish::Nothing);
+        fx.tick(0.2);
+    }
+    assert_eq!(fx.rt.take_finished(), vec![grow]);
+    assert!(fx.rt.take_finished().is_empty(), "taken");
+}
+
 /// Root's anim that host draws replaces what was written on the root,
 /// as an anim does on any node: root that code made clear and an anim
 /// fades in ends up solid, and root written 40 to the right is drawn

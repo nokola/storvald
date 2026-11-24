@@ -7893,7 +7893,7 @@ impl<'a> Compiler<'a> {
                 // A motion word names its channels; any other lane names
                 // one look property (`background`, `background.a`).
                 let lane_word: &str = self.page.str(lane.channel);
-                let channels: Option<Vec<Channel>> = Channel::parse(lane_word);
+                let channels: Option<&'static [Channel]> = Channel::parse(lane_word);
                 let look_key: Option<PropKey> = if channels.is_none() { prop_lane(lane_word).map(|(key, _)| key) } else { None };
                 if channels.is_none() && look_key.is_none() {
                     continue;
