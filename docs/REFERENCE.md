@@ -385,7 +385,9 @@ choice save {
 - Widget-scope `when` on a state without `for=` is a build error (G5001) —
   no host, no state. One `when` is legal there: `when screen.<class>`,
   which poses the widget's own body
-  (`when screen.landscapeSmall { card.width = 420 }`).
+  (`when screen.landscapeSmall { card.width = 420 }`). A seat it moves a
+  node into is the widget's own too (`item.seat = sideSeat`): a seat of
+  the page is not in reach.
 - Inside a widget body, `when selected` on a plain node (not a toggle
   surface, not a ListItem) compiles, but nothing in the file raises it
   there — only code can (`Runtime::set_state`). To answer the HOST's

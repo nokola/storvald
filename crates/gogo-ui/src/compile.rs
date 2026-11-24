@@ -5185,12 +5185,26 @@ impl<'a> Compiler<'a> {
                 // the instance's prefix, resolved with the page's top-level
                 // whens so the same one-writer and seat checks apply.
                 let inst_full: String = self.prefix.join("/");
+                // A seat a body's line moves a node into is the body's
+                // own, so its name takes the instance's prefix as the
+                // node's does (`home` is every node's word, no seat's
+                // name).
+                //
+                // Needed because a seat's name is one per instance: with
+                // the bare name a body that moves its items into its own
+                // seats did not build (G1016, no such seat).
+                let scoped_value = |key: &str, value: &AstValue| -> AstValue {
+                    match value {
+                        AstValue::Ident { word, opacity, pos } if key.ends_with(".seat") && word != "home" => AstValue::Ident { word: format!("{inst_full}/{word}"), opacity: *opacity, pos: *pos },
+                        other => other.clone(),
+                    }
+                };
                 for w in &def.whens {
                     let Some(state) = self.state_word(w, true) else { continue };
-                    let mut items: Vec<AstItem> = w.props.iter().map(|p| AstItem::Assign { key: format!("{inst_full}/{}", p.key), dollar: false, value: p.value.clone(), line: p.line }).collect();
+                    let mut items: Vec<AstItem> = w.props.iter().map(|p| AstItem::Assign { key: format!("{inst_full}/{}", p.key), dollar: false, value: scoped_value(&p.key, &p.value), line: p.line }).collect();
                     for item in &w.children {
                         match item {
-                            AstItem::Assign { key, dollar, value, line } => items.push(AstItem::Assign { key: format!("{inst_full}/{key}"), dollar: *dollar, value: value.clone(), line: *line }),
+                            AstItem::Assign { key, dollar, value, line } => items.push(AstItem::Assign { key: format!("{inst_full}/{key}"), dollar: *dollar, value: scoped_value(key, value), line: *line }),
                             other => items.push(other.clone()),
                         }
                     }

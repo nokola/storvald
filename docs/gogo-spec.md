@@ -335,7 +335,8 @@ These are ordinary nodes to the parser; the resolver gives them meaning:
     same state replaces the widget's response for that state (nearer scope wins, the
     instance-over-body rule). Widget-scope `when`/`transition` without `for=` is a
     build error — there is no host state to answer; the one exception is
-    `when screen.<word>`, which poses the widget's own body. Inside any widget body, `when
+    `when screen.<word>`, which poses the widget's own body (a seat it names is the
+    widget's own). Inside any widget body, `when
     selected` on a plain (non-toggle, non-ListItem) node never shows: nothing
     raises it there (the D276 dead-when trap; the Godot addon refused it,
     the Rust compiler builds it).
