@@ -1,12 +1,12 @@
-# `open_list_page` at commit 31fc7d00711c11bfddaa7a25d92edafdc57a4d93: instructions by function, 1811622 in all.
+# `open_list_page` at commit 656b7cd1f0d2c4cc007f92ccf47d6b2c54d9bf39: instructions by function, 1811686 in all.
 # A function's own code only: what it calls is counted at the called function.
 247001 _int_malloc
 158808 <gogo_ui::runtime::Watchers>::extend
-130058 __memcpy_avx_unaligned_erms
+130082 __memcpy_avx_unaligned_erms
 116221 <gogo_ui::runtime::Runtime>::set_prop_by_id
 106320 <gogo_ui::runtime::Runtime>::set_items::{closure#1}
 74950 <gogo_ui::runtime::Runtime>::grow_pool
-73490 __memcmp_avx2_movbe
+73588 __memcmp_avx2_movbe
 73174 <gogo_ui::page::Page>::clone_subtree
 62130 _int_free_merge_chunk
 49441 malloc
@@ -66,7 +66,7 @@
 1792 <gogo_ui::runtime::Resolved>::prop_by_id
 1769 <alloc::vec::Vec<turbodot::page::NameUse<storvald_perf::ui::list_page::Handler>> as alloc::vec::spec_extend::SpecExtend<turbodot::page::NameUse<storvald_perf::ui::list_page::Handler>, core::iter::adapters::map::Map<core::slice::iter::Iter<alloc::borrow::Cow<str>>, <turbodot::page::HandlerTable<storvald_perf::ui::list_page::Handler>>::read::{closure#0}>>>::spec_extend
 1651 <gogo_ui::tree::PlacedTree>::build
-1590 <gogo_ui::page::Page>::prop::<gogo_ui::page::NodeId>
+1590 <gogo_ui::page::Page>::prop_by_id
 1561 <gogo_ui::page::Page>::intern
 1419 <gogo_ui::runtime::Resolved>::override_of_by_id
 1328 gogo_ui::runtime::resolve
@@ -80,10 +80,10 @@
 924 gogo_ui::input::event_action
 842 <gogo_ui::page::Page>::from_static
 770 <gogo_ui::tree::Subtree as core::iter::traits::iterator::Iterator>::next
-715 <gogo_ui::input::Input>::touch
+713 <gogo_ui::input::Input>::touch
 640 <storvald_perf::pages::ListPage as turbodot::page::Page<storvald_perf::AppState>>::show
 599 <gogo_ui::anim::Player>::new
-569 <gogo_ui::runtime::Runtime>::play_hook_on_drawn_nodes
+570 <gogo_ui::runtime::Runtime>::play_hook_on_drawn_nodes
 552 gogo_ui::draw::hit_laid_at
 549 <gogo_ui::runtime::Runtime>::set_screen
 468 gogo_ui::draw::hit
@@ -95,10 +95,10 @@
 212 <gogo_ui::runtime::Runtime>::play_id
 175 <turbodot::pages::PageStack>::pointer_to
 174 0x0000000004d2b680
+173 <gogo_ui::runtime::Runtime>::is_hook_playing_by_id
 163 <gogo_ui::runtime::Runtime>::play_action
 159 <alloc::vec::Vec<gogo_ui::page::NodeId> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<gogo_ui::page::NodeId, core::iter::adapters::filter::Filter<core::iter::adapters::map::Map<core::ops::range::Range<usize>, <gogo_ui::page::NodeId>::from_index>, <gogo_ui::runtime::Runtime>::new::{closure#5}>>>::from_iter
 144 <alloc::raw_vec::RawVec<gogo_ui::lexer::Token>>::grow_one
-143 <turbodot::program::Program<storvald_perf::AppState>>::carry_out_requests
 133 <gogo_ui::runtime::Runtime>::pool_of
 131 core::slice::sort::unstable::ipnsort::<u32, <[u32]>::sort_unstable_by<<gogo_ui::runtime::Runtime>::set_items::{closure#4}>::{closure#0}>
 129 <gogo_ui::input::Input>::grant
@@ -106,8 +106,8 @@
 125 <turbodot::program::Program<storvald_perf::AppState>>::pointer
 123 core::slice::sort::shared::pivot::median3_rec::<u32, <[u32]>::sort_unstable_by<<gogo_ui::runtime::Runtime>::set_items::{closure#4}>::{closure#0}>'2
 122 gogo_ui::runtime::settle_seats
-121 <gogo_ui::page::Page>::intern_lookup
 120 <alloc::raw_vec::RawVec<gogo_ui::page::Node>>::grow_one
+119 <turbodot::program::Program<storvald_perf::AppState>>::carry_out_requests
 119 <turbodot::program::Program<storvald_perf::AppState>>::order_drawn_pages
 118 <gogo_ui::anim::Easing>::parse
 112 <turbodot::pages::PageUi>::new
@@ -116,36 +116,36 @@
 99 <alloc::vec::Vec<(gogo_ui::page::NodeId, gogo_ui::page::PropKey, bool)> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<(gogo_ui::page::NodeId, gogo_ui::page::PropKey, bool), core::iter::adapters::filter_map::FilterMap<core::iter::adapters::filter::Filter<core::slice::iter::Iter<gogo_ui::page::AnimTrack>, <gogo_ui::runtime::Runtime>::play_id::{closure#1}>, <gogo_ui::runtime::Runtime>::play_id::{closure#2}>>>::from_iter
 94 <gogo_ui::anim::Channel>::parse
 91 <turbodot::program::Program<storvald_perf::AppState>>::hand_events
-83 <gogo_ui::runtime::Runtime>::state_active_by_id
 79 <gogo_ui::input::Input>::push_event
+79 <gogo_ui::runtime::Runtime>::show_empties
+79 <gogo_ui::runtime::Runtime>::state_active_by_id
 72 <alloc::raw_vec::RawVec<(u32, usize, usize)>>::grow_one
 72 <turbodot::program::Program<storvald_perf::AppState>>::open
 72 core::slice::sort::shared::pivot::median3_rec::<u32, <[u32]>::sort_unstable_by<<gogo_ui::runtime::Runtime>::set_items::{closure#4}>::{closure#0}>
-66 <gogo_ui::runtime::Runtime>::show_empties
 66 core::slice::memchr::memchr_aligned
-64 <gogo_ui::runtime::Runtime>::disabled_by_id
+63 <gogo_ui::runtime::Runtime>::disabled::<gogo_ui::page::NodeId>
 63 <turbodot::program::Program<storvald_perf::AppState>>::page_that_takes
 62 <alloc::vec::Vec<gogo_ui::runtime::Item> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<gogo_ui::runtime::Item, core::iter::adapters::map::Map<core::ops::range::Range<usize>, <storvald_perf::pages::ListPage as turbodot::page::Page<storvald_perf::AppState>>::show::{closure#0}>>>::from_iter
 62 __libc_calloc2
 62 core::ptr::drop_glue::<gogo_ui::tree::PlacedTree>
 62 gogo_ui::runtime::compose_anim
 60 <turbodot::program::Program<storvald_perf::AppState>>::call_with_placed
-59 <gogo_ui::runtime::Runtime>::is_hook_playing::<gogo_ui::page::NodeId>
 57 <turbodot::pages::PageStack>::add
-57 <turbodot::pages::PageUi>::covers
 57 <turbodot::program::Program<storvald_perf::AppState>>::tap::<gogo_ui::page::NodeId>
 55 <turbodot::pages::PageStack>::get
 55 gogo_ui::input::scroll_ancestor
-50 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::handle
 50 sbrk
+49 <turbodot::pages::PageUi>::covers
 48 __cxa_thread_atexit_impl
-43 <storvald_perf::pages::FirstPage as turbodot::page::Page<storvald_perf::AppState>>::handle
 40 <alloc::vec::Vec<gogo_ui::page::NodeId> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<gogo_ui::page::NodeId, core::iter::adapters::filter::Filter<core::iter::adapters::map::Map<core::ops::range::Range<u32>, <gogo_ui::page::NodeId>::new>, gogo_ui::runtime::new_pool::{closure#0}>>>::from_iter
+38 <gogo_ui::runtime::Resolved>::hidden_by_id
 38 pthread_mutex_lock@@GLIBC_2.2.5
+37 <turbodot::page::Nav<storvald_perf::AppState>>::go::<storvald_perf::pages::ListPage, turbodot::page::AsPage>
 37 _dl_find_dso_for_object
 36 <turbodot::program::Program<storvald_perf::AppState>>::order_top_with_placed
 35 <turbodot::pages::PagePlatform>::apply
 34 <gogo_ui::input::EventList as core::ops::drop::Drop>::drop
+34 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::handle
 33 <turbodot::pages::PageStack>::get_mut
 32 <alloc::vec::Vec<(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>)> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>), core::iter::adapters::map::Map<core::slice::iter::Iter<gogo_ui::runtime::Pool>, gogo_ui::runtime::resolve_ladder::{closure#0}>>>::from_iter
 29 <gogo_ui::input::Input>::new
@@ -166,24 +166,23 @@
 22 <alloc::vec::Vec<gogo_ui::page::NodeId> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<gogo_ui::page::NodeId, core::iter::adapters::filter_map::FilterMap<core::iter::adapters::filter::Filter<core::slice::iter::Iter<gogo_ui::anim::Player>, gogo_ui::runtime::resolve_ladder::{closure#1}>, gogo_ui::runtime::resolve_ladder::{closure#2}>>>::from_iter
 20 <gogo_ui::input::Input>::blur
 20 __glibc_morecore
-19 <gogo_ui::runtime::Resolved>::hidden::<gogo_ui::page::NodeId>
 18 <turbodot::pages::PageStack>::touched_by
 18 brk
-16 <gogo_ui::runtime::Resolved>::ident_by_id
-16 <gogo_ui::runtime::Runtime>::is_playing_id
-15 <gogo_ui::runtime::Runtime>::takes_keys::<gogo_ui::page::NodeId>
+15 <gogo_ui::runtime::Runtime>::takes_keys_by_id
 12 <turbodot::pages::PageUi>::hit
 8 storvald_perf::counts::counted::<storvald_perf::scenarios::open_list_page::{closure#0}>::{closure#0}
 7 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::read_handler_names
 7 <turbodot::pages::PageUi>::set_items
-6 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::kind
+6 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::kind
+4 <alloc::vec::Vec<(gogo_ui::page::NodeId, gogo_ui::anim::Channel, f32)>>::retain::<<gogo_ui::runtime::Runtime>::set_visible_by_id::{closure#0}>
+4 <alloc::vec::Vec<(gogo_ui::page::NodeId, gogo_ui::page::PropKey, gogo_ui::page::Value)>>::retain::<<gogo_ui::runtime::Runtime>::set_visible_by_id::{closure#1}>
 4 <alloc::vec::Vec<gogo_ui::anim::Tween>>::retain::<<gogo_ui::runtime::Runtime>::play_id::{closure#8}>
 3 <<turbodot::program::Program<storvald_perf::AppState>>::open::{closure#5} as core::ops::function::FnOnce<(&mut dyn turbodot::page::PageObject<storvald_perf::AppState>, &mut turbodot::page::Host<storvald_perf::AppState>)>>::call_once
 2 0x0000000004d2b430
 2 0x0000000004d2b4c0
 2 <gogo_ui::runtime::Runtime>::play_entrances
-2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::takes_every_touch
 2 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::built
-1 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::left
-1 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::show
+2 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::show
+2 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::takes_every_touch
+1 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::left
 1 storvald_perf_measured

@@ -1,12 +1,12 @@
-# `compile_controls_page` at commit 31fc7d00711c11bfddaa7a25d92edafdc57a4d93: instructions by function, 3144311 in all.
+# `compile_controls_page` at commit 656b7cd1f0d2c4cc007f92ccf47d6b2c54d9bf39: instructions by function, 3143040 in all.
 # A function's own code only: what it calls is counted at the called function.
 282369 _int_malloc
 200433 <gogo_ui::page::PropKey>::from_word
 169628 gogo_ui::lexer::lex
-156270 _int_free_merge_chunk
+156258 _int_free_merge_chunk
 148866 <gogo_ui::compile::Compiler>::node'2
 140466 <gogo_ui::lexer::Lexer>::dotted_word
-126374 __memcmp_avx2_movbe
+125007 __memcmp_avx2_movbe
 123489 __memcpy_avx_unaligned_erms
 116351 <alloc::vec::Vec<char> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<char, core::iter::adapters::filter::Filter<core::str::iter::Chars, gogo_ui::lexer::lex::{closure#0}>>>::from_iter
 115715 <gogo_ui::parser::Parser>::items'2
@@ -55,7 +55,7 @@
 6470 alloc_perturb
 6417 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&alloc::string::String>
 6314 <gogo_ui::page::Placement>::write
-5657 <gogo_ui::page::Page>::prop::<gogo_ui::page::NodeId>
+5657 <gogo_ui::page::Page>::prop_by_id
 5577 <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as core::hash::Hasher>::write
 5568 <alloc::raw_vec::RawVec<gogo_ui::page::Prop>>::grow_one
 4867 gogo_ui::placement::size_of
@@ -77,9 +77,9 @@
 2197 <alloc::vec::Vec<core::option::Option<gogo_ui::compile::WhenTmp>> as core::ops::drop::Drop>::drop
 1935 gogo_ui::compile::compile_keeping_numbers
 1860 gogo_ui::runtime::deref
-1725 <gogo_ui::surface::SurfaceDraw>::of::<gogo_ui::page::NodeId>
+1725 <gogo_ui::surface::SurfaceDraw>::of_by_id
+1679 <hashbrown::map::HashMap<alloc::string::String, gogo_ui::page::Color_Straight_Srgb_4xU8_RGBA, std::hash::random::RandomState>>::insert
 1634 <hashbrown::raw::RawTable<(alloc::string::String, f32)>>::reserve_rehash::<hashbrown::map::make_hasher<alloc::string::String, f32, std::hash::random::RandomState>::{closure#0}>
-1571 <hashbrown::map::HashMap<alloc::string::String, gogo_ui::page::Color_Straight_Srgb_4xU8_RGBA, std::hash::random::RandomState>>::insert
 1569 <alloc::vec::Vec<alloc::string::String> as core::clone::Clone>::clone
 1540 <gogo_ui::compile::Compiler>::node
 1467 <alloc::vec::Vec<alloc::vec::Vec<gogo_ui::page::NodeId>> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<alloc::vec::Vec<gogo_ui::page::NodeId>, core::iter::adapters::map::Map<core::slice::iter::Iter<alloc::vec::Vec<gogo_ui::compile::WhenTmp>>, <gogo_ui::compile::Compiler>::finish::{closure#13}>>>::from_iter

@@ -1,4 +1,4 @@
-# `text_change` at commit 31fc7d00711c11bfddaa7a25d92edafdc57a4d93: instructions by function, 162366 in all.
+# `text_change` at commit 656b7cd1f0d2c4cc007f92ccf47d6b2c54d9bf39: instructions by function, 162532 in all.
 # A function's own code only: what it calls is counted at the called function.
 40670 __memcpy_avx_unaligned_erms
 35796 <gogo_ui::layout::LookCopy>::diff
@@ -6,14 +6,14 @@
 15247 <gogo_ui::draw::DrawCache>::patch
 8150 <gogo_ui::page::Page>::kind_default::{closure#0}
 6468 <gogo_ui::runtime::Resolved>::override_of_by_id
-5585 <gogo_ui::page::Page>::prop::<gogo_ui::page::NodeId>
+5585 <gogo_ui::page::Page>::prop_by_id
 5535 <gogo_ui::tree::Children as core::iter::traits::iterator::Iterator>::next
 5267 <gogo_ui::runtime::Resolved>::prop_by_id
-4306 gogo_ui::runtime::resolve_into
-2682 <gogo_ui::layout::LayoutCache>::patch
+4305 gogo_ui::runtime::resolve_into
+2683 <gogo_ui::layout::LayoutCache>::patch
 1668 <gogo_ui::runtime::Runtime>::set_screen
 1482 <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as core::hash::Hasher>::write
-1416 <gogo_ui::runtime::Resolved>::inherited
+1193 <gogo_ui::runtime::Resolved>::written_from
 920 <(gogo_ui::page::NodeId, gogo_ui::page::Prop) as core::slice::cmp::SlicePartialEq<(gogo_ui::page::NodeId, gogo_ui::page::Prop)>>::equal_same_length
 836 gogo_ui::runtime::settle_seats
 823 <gogo_ui::layout::LayoutCache>::run
@@ -21,24 +21,25 @@
 611 gogo_ui::draw::clips
 606 gogo_ui::draw::walk
 570 gogo_ui::runtime::deref
+379 <gogo_ui::runtime::Resolved>::inherited
 314 gogo_text::cache_key
-308 __memcmp_avx2_movbe
+307 __memcmp_avx2_movbe
 283 <gogo_ui::layout::Lay>::size_at_flag
 270 <gogo_ui::draw::DrawCache>::emit
-252 <gogo_ui::runtime::Runtime>::tick
+258 <gogo_ui::runtime::Runtime>::tick
 250 <gogo_ui::runtime::Resolved as core::clone::Clone>::clone_from
 242 <gogo_text::EpxMeasure as gogo_ui::layout::TextMeasure>::identity
 242 <gogo_ui::layout::Lay>::content_min
 240 _int_malloc
 208 <gogo_ui::layout::Lay>::text_extent
+204 gogo_ui::draw::own_opacity
 186 <gogo_ui::runtime::Resolved>::gone_by_id
-186 gogo_ui::draw::own_opacity
 184 <turbodot::pages::PageUi>::frame
 179 <gogo_ui::draw::DrawCache>::remember
 172 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&u64>
 163 <gogo_ui::runtime::Runtime>::frame_retained
 160 <gogo_ui::runtime::Resolved>::color_by_id
-147 <turbodot::program::Program<storvald_perf::AppState>>::frame
+146 <turbodot::program::Program<storvald_perf::AppState>>::frame
 142 <gogo_ui::layout::LayoutCache>::remember
 140 roundf
 136 <gogo_text::TextEngine>::measure
@@ -71,7 +72,6 @@
 48 <alloc::raw_vec::RawVec<char>>::grow_one
 46 <gogo_ui::runtime::Runtime>::glide_in_place
 46 __libc_malloc2
-45 <turbodot::program::Program<storvald_perf::AppState>>::carry_out_requests
 42 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::alloc
 42 gogo_ui::draw::text_align
 42 gogo_ui::layout::diff_pairs::<bool>
@@ -81,6 +81,7 @@
 35 <alloc::vec::Vec<gogo_ui::page::NodeId>>::retain::<<gogo_ui::layout::LayoutCache>::patch::{closure#2}>
 35 gogo_ui::draw::push_shown
 34 core::ptr::drop_glue::<gogo_ui::layout::Tables>
+33 <turbodot::program::Program<storvald_perf::AppState>>::carry_out_requests
 31 core::ptr::drop_glue::<gogo_ui::tree::PlacedTree>
 28 floorf
 28 gogo_ui::runtime::push_tail
@@ -97,5 +98,5 @@
 8 <(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>) as core::slice::cmp::SlicePartialEq<(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>)>>::equal_same_length
 7 <turbodot::pages::PageUi>::set_text
 3 __rustc::__rust_no_alloc_shim_is_unstable_v2
-2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
+2 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
 1 storvald_perf_measured

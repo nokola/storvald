@@ -1,16 +1,17 @@
-# `draw_list_of_list_page` at commit 31fc7d00711c11bfddaa7a25d92edafdc57a4d93: instructions by function, 2687709 in all.
+# `draw_list_of_list_page` at commit 656b7cd1f0d2c4cc007f92ccf47d6b2c54d9bf39: instructions by function, 2701854 in all.
 # A function's own code only: what it calls is counted at the called function.
 632491 gogo_ui::draw::walk'2
 557058 <gogo_ui::page::Page>::kind_default::{closure#0}
 478099 <gogo_ui::runtime::Resolved>::override_of_by_id
-373618 <gogo_ui::page::Page>::prop::<gogo_ui::page::NodeId>
+373618 <gogo_ui::page::Page>::prop_by_id
 338395 <gogo_ui::runtime::Resolved>::prop_by_id
-113078 <gogo_ui::runtime::Resolved>::inherited
+97152 <gogo_ui::runtime::Resolved>::written_from
 52910 gogo_ui::runtime::deref
 39626 gogo_ui::draw::clips
+28850 <gogo_ui::runtime::Resolved>::inherited
 22998 <gogo_ui::tree::Children as core::iter::traits::iterator::Iterator>::next
 16351 <gogo_ui::runtime::Resolved>::gone_by_id
-12617 gogo_ui::draw::own_opacity
+13838 gogo_ui::draw::own_opacity
 9760 <gogo_ui::runtime::Resolved>::color_by_id
 8484 gogo_ui::draw::text_align
 7272 gogo_ui::draw::walk::{closure#3}
