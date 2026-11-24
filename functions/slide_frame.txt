@@ -1,26 +1,27 @@
-# `slide_frame` at commit e2b0aa7919fba6bb5d01d5a5357ed6ea3f201122: instructions by function, 3804 in all.
+# `slide_frame` at commit 31fc7d00711c11bfddaa7a25d92edafdc57a4d93: instructions by function, 3840 in all.
 # A function's own code only: what it calls is counted at the called function.
 1656 <gogo_ui::runtime::Runtime>::set_screen
-370 __memcmp_avx2_movbe
-342 <gogo_ui::runtime::Runtime>::tick
-234 <turbodot::program::Program<storvald_perf::AppState>>::frame
+371 __memcmp_avx2_movbe
+341 <gogo_ui::runtime::Runtime>::tick
+235 <turbodot::program::Program<storvald_perf::AppState>>::frame
 178 <turbodot::pages::PageUi>::frame
-173 <gogo_ui::runtime::Runtime>::is_hook_playing
 125 <gogo_ui::anim::Player>::apply_at
 123 <turbodot::program::Program<storvald_perf::AppState>>::frame_pages
+121 <gogo_ui::page::Page>::intern_lookup
 118 <gogo_ui::input::Input>::tick
 96 <gogo_ui::runtime::Runtime>::root_pose
 62 <turbodot::pages::PageUi>::relayout
+59 <gogo_ui::runtime::Runtime>::is_hook_playing::<gogo_ui::page::NodeId>
 50 <turbodot::program::Program<storvald_perf::AppState>>::place_code_pictures
 45 <turbodot::pages::PageUi>::root_pose
 44 <gogo_ui::anim::Easing>::apply
 40 <alloc::vec::Vec<gogo_ui::anim::Player> as core::ops::drop::Drop>::drop
 40 roundf
+39 <turbodot::program::Program<storvald_perf::AppState>>::carry_out_requests
 34 gogo_ui::anim::ease_in
-27 <turbodot::program::Program<storvald_perf::AppState>>::carry_out_requests
 22 <turbodot::pages::PageStack>::get_mut
+16 <gogo_ui::runtime::Runtime>::is_playing_id
 11 <turbodot::pages::PageStack>::get
 9 storvald_perf::counts::counted::<storvald_perf::scenarios::slide_frame::{closure#0}>::{closure#0}
-2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
-2 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
+4 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
 1 storvald_perf_measured

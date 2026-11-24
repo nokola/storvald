@@ -1,24 +1,23 @@
-# `draw_list_of_list_page` at commit e2b0aa7919fba6bb5d01d5a5357ed6ea3f201122: instructions by function, 2701854 in all.
+# `draw_list_of_list_page` at commit 31fc7d00711c11bfddaa7a25d92edafdc57a4d93: instructions by function, 2687709 in all.
 # A function's own code only: what it calls is counted at the called function.
 632491 gogo_ui::draw::walk'2
 557058 <gogo_ui::page::Page>::kind_default::{closure#0}
-478099 <gogo_ui::runtime::Resolved>::override_of
-373618 <gogo_ui::page::Page>::prop
-338395 <gogo_ui::runtime::Resolved>::prop
-97152 <gogo_ui::runtime::Resolved>::written_from
+478099 <gogo_ui::runtime::Resolved>::override_of_by_id
+373618 <gogo_ui::page::Page>::prop::<gogo_ui::page::NodeId>
+338395 <gogo_ui::runtime::Resolved>::prop_by_id
+113078 <gogo_ui::runtime::Resolved>::inherited
 52910 gogo_ui::runtime::deref
 39626 gogo_ui::draw::clips
-28850 <gogo_ui::runtime::Resolved>::inherited
 22998 <gogo_ui::tree::Children as core::iter::traits::iterator::Iterator>::next
-16351 <gogo_ui::runtime::Resolved>::gone
-13838 gogo_ui::draw::own_opacity
-9760 <gogo_ui::runtime::Resolved>::color
+16351 <gogo_ui::runtime::Resolved>::gone_by_id
+12617 gogo_ui::draw::own_opacity
+9760 <gogo_ui::runtime::Resolved>::color_by_id
 8484 gogo_ui::draw::text_align
 7272 gogo_ui::draw::walk::{closure#3}
 7095 gogo_ui::draw::push_shown
 4444 <gogo_ui::runtime::Resolved>::font
 4100 roundf
-3216 <gogo_ui::runtime::Resolved>::ident
+3216 <gogo_ui::runtime::Resolved>::ident_by_id
 2629 <gogo_ui::runtime::Resolved>::font_size
 1533 gogo_ui::draw::walk
 438 realloc
