@@ -450,7 +450,11 @@ impl<A: 'static> Program<A> {
             self.place_code_pictures();
             is_moving |= self.frame_pages(0.0, size_px);
         }
-        self.draw_surfaces();
+        // Only a layout leaves a Surface to write, so a frame with none
+        // asks no page.
+        if self.assets.take_surface_asks() {
+            self.draw_surfaces();
+        }
         #[cfg(debug_assertions)]
         self.check_page_kinds();
         is_moving | is_page_asking_for_frames

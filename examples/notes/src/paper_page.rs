@@ -60,10 +60,11 @@ impl Page<AppState> for PaperPage {
     }
 
     /// Margin line, from the Surface's top to its bottom. Asked for when
-    /// the Surface first shows and when the window's size changes.
+    /// the Surface first shows, when the window's size changes, and when
+    /// who moved the line said so (`PageUi::surface_changed`).
     fn draw_surface(&self, app: &AppState, surface: CommandSurface, out: &mut SurfaceCommands) {
-        let _ = (app, surface);
-        let line: Rect = Rect::new(out.width() - MARGIN_FROM_RIGHT_EPX, 0.0, MARGIN_WIDTH_EPX, out.height());
+        let _ = surface;
+        let line: Rect = Rect::new(out.width() - MARGIN_FROM_RIGHT_EPX - app.paper_margin_shift_epx, 0.0, MARGIN_WIDTH_EPX, out.height());
         out.draw(Draw::Quad { rect: line, color: Color_Straight_Srgb_4xU8_RGBA(MARGIN), corner: 0.0, border: 0.0, border_color: Color_Straight_Srgb_4xU8_RGBA::TRANSPARENT });
     }
 }

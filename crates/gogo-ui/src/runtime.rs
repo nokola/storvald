@@ -3060,6 +3060,11 @@ impl Runtime {
         if self.surface_asks.is_empty() { None } else { Some(self.surface_asks.remove(0)) }
     }
 
+    /// True while `next_surface_to_draw` has a Surface to hand out.
+    pub fn has_surface_to_draw(&self) -> bool {
+        !self.surface_asks.is_empty()
+    }
+
     /// Says the content of `surface` changed: the next frame asks for
     /// its draw commands again (`next_surface_to_draw`).
     ///

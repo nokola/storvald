@@ -36,6 +36,10 @@ pub struct AppState {
     /// Count of frames paper page did its GPU drawing for. A test reads
     /// it: engine skips that drawing while another page covers the page.
     pub paper_frames_drawn: u32,
+    /// How far left of its place paper page draws its margin line, in
+    /// epx. Who changes it tells the page that its margin Surface is out
+    /// of date (`PageUi::surface_changed`).
+    pub paper_margin_shift_epx: f32,
     /// What pages wrote when they arrived and when they left, in order.
     /// A test reads it.
     pub page_log: Vec<&'static str>,
@@ -872,6 +876,15 @@ mod tests {
         // A window of another size: asked again, for that size.
         program.frame(width - 100.0, height + 50.0, 0.016);
         assert_eq!(program.ui().page.surface_commands(margin), [line(width - 100.0, height + 50.0)]);
+
+        // What the Surface shows changed, and the page was told: asked
+        // again. A change nobody told the page of is not drawn.
+        program.app_mut().paper_margin_shift_epx = 30.0;
+        program.frame(width - 100.0, height + 50.0, 0.016);
+        assert_eq!(program.ui().page.surface_commands(margin), [line(width - 100.0, height + 50.0)], "the engine keeps the commands until the page says they are out of date");
+        program.ui_mut().surface_changed(crate::ui::paper_page::NAMES.margin);
+        program.frame(width - 100.0, height + 50.0, 0.016);
+        assert_eq!(program.ui().page.surface_commands(margin), [line(width - 130.0, height + 50.0)]);
     }
 
     /// Page's own GPU picture comes in with its nodes: where an anim

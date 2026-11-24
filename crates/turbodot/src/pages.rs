@@ -286,11 +286,26 @@ pub struct UiAssets {
     /// runtime and handed to the renderer. `None` = the texts as the
     /// files have them.
     pub locale: Option<Arc<Locale>>,
+    /// True from a layout that left a page with a `Surface
+    /// draw=commands` to write, until `take_surface_asks`.
+    ///
+    /// Needed here, in what every page lays out against, so a frame in
+    /// which no page is laid out asks no page for it: a still frame costs
+    /// one read. In a `Cell` because layout has a shared reference.
+    has_surface_asks: std::cell::Cell<bool>,
 }
 
 impl UiAssets {
     pub fn new(text: TextEngine, images: ImageTable) -> UiAssets {
-        UiAssets { text: RefCell::new(text), images, locale: None }
+        UiAssets { text: RefCell::new(text), images, locale: None, has_surface_asks: std::cell::Cell::new(false) }
+    }
+
+    /// True when a layout since the last call left a page with a
+    /// `Surface draw=commands` to write (`Runtime::next_surface_to_draw`).
+    /// A host with pages of its own that have such Surfaces calls it
+    /// once a frame, and asks its pages only on true.
+    pub fn take_surface_asks(&self) -> bool {
+        self.has_surface_asks.replace(false)
     }
 
     /// Sets the language: `bcp47` for the text engine (where a line
@@ -568,6 +583,9 @@ impl PageUi {
         let viewport: Rect = self.viewport.unwrap_or(Rect::new(0.0, 0.0, size.0 as f32 / epx, size.1 as f32 / epx));
         let measure: EpxMeasure<'_> = assets.measure(epx);
         self.kept.frame_retained(&mut self.runtime, &self.page, viewport, &measure, &mut self.draws, self.above_children.map(|top| (top, &mut self.top_draws)));
+        if self.runtime.has_surface_to_draw() {
+            assets.has_surface_asks.set(true);
+        }
         self.laid_out_for = (size, epx, self.viewport);
     }
 
