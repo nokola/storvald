@@ -491,16 +491,29 @@ impl<A: 'static> Program<A> {
         // asking for the mouse, so a frame with none asks no page.
         let news: u8 = self.assets.take_layout_news();
         if news != 0 {
-            if news & crate::pages::SURFACE_ASKS != 0 {
-                self.draw_surfaces();
-            }
-            if news & crate::pages::MOUSE_CAPTURE_NEWS != 0 {
-                self.update_mouse_capture();
-            }
+            self.do_what_layouts_left(news);
         }
         #[cfg(debug_assertions)]
         self.check_page_kinds();
         is_moving | is_page_asking_for_frames
+    }
+
+    /// What layouts left this frame to do (`UiAssets::take_layout_news`):
+    /// writes the Surfaces that need their draw commands, and finds who
+    /// has the mouse.
+    ///
+    /// Needed out of line, never folded into `frame`: most frames have
+    /// none of it, and folded in it made every frame's own code longer.
+    /// A still frame then counted 15 instructions more.
+    #[cold]
+    #[inline(never)]
+    fn do_what_layouts_left(&mut self, news: u8) {
+        if news & crate::pages::SURFACE_ASKS != 0 {
+            self.draw_surfaces();
+        }
+        if news & crate::pages::MOUSE_CAPTURE_NEWS != 0 {
+            self.update_mouse_capture();
+        }
     }
 
     /// Finds who has the mouse now: the Surface of the top page whose
