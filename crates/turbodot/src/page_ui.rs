@@ -3,7 +3,7 @@
 use std::fmt::Write as _;
 
 use gogo_ui::runtime::{Item, ItemKey, Resolved};
-use gogo_ui::{CommandSurface, EventList, Kind, Mods, NO_NODE, NO_STR, NodeId, PictureSurface, Rect};
+use gogo_ui::{CommandSurface, EventList, Kind, Mods, NO_NODE, NO_STR, NodeId, NodeName, PictureSurface, Rect};
 
 use crate::pages::{CodePicture, PageUi};
 
@@ -152,12 +152,14 @@ impl PageUi {
     /// WARNING: with no cursor the user cannot press a button of the
     /// page. Give them a key that ends it: Esc is the back request
     /// (`Page::back`).
-    pub fn set_capture_mouse(&mut self, surface: NodeId, is_captured: bool) {
+    pub fn set_capture_mouse(&mut self, surface: impl NodeName, is_captured: bool) {
+        let surface: NodeId = surface.node();
         self.runtime.set_capture_mouse(surface, is_captured);
     }
 
     /// Shows or hides `node`. Hidden node takes no space and no touch.
-    pub fn set_visible(&mut self, node: NodeId, is_visible: bool) {
+    pub fn set_visible(&mut self, node: impl NodeName, is_visible: bool) {
+        let node: NodeId = node.node();
         self.runtime.set_visible(&mut self.page, node, is_visible);
     }
 
@@ -184,7 +186,8 @@ impl PageUi {
     ///
     /// Needed to tell which item an event belongs to: event names a node,
     /// key names the item.
-    pub fn row_key(&self, node: NodeId) -> Option<&ItemKey> {
+    pub fn row_key(&self, node: impl NodeName) -> Option<&ItemKey> {
+        let node: NodeId = node.node();
         self.runtime.item_key(&self.page, node)
     }
 
@@ -213,7 +216,8 @@ impl PageUi {
     }
 
     /// Where `node` sat in last frame.
-    pub fn rect(&self, node: NodeId) -> Rect {
+    pub fn rect(&self, node: impl NodeName) -> Rect {
+        let node: NodeId = node.node();
         self.kept.rects()[node.index()]
     }
 

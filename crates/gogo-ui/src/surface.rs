@@ -5,7 +5,7 @@
 //! it another way does not compile.
 
 use crate::draw::Draw;
-use crate::page::{Kind, NO_STR, NodeId, Page, PropKey, StrId, Value};
+use crate::page::{Kind, NO_STR, NodeId, NodeName, Page, PropKey, StrId, Value};
 
 /// How code fills a `Surface`: the word after `draw=`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -35,7 +35,8 @@ impl SurfaceDraw {
     /// How the file says `node` is filled.
     ///
     /// Returns `None` for a node that is not a `Surface`.
-    pub fn of(page: &Page, node: NodeId) -> Option<SurfaceDraw> {
+    pub fn of(page: &Page, node: impl NodeName) -> Option<SurfaceDraw> {
+        let node: NodeId = node.node();
         if page.nodes.get(node.index())?.kind != Kind::Surface {
             return None;
         }
@@ -94,9 +95,16 @@ macro_rules! surface_name {
             }
 
             /// The Surface's node: its rectangle, its `visibility=`, its
-            /// size are a node's.
+            /// size are a node's. A call that takes any node takes the
+            /// Surface's name as it is (`NodeName`); this is for a list
+            /// of nodes, or a field that holds one.
             pub const fn node(self) -> NodeId {
                 self.0
+            }
+
+            /// Place of the Surface's node in a frame's rectangles.
+            pub const fn index(self) -> usize {
+                self.0.index()
             }
 
             /// The same Surface in a row cloned from `from` to `to` (a
@@ -121,6 +129,25 @@ macro_rules! surface_name {
             /// such a Surface.
             pub fn find(page: &Page, name: &str) -> Option<$name> {
                 $name::of(page, page.find(name)?)
+            }
+        }
+
+        impl NodeName for $name {
+            #[inline]
+            fn node(self) -> NodeId {
+                self.0
+            }
+        }
+
+        impl PartialEq<NodeId> for $name {
+            fn eq(&self, node: &NodeId) -> bool {
+                self.0 == *node
+            }
+        }
+
+        impl PartialEq<$name> for NodeId {
+            fn eq(&self, surface: &$name) -> bool {
+                *self == surface.0
             }
         }
     };
@@ -167,7 +194,8 @@ impl Page {
     /// Surface's own space. Empty before the first write.
     ///
     /// A renderer reads them where it meets `Draw::Surface`.
-    pub fn surface_commands(&self, surface: NodeId) -> &[Draw] {
+    pub fn surface_commands(&self, surface: impl NodeName) -> &[Draw] {
+        let surface: NodeId = surface.node();
         self.surface_lists.iter().find(|list| list.node == surface).map_or(&[], |list| list.draws.as_slice())
     }
 
@@ -192,7 +220,8 @@ impl Page {
     /// Needed by a renderer, where it meets `Draw::GpuSurface`: the
     /// program's draw calls there test and write depth. The file's line
     /// alone says it, so the page is asked and no frame's state.
-    pub fn is_depth_surface(&self, node: NodeId) -> bool {
+    pub fn is_depth_surface(&self, node: impl NodeName) -> bool {
+        let node: NodeId = node.node();
         self.nodes.get(node.index()).is_some_and(|n| n.kind == Kind::Surface) && self.prop(node, PropKey::Depth) == Some(Value::VBool(true))
     }
 

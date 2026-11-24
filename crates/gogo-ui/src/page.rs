@@ -142,6 +142,32 @@ impl Default for StrId {
 pub const BASE: ArrangementId = ArrangementId(u32::MAX);
 /// No node (a root's parent).
 pub const NO_NODE: NodeId = NodeId(u32::MAX);
+
+/// A name code has for a node: the node's id, or the typed name of a
+/// `Surface` (`PictureSurface`, `CommandSurface`, `GpuSurface`).
+///
+/// Needed so code writes a Surface's name where any node is asked for,
+/// with no `.node()` after it: `runtime.set_prop(NAMES.picture,
+/// PropKey::Width, ...)` beside `runtime.set_prop(NAMES.plate, ...)`.
+///
+/// A call that needs one kind of node (the rows of a `repeat`, the text
+/// of a Label, the value of a Slider) takes a `NodeId`: a Surface is
+/// never one, and the build says so.
+///
+/// A call that takes a name and is longer than a few lines hands the id
+/// to `<its name>_by_id`, which holds its code. So that code is compiled
+/// once, in its own crate, and not again in every crate that calls it.
+pub trait NodeName: Copy {
+    /// The node's id.
+    fn node(self) -> NodeId;
+}
+
+impl NodeName for NodeId {
+    #[inline]
+    fn node(self) -> NodeId {
+        self
+    }
+}
 /// Content of a `disabled` control dims to this unless the theme or a
 /// `when disabled` says otherwise (`Page::disabled_opacity`).
 pub const DISABLED_OPACITY: f32 = 0.3;
@@ -2122,7 +2148,8 @@ impl Cloned {
 
 impl Page {
     /// The `keys` claim on an instance root — 0 when nothing claims.
-    pub fn key_claim(&self, node: NodeId) -> u8 {
+    pub fn key_claim(&self, node: impl NodeName) -> u8 {
+        let node: NodeId = node.node();
         self.key_claims.iter().find(|(n, _)| *n == node).map(|(_, m)| *m).unwrap_or(0)
     }
 
@@ -2302,7 +2329,8 @@ impl Page {
     /// (todo-bugs B25). Every walk names its tree; this one is for the
     /// walks that ask "who authored this node" (a `when <name>` finds its
     /// control root, a row finds its List).
-    pub fn declared_parent(&self, n: NodeId) -> NodeId {
+    pub fn declared_parent(&self, n: impl NodeName) -> NodeId {
+        let n: NodeId = n.node();
         self.nodes[n].parent
     }
 
@@ -2311,7 +2339,13 @@ impl Page {
     /// `Resolved::placed_is_under`) — a parent walk, because the arena's
     /// index ranges are not subtrees (see `Node::subtree_end`). `NO_NODE`
     /// is under nothing.
-    pub fn is_under(&self, node: NodeId, root: NodeId) -> bool {
+    #[inline]
+    pub fn is_under(&self, node: impl NodeName, root: impl NodeName) -> bool {
+        self.is_under_by_id(node.node(), root.node())
+    }
+
+    /// What `is_under` does, by the id of the node.
+    fn is_under_by_id(&self, node: NodeId, root: NodeId) -> bool {
         let mut n: NodeId = node;
         loop {
             if n == root {
@@ -2324,13 +2358,15 @@ impl Page {
         }
     }
 
-    pub fn node_props(&self, id: NodeId) -> &[Prop] {
+    pub fn node_props(&self, id: impl NodeName) -> &[Prop] {
+        let id: NodeId = id.node();
         let (first, count) = self.nodes[id].props;
         &self.props[first as usize..(first + count) as usize]
     }
 
     /// The base value of a prop on a node (no states applied).
-    pub fn prop(&self, id: NodeId, key: PropKey) -> Option<Value> {
+    pub fn prop(&self, id: impl NodeName, key: PropKey) -> Option<Value> {
+        let id: NodeId = id.node();
         self.node_props(id).iter().rev().find(|p| p.key == key).map(|p| p.value)
     }
 

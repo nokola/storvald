@@ -491,7 +491,13 @@ impl Event {
     /// space — the gradient bar under its marks' plates, the color wheel
     /// under its slop target — and every one of them re-did the same
     /// subtraction over `rects` by hand.
-    pub fn pointer_in(&self, rects: &[Rect], node: NodeId) -> Option<(Phase, f32, f32)> {
+    #[inline]
+    pub fn pointer_in(&self, rects: &[Rect], node: impl NodeName) -> Option<(Phase, f32, f32)> {
+        self.pointer_in_by_id(rects, node.node())
+    }
+
+    /// What `pointer_in` does, by the id of the node.
+    fn pointer_in_by_id(&self, rects: &[Rect], node: NodeId) -> Option<(Phase, f32, f32)> {
         let EventKind::Pointer(phase, PointerSample { x, y, .. }) = self.kind else { return None };
         let from = rects[self.node];
         let to = rects[node];
@@ -2256,7 +2262,14 @@ impl Input {
     ///
     /// Returns the event, or none. Allocates nothing.
     #[allow(clippy::too_many_arguments)]
-    pub fn captured_mouse(&self, page: &Page, rt: &mut Runtime, f: Frame<'_>, surface: NodeId, at: (f32, f32), what: CapturedMouse, buttons: Buttons, t: f64, mods: Mods) -> EventList {
+    #[inline]
+    pub fn captured_mouse(&self, page: &Page, rt: &mut Runtime, f: Frame<'_>, surface: impl NodeName, at: (f32, f32), what: CapturedMouse, buttons: Buttons, t: f64, mods: Mods) -> EventList {
+        self.captured_mouse_by_id(page, rt, f, surface.node(), at, what, buttons, t, mods)
+    }
+
+    /// What `captured_mouse` does, by the id of the node.
+    #[allow(clippy::too_many_arguments)]
+    fn captured_mouse_by_id(&self, page: &Page, rt: &mut Runtime, f: Frame<'_>, surface: NodeId, at: (f32, f32), what: CapturedMouse, buttons: Buttons, t: f64, mods: Mods) -> EventList {
         let mut events: EventList = EventList::new();
         let Some(rect) = f.rects().get(surface.index()).copied() else { return events };
         if rt.disabled(page, surface) {

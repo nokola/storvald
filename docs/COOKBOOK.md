@@ -2058,7 +2058,7 @@ Most programs do not start captured. The code writes the word when play
 starts and when it stops:
 
 ```rust partial
-host.ui.set_capture_mouse(NAMES.world.node(), true);
+host.ui.set_capture_mouse(NAMES.world, true);
 ```
 
 (`examples/world` is the whole of it: "Look around" captures the mouse,

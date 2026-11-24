@@ -23,7 +23,7 @@ use std::sync::Arc;
 use gogo_text::{EpxMeasure, TextEngine};
 use gogo_ui::page::{Action, NO_NODE, NO_STR, StaticPage, StrId};
 use gogo_ui::reload::{Refused, Reloader};
-use gogo_ui::{ArrangementId, Buttons, Draw, Event, EventList, ImageKey, Images, Input, KeptFrame, Key, Kind, Locale, MOUSE_ID, Mods, NodeId, Orientation, Page, Phase, PropKey, Rect, Runtime, ScreenClass, Touch, Value, hit};
+use gogo_ui::{ArrangementId, Buttons, Draw, Event, EventList, ImageKey, Images, Input, KeptFrame, Key, Kind, Locale, MOUSE_ID, Mods, NodeId, NodeName, Orientation, Page, Phase, PropKey, Rect, Runtime, ScreenClass, Touch, Value, hit};
 
 /// Every picture an app's pages name or its code shows, with what the host
 /// keeps about each: its size, whether it loads late, and the file bytes
@@ -659,7 +659,13 @@ impl PageUi {
     ///
     /// Needed for what is drawn in a node's rectangle and is not the
     /// page's own node: a page placed there.
-    pub fn drawn_pose(&self, node: NodeId) -> Option<PagePose> {
+    #[inline]
+    pub fn drawn_pose(&self, node: impl NodeName) -> Option<PagePose> {
+        self.drawn_pose_by_id(node.node())
+    }
+
+    /// What `drawn_pose` does, by the id of the node.
+    fn drawn_pose_by_id(&self, node: NodeId) -> Option<PagePose> {
         if !self.kept.is_laid_out() {
             return None;
         }
@@ -800,7 +806,13 @@ impl PageUi {
     ///
     /// Returns a tile with colors multiplied by alpha, transparent where
     /// nothing was drawn.
-    pub fn draw_to_texture(&self, renderer: &mut gogo_wgpu::UiRenderer, device: &wgpu::Device, queue: &wgpu::Queue, assets: &UiAssets, node: NodeId, place: TexturePlacement) -> gogo_wgpu::Tex_Tile_Premul_Srgb_4xU8_RGBA {
+    #[inline]
+    pub fn draw_to_texture(&self, renderer: &mut gogo_wgpu::UiRenderer, device: &wgpu::Device, queue: &wgpu::Queue, assets: &UiAssets, node: impl NodeName, place: TexturePlacement) -> gogo_wgpu::Tex_Tile_Premul_Srgb_4xU8_RGBA {
+        self.draw_to_texture_by_id(renderer, device, queue, assets, node.node(), place)
+    }
+
+    /// What `draw_to_texture` does, by the id of the node.
+    fn draw_to_texture_by_id(&self, renderer: &mut gogo_wgpu::UiRenderer, device: &wgpu::Device, queue: &wgpu::Queue, assets: &UiAssets, node: NodeId, place: TexturePlacement) -> gogo_wgpu::Tex_Tile_Premul_Srgb_4xU8_RGBA {
         debug_assert!(self.kept.is_laid_out(), "draw_to_texture before the page's first relayout");
         let mut draws: Vec<Draw> = Vec::new();
         self.kept.subtree_draws(&self.page, node, &mut draws);

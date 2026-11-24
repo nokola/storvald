@@ -930,7 +930,7 @@ mod tests {
         // The stamp is GPU draw calls of the page's own, in a viewport
         // on its Surface: it moves with the page, whole, where the paper
         // and the line fade.
-        let stamp: Rect = program.ui().rect(crate::ui::paper_page::NAMES.stamp.node());
+        let stamp: Rect = program.ui().rect(crate::ui::paper_page::NAMES.stamp);
         let stamp_middle: (f32, f32) = (stamp.x + stamp.w / 2.0 + pose.offset_x, stamp.y + stamp.h / 2.0 + pose.offset_y);
         assert!(stamp_middle.0 >= 0.0 && stamp_middle.1 >= 0.0, "the stamp is inside the picture: {stamp_middle:?}, {pose:?}");
         assert_eq!(picture.at(stamp_middle.0 as u32, stamp_middle.1 as u32), crate::paper_page::STAMP, "the stamp where the page is now");
@@ -972,7 +972,7 @@ mod tests {
         }
         // The stamp, GPU draw calls of the page's own: all of its
         // Surface and not a pixel beside it, over the paper.
-        let stamp: Rect = program.ui().rect(crate::ui::paper_page::NAMES.stamp.node());
+        let stamp: Rect = program.ui().rect(crate::ui::paper_page::NAMES.stamp);
         let (left, top, right, bottom): (u32, u32, u32, u32) = (stamp.x as u32, stamp.y as u32, (stamp.x + stamp.w) as u32, (stamp.y + stamp.h) as u32);
         for (x, y) in [(left, top), (right - 1, top), (left, bottom - 1), (right - 1, bottom - 1), ((left + right) / 2, (top + bottom) / 2)] {
             assert_eq!(picture.at(x, y), crate::paper_page::STAMP, "the stamp at ({x}, {y})");
@@ -1233,17 +1233,17 @@ mod tests {
         let mut program: Program<AppState> = started(AppState::default());
         open_settings(&mut program, 1.0);
         let side: f32 = MADE_PICTURE_SIDE_PX as f32;
-        let made: Rect = program.ui().rect(SETTINGS.made_in_code.node());
+        let made: Rect = program.ui().rect(SETTINGS.made_in_code);
         assert_eq!((made.w, made.h), (side, side), "the size the file says");
         let shows_a_picture = |program: &Program<AppState>| -> bool {
             let ui = program.ui();
-            let rect: Rect = ui.rect(SETTINGS.made_in_code.node());
+            let rect: Rect = ui.rect(SETTINGS.made_in_code);
             ui.draws.iter().any(|draw| matches!(draw, turbodot::gogo::Draw::Image { rect: drawn, .. } if *drawn == rect))
         };
         assert!(shows_a_picture(&program), "the Surface draws the picture the page's code made");
         program.ui_mut().set_picture(SETTINGS.made_in_code, 20, 6, vec![0xFF; 20 * 6 * 4]);
         frame(&mut program, 0.016);
-        let made: Rect = program.ui().rect(SETTINGS.made_in_code.node());
+        let made: Rect = program.ui().rect(SETTINGS.made_in_code);
         assert_eq!((made.w, made.h), (side, side), "the second picture is fitted into the same Surface");
         assert!(shows_a_picture(&program));
     }
@@ -1262,7 +1262,7 @@ mod tests {
         let mut program: Program<AppState> = started(AppState::default());
         let gpu: turbodot::Gpu = turbodot::Gpu::new().expect("this test needs a GPU adapter");
         open_settings(&mut program, 1.0);
-        let (x, y): (u32, u32) = center(program.ui().rect(SETTINGS.made_in_code.node()));
+        let (x, y): (u32, u32) = center(program.ui().rect(SETTINGS.made_in_code));
         for round in 0..2 {
             let picture: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
             assert_eq!(picture.at(x, y), MADE_PICTURE_COLOR, "the pixels the page made, picture {round} of the page");
@@ -1280,7 +1280,7 @@ mod tests {
         program.free_cached_pages();
         gpu.draw_program(&mut program).expect("the pages are drawn");
         open_settings(&mut program, 5.0);
-        let (x, y): (u32, u32) = center(program.ui().rect(SETTINGS.made_in_code.node()));
+        let (x, y): (u32, u32) = center(program.ui().rect(SETTINGS.made_in_code));
         let picture: turbodot::Picture = gpu.draw_program(&mut program).expect("the pages are drawn");
         assert_eq!(picture.at(x, y), MADE_PICTURE_COLOR, "the page made again shows its own picture");
     }

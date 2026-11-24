@@ -205,7 +205,7 @@ impl Page<AppState> for WorldPage {
             self.gpu = Some(WorldGpu::new(&gpu.device, made_for));
         }
         let Some(world) = &self.gpu else { return };
-        let rect = host.ui.rect(NAMES.world.node());
+        let rect = host.ui.rect(NAMES.world);
         if rect.h <= 0.0 {
             return;
         }
@@ -242,7 +242,7 @@ impl WorldPage {
     /// key that pauses.
     pub fn set_looking(&mut self, host: &mut Host<AppState>, is_looking: bool) {
         host.app.is_looking = is_looking;
-        host.ui.set_capture_mouse(NAMES.world.node(), is_looking);
+        host.ui.set_capture_mouse(NAMES.world, is_looking);
         host.ui.set_visible(NAMES.hint, is_looking);
     }
 }

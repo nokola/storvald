@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use gogo_text::TextEngine;
 use gogo_ui::reload::{BuildTables, Reloader, Sources};
-use gogo_ui::{Buttons, CapturedMouse, Draw, Event, EventList, Hook, ImageKey, Key, Locale, MOUSE_ID, Mods, NodeId, Orientation, Phase, PropKey, Rect, ScreenClass, Touch, Value};
+use gogo_ui::{Buttons, CapturedMouse, Draw, Event, EventList, Hook, ImageKey, Key, Locale, MOUSE_ID, Mods, NodeId, NodeName, Orientation, Phase, PropKey, Rect, ScreenClass, Touch, Value};
 
 use crate::page::{Back, Host, IntoPage, Nav, PageKind, PageObject, Request};
 use crate::pages::{PageUi, PageId, PagePlatform, PagePose, PageStack, UiAssets};
@@ -315,13 +315,15 @@ impl<A: 'static> Program<A> {
 
     /// Page placed in `node` of page on screen (`Nav::place`): its
     /// nodes, texts, rectangles. `None`: nothing is placed there.
-    pub fn placed_ui(&self, node: NodeId) -> Option<&PageUi> {
+    pub fn placed_ui(&self, node: impl NodeName) -> Option<&PageUi> {
+        let node: NodeId = node.node();
         self.placed_at(self.top(), node).map(|id| self.stack.get(id))
     }
 
     /// Struct of page placed in `node` of page on screen. `None`:
     /// nothing is placed there, or what is placed is not a `P`.
-    pub fn placed<P: 'static>(&self, node: NodeId) -> Option<&P> {
+    pub fn placed<P: 'static>(&self, node: impl NodeName) -> Option<&P> {
+        let node: NodeId = node.node();
         let id: PageId = self.placed_at(self.top(), node)?;
         self.objects[id.index()].as_ref()?.page().downcast_ref::<P>()
     }
@@ -906,7 +908,8 @@ impl<A: 'static> Program<A> {
     ///
     /// Needed so a test says "tap second row", not where the row happens
     /// to sit.
-    pub fn tap(&mut self, node: NodeId, t: f64) {
+    pub fn tap(&mut self, node: impl NodeName, t: f64) {
+        let node: NodeId = node.node();
         let r: Rect = self.ui().rect(node);
         let (x, y) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
         self.touch(Phase::Down, x, y, t);

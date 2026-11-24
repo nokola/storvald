@@ -214,6 +214,34 @@ fn a_surface_s_name_has_the_type_of_its_draw() {
     assert_eq!(fx.page.nodes[fx.id("board").index()].kind, Kind::Surface);
 }
 
+/// A Surface's name goes where any node is asked for, as it is: code
+/// that sizes, hides or asks about a Surface writes no `.node()`, and
+/// the line reads like the one for a Panel beside it.
+#[test]
+fn a_surface_s_name_goes_where_any_node_is_asked_for() {
+    let mut fx = Fx::new("View v { Layers l {\n Surface photo draw=picture, width=10, height=10\n Panel plate width=10, height=10\n} }");
+    let photo: PictureSurface = PictureSurface::find(&fx.page, "photo").unwrap();
+    let plate: NodeId = fx.id("plate");
+    fx.rt.set_prop(photo, PropKey::Width, Value::VNum(40.0));
+    fx.rt.set_prop(plate, PropKey::Width, Value::VNum(30.0));
+    fx.frame(400.0, 800.0);
+    assert_eq!((fx.kept.rects()[photo.index()].w, fx.rect("plate").w), (40.0, 30.0), "each got the width written by its name");
+    assert_eq!(fx.kept.look().ident(&fx.page, photo, PropKey::Draw), Some("picture"), "what a frame reads of it");
+    assert!(matches!(fx.page.prop(photo, PropKey::Draw), Some(Value::VIdent(_))), "the file's own word");
+    assert!(fx.page.is_under(photo, fx.id("l")) && fx.page.is_under(plate, fx.id("l")));
+    assert!(!fx.kept.look().gone(&fx.page, photo));
+    fx.rt.set_visible(&mut fx.page, photo, false);
+    fx.frame(400.0, 800.0);
+    assert!(fx.kept.look().gone(&fx.page, photo), "hidden by its name");
+    assert!(!fx.kept.look().gone(&fx.page, plate));
+
+    // A name and a node compare, either way round.
+    assert!(photo == fx.id("photo") && fx.id("photo") == photo);
+    assert!(photo != plate && plate != photo);
+    assert_eq!(photo.index(), fx.id("photo").index());
+    assert_eq!(SurfaceDraw::of(&fx.page, photo), Some(SurfaceDraw::Picture));
+}
+
 /// The build writes each Surface's name with its type, in `NAMES`, in a
 /// repeat's row (the row itself when it is a Surface) and in a widget's
 /// names.
@@ -250,7 +278,7 @@ fn gogo_asks_for_commands_in_three_cases_and_keeps_them() {
     let board: CommandSurface = CommandSurface::find(&fx.page, "board").unwrap();
     fx.frame(400.0, 800.0);
     assert_eq!(fx.answer_asks(), [SurfaceAsk { surface: board, width: 400.0, height: 100.0 }], "it shows for the first time");
-    assert_eq!(fx.page.surface_commands(board.node()), [Draw::Quad { rect: Rect::new(0.0, 0.0, 400.0, 100.0), color: RED, corner: 0.0, border: 0.0, border_color: Color_Straight_Srgb_4xU8_RGBA::TRANSPARENT }]);
+    assert_eq!(fx.page.surface_commands(board), [Draw::Quad { rect: Rect::new(0.0, 0.0, 400.0, 100.0), color: RED, corner: 0.0, border: 0.0, border_color: Color_Straight_Srgb_4xU8_RGBA::TRANSPARENT }]);
 
     // An ask is taken once: a host that draws again with no layout in
     // between is not asked again.
@@ -468,7 +496,7 @@ fn a_gpu_surface_puts_its_place_in_the_draw_list() {
     let mut fx = Fx::new("View v { Layers l width=fill, height=fill {\n Rectangle under width=fill, height=fill, color=#000000FF\n Surface world draw=gpu, width=200, height=100, halign=left, valign=top, margin_left=20, margin_top=30, opacity=0.5\n Label over text=\"x\"/_, halign=right, valign=bottom\n Surface unseen draw=gpu, width=50, height=50, visibility=gone\n} }");
     let world: GpuSurface = GpuSurface::find(&fx.page, "world").unwrap();
     assert!(PictureSurface::find(&fx.page, "world").is_none() && CommandSurface::find(&fx.page, "world").is_none());
-    assert_eq!(SurfaceDraw::of(&fx.page, world.node()), Some(SurfaceDraw::Gpu));
+    assert_eq!(SurfaceDraw::of(&fx.page, world), Some(SurfaceDraw::Gpu));
     fx.frame(400.0, 800.0);
     let marks: Vec<&Draw> = fx.draws.iter().filter(|d| matches!(d, Draw::GpuSurface { .. })).collect();
     assert_eq!(marks, [&Draw::GpuSurface { rect: Rect::new(20.0, 30.0, 200.0, 100.0), surface: world.node(), alpha: 0.5 }], "one place: a Surface that does not show has none");

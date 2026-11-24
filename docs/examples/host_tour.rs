@@ -462,7 +462,7 @@ fn surface_tour() {
     // `draw=commands`: gogo asks when the Surface first shows.
     host.frame(0.0);
     write_surfaces(&mut host, 3);
-    assert_eq!(host.page.surface_commands(score.node()).len(), 2);
+    assert_eq!(host.page.surface_commands(score).len(), 2);
     // Nothing changed: the next frame asks for nothing.
     host.frame(0.016);
     assert!(host.rt.next_surface_to_draw().is_none());
@@ -470,13 +470,13 @@ fn surface_tour() {
     host.rt.surface_changed(&mut host.page, score);
     host.frame(0.016);
     write_surfaces(&mut host, 4);
-    assert_eq!(host.page.str(match host.page.surface_commands(score.node())[1] {
+    assert_eq!(host.page.str(match host.page.surface_commands(score)[1] {
         Draw::Text { text, .. } => text,
         _ => NO_STR,
     }), "4 points");
     // The page's own list holds the photo, and the place of the points.
     assert!(host.draws.iter().any(|d| matches!(d, Draw::Image { image, .. } if *image == picture)));
-    assert!(host.draws.iter().any(|d| matches!(d, Draw::Surface { surface, .. } if *surface == score.node())));
+    assert!(host.draws.iter().any(|d| matches!(d, Draw::Surface { surface, .. } if *surface == score)));
 }
 
 /// Runs every piece above. The docs test calls it.

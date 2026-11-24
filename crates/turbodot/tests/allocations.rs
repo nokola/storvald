@@ -323,7 +323,7 @@ fn a_surface_written_every_frame_allocates_nothing() {
         assert_eq!(allocations, 0, "commands written again, showing `{points}`");
     }
     let page: &PageUi = shown.page();
-    assert!(matches!(page.page.surface_commands(score.node())[1], Draw::Text { text, .. } if page.page.str(text) == "8 points"));
+    assert!(matches!(page.page.surface_commands(score)[1], Draw::Text { text, .. } if page.page.str(text) == "8 points"));
 
     // A picture handed to the picture Surface, then another one.
     // The first two grow what the later ones use.
@@ -340,7 +340,7 @@ fn a_surface_written_every_frame_allocates_nothing() {
     }
 
     // Two fingers on one Surface: each has a press of its own.
-    let on: Rect = shown.page().rect(pad.node());
+    let on: Rect = shown.page().rect(pad);
     assert_eq!(shown.pointer(Touch { phase: Phase::Down, x: on.x + 30.0, y: on.y + 30.0, t: 1.0, id: 1, ..Touch::PLAIN }).len(), 1);
     assert_eq!(shown.pointer(Touch { phase: Phase::Down, x: on.x + 90.0, y: on.y + 30.0, t: 1.01, id: 2, ..Touch::PLAIN }).len(), 1, "the second finger on the Surface is heard too");
     drop(shown.pointer(Touch { phase: Phase::Move, x: on.x + 32.0, y: on.y + 30.0, t: 1.02, id: 1, ..Touch::PLAIN }));

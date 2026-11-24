@@ -44,7 +44,7 @@ pub use input::{Behavior, Buttons, CapturedMouse, Claim, Cx, Event, EventKind, E
 pub use layout::{FixedAdvance, LayoutBuffers, Rect, TextMeasure, layout, layout_into};
 pub use locale::{KeyName, Keys, Locale};
 pub use runtime::{AnimName, ArrangementName, HandlerName, Hook, ThemeName};
-pub use page::{ArrangementId, BASE, BEHAVIOR_SLOTS, BUILTIN_BEHAVIORS, BehaviorSpec, ImageKey, ImageSlice, Images, Kind, KeyId, KEYS_ARROWS, KEYS_ENTER, KEYS_HOME_END, KEYS_SPACE, NO_IMAGE, NO_KEY, NO_NODE, NO_STR, NodeId, Orientation, Page, Payload, PropKey, Color_Straight_Srgb_4xU8_RGBA, ScreenClass, StaticPage, StrId, Value};
+pub use page::{ArrangementId, BASE, BEHAVIOR_SLOTS, BUILTIN_BEHAVIORS, BehaviorSpec, ImageKey, ImageSlice, Images, Kind, KeyId, KEYS_ARROWS, KEYS_ENTER, KEYS_HOME_END, KEYS_SPACE, NO_IMAGE, NO_KEY, NO_NODE, NO_STR, NodeId, NodeName, Orientation, Page, Payload, PropKey, Color_Straight_Srgb_4xU8_RGBA, ScreenClass, StaticPage, StrId, Value};
 pub use anim::{Easing, Finish, Motion};
 pub use runtime::{Resolved, Runtime, resolve, resolve_animated};
 pub use surface::{CommandSurface, GpuSurface, PictureSurface, SurfaceAsk, SurfaceCommands, SurfaceDraw};

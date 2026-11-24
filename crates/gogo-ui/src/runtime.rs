@@ -1033,7 +1033,8 @@ impl Runtime {
     /// it (shipped: a new play kills the old one). The input layer calls
     /// this on `activate` for every node whose `tap_pulse=true` (the
     /// shipped `button.Pressed` hook).
-    pub fn tap_pulse(&mut self, node: NodeId) {
+    pub fn tap_pulse(&mut self, node: impl NodeName) {
+        let node: NodeId = node.node();
         self.pulses.retain(|p| p.node != node);
         self.pulses.push(Pulse { node, elapsed: 0.0 });
         self.dirty = true;
@@ -1042,7 +1043,8 @@ impl Runtime {
     /// The `tap_pulse` swing angle on `node` right now, degrees about its
     /// left edge; 0 when no swing is live (a finished swing is disarmed —
     /// the D10 law: a node has a transform only WHILE it animates).
-    pub fn tap_pulse_angle(&self, node: NodeId) -> f32 {
+    pub fn tap_pulse_angle(&self, node: impl NodeName) -> f32 {
+        let node: NodeId = node.node();
         self.pulses.iter().find(|p| p.node == node).map(|p| p.angle()).unwrap_or(0.0)
     }
 
@@ -1216,7 +1218,13 @@ impl Runtime {
     /// Shows or hides with the node's `on:show` / `on:hide` anims: a hide
     /// plays first and hides on finish (deferred hide); showing during a
     /// hide cancels it.
-    pub fn show(&mut self, page: &mut Page, node: NodeId, visible: bool) {
+    #[inline]
+    pub fn show(&mut self, page: &mut Page, node: impl NodeName, visible: bool) {
+        self.show_by_id(page, node.node(), visible)
+    }
+
+    /// What `show` does, by the id of the node.
+    fn show_by_id(&mut self, page: &mut Page, node: NodeId, visible: bool) {
         // Entrances play on a REAL flip only (the shipped
         // visibility_changed gate, GPAR53): an overlay calling
         // `show(x, true)` every frame settles instead of restarting. A
@@ -1293,7 +1301,8 @@ impl Runtime {
     ///
     /// Needed by host that waits for a page's root: page is in place
     /// once its `on:show` ended.
-    pub fn is_hook_playing(&self, page: &Page, node: NodeId, hook: Hook) -> bool {
+    pub fn is_hook_playing(&self, page: &Page, node: impl NodeName, hook: Hook) -> bool {
+        let node: NodeId = node.node();
         let n = &page.nodes[node];
         let event: StrId = page.intern_lookup(hook.event());
         page.handlers[n.handlers.0 as usize..(n.handlers.0 + n.handlers.1) as usize].iter().any(|h| h.event == event && matches!(h.action, Action::Play(anim) if self.is_playing_id(anim)))
@@ -1354,7 +1363,13 @@ impl Runtime {
     /// while it leaves: with no `on:show` it would go on leaving.
     ///
     /// Returns false for node with no such hook: nothing plays.
-    pub fn play_hook(&mut self, page: &Page, node: NodeId, hook: Hook) -> bool {
+    #[inline]
+    pub fn play_hook(&mut self, page: &Page, node: impl NodeName, hook: Hook) -> bool {
+        self.play_hook_by_id(page, node.node(), hook)
+    }
+
+    /// What `play_hook` does, by the id of the node.
+    fn play_hook_by_id(&mut self, page: &Page, node: NodeId, hook: Hook) -> bool {
         if hook == Hook::Show {
             self.stop_hook(page, node, Hook::Hide);
         }
@@ -1441,7 +1456,13 @@ impl Runtime {
     /// The keyed-repeat row `node` sits in, if any — the key the shipped
     /// addon binds as a handler's trailing argument; a Rust host reads
     /// it off an event's node instead (`rt.item_key(&page, ev.node)`).
-    pub fn item_key(&self, page: &Page, node: NodeId) -> Option<&ItemKey> {
+    #[inline]
+    pub fn item_key(&self, page: &Page, node: impl NodeName) -> Option<&ItemKey> {
+        self.item_key_by_id(page, node.node())
+    }
+
+    /// What `item_key` does, by the id of the node.
+    fn item_key_by_id(&self, page: &Page, node: NodeId) -> Option<&ItemKey> {
         for p in &self.pools {
             for s in &p.live {
                 let root = p.slots[*s as usize];
@@ -2012,7 +2033,8 @@ impl Runtime {
     /// Is a prop lane (GP40) an anim's right now — a live player's, or a
     /// finished one's held end pose? The tween spawner asks BEFORE
     /// `compose_anim` has stamped the resolved copy.
-    pub fn anim_owns_prop_now(&self, node: NodeId, key: PropKey) -> bool {
+    pub fn anim_owns_prop_now(&self, node: impl NodeName, key: PropKey) -> bool {
+        let node: NodeId = node.node();
         self.held_props.iter().any(|h| h.0 == node && h.1 == key) || self.players.iter().filter(|p| !p.stopped).any(|p| p.owns_props.contains(&(node, key)))
     }
 
@@ -2290,7 +2312,13 @@ impl Runtime {
 
     /// A code write: `text=`, `visibility=`, `value=`… Replaces an earlier
     /// write of the same key; a same-value write changes nothing.
-    pub fn set_prop(&mut self, node: NodeId, key: PropKey, value: Value) {
+    #[inline]
+    pub fn set_prop(&mut self, node: impl NodeName, key: PropKey, value: Value) {
+        self.set_prop_by_id(node.node(), key, value)
+    }
+
+    /// What `set_prop` does, by the id of the node.
+    fn set_prop_by_id(&mut self, node: NodeId, key: PropKey, value: Value) {
         // `disabled` and `selected` are STATES. The file's word is read
         // once, at build, into the node's starting state, so a write that
         // only stored the value changed nothing on screen. The write sets
@@ -2384,7 +2412,13 @@ impl Runtime {
     /// before the next frame slides from this value: a bar shown faded out
     /// and then faded in is `set_prop_instant(opacity, 0)` +
     /// `set_prop(opacity, 1)`. Without a rule it is `set_prop`.
-    pub fn set_prop_instant(&mut self, node: NodeId, key: PropKey, value: Value) {
+    #[inline]
+    pub fn set_prop_instant(&mut self, node: impl NodeName, key: PropKey, value: Value) {
+        self.set_prop_instant_by_id(node.node(), key, value)
+    }
+
+    /// What `set_prop_instant` does, by the id of the node.
+    fn set_prop_instant_by_id(&mut self, node: NodeId, key: PropKey, value: Value) {
         match self.instant_props.iter_mut().find(|(n, k, _)| *n == node && *k == key) {
             Some(e) => e.2 = value,
             None => self.instant_props.push((node, key, value)),
@@ -2399,7 +2433,13 @@ impl Runtime {
     /// again (the shipped "fixed_w = -1 = unset" — a Tiles cell that was a
     /// 72x72 square becomes a full row with no width of its own). A key
     /// never written is a no-op.
-    pub fn clear_prop(&mut self, node: NodeId, key: PropKey) {
+    #[inline]
+    pub fn clear_prop(&mut self, node: impl NodeName, key: PropKey) {
+        self.clear_prop_by_id(node.node(), key)
+    }
+
+    /// What `clear_prop` does, by the id of the node.
+    fn clear_prop_by_id(&mut self, node: NodeId, key: PropKey) {
         let before = self.writes.len();
         self.writes.retain(|(n, p)| !(*n == node && p.key == key));
         if self.writes.len() != before {
@@ -2461,7 +2501,8 @@ impl Runtime {
     /// locale (`set_locale`). Takes only a build-emitted `Key`, so a key no
     /// page declares is a rustc error. `set_text` is the other write: a
     /// literal shown as given, never translated.
-    pub fn set_key<K: KeyName>(&mut self, node: NodeId, key: K) {
+    pub fn set_key<K: KeyName>(&mut self, node: impl NodeName, key: K) {
+        let node: NodeId = node.node();
         self.set_prop(node, PropKey::Text, Value::VText { text: NO_STR, key: key.id() });
     }
 
@@ -2488,7 +2529,13 @@ impl Runtime {
         }
     }
 
-    pub fn set_visible(&mut self, page: &mut Page, node: NodeId, visible: bool) {
+    #[inline]
+    pub fn set_visible(&mut self, page: &mut Page, node: impl NodeName, visible: bool) {
+        self.set_visible_by_id(page, node.node(), visible)
+    }
+
+    /// What `set_visible` does, by the id of the node.
+    fn set_visible_by_id(&mut self, page: &mut Page, node: NodeId, visible: bool) {
         if !visible {
             // A hidden node's standing anim values mean nothing: on the
             // next show the ladder shows. Its DESCENDANTS' too — a pooled
@@ -2602,7 +2649,13 @@ impl Runtime {
         self.set_prop(root, PropKey::Value, Value::VNum(v));
     }
 
-    pub fn set_state(&mut self, node: NodeId, bit: u8, on: bool) {
+    #[inline]
+    pub fn set_state(&mut self, node: impl NodeName, bit: u8, on: bool) {
+        self.set_state_by_id(node.node(), bit, on)
+    }
+
+    /// What `set_state` does, by the id of the node.
+    fn set_state_by_id(&mut self, node: NodeId, bit: u8, on: bool) {
         let s = &mut self.states[node];
         let before = *s;
         if on {
@@ -2649,14 +2702,21 @@ impl Runtime {
         }
     }
 
-    pub fn has(&self, node: NodeId, bit: u8) -> bool {
+    pub fn has(&self, node: impl NodeName, bit: u8) -> bool {
+        let node: NodeId = node.node();
         self.states[node] & bit != 0
     }
 
     /// Bumps `node`'s paint order among its siblings (the shipped
     /// Canvas.ZIndex): higher draws on top and takes the touch first, 0 =
     /// back to the file's order. Layout is untouched — only paint and hit.
-    pub fn set_raise(&mut self, node: NodeId, raise: i32) {
+    #[inline]
+    pub fn set_raise(&mut self, node: impl NodeName, raise: i32) {
+        self.set_raise_by_id(node.node(), raise)
+    }
+
+    /// What `set_raise` does, by the id of the node.
+    fn set_raise_by_id(&mut self, node: NodeId, raise: i32) {
         let before = self.raised.iter().find(|(n, _)| *n == node).map(|(_, r)| *r).unwrap_or(0);
         if before == raise {
             return;
@@ -2679,7 +2739,8 @@ impl Runtime {
     ///
     /// The file has the one word `off`, so a write can only switch a node
     /// off; `clear_prop` gives the file's answer back.
-    pub fn takes_keys(&self, page: &Page, node: NodeId) -> bool {
+    pub fn takes_keys(&self, page: &Page, node: impl NodeName) -> bool {
+        let node: NodeId = node.node();
         page.nodes[node].focusable && !self.writes.iter().any(|(n, w)| *n == node && w.key == PropKey::KeyboardTarget && matches!(w.value, Value::VIdent(word) if page.str(word) == "off"))
     }
 
@@ -2688,7 +2749,13 @@ impl Runtime {
     /// parent, and a button seated into a disabled panel is disabled
     /// (B25). The placed parents come from the last frame's seat table
     /// (`last_seat`).
-    pub fn disabled(&self, page: &Page, node: NodeId) -> bool {
+    #[inline]
+    pub fn disabled(&self, page: &Page, node: impl NodeName) -> bool {
+        self.disabled_by_id(page, node.node())
+    }
+
+    /// What `disabled` does, by the id of the node.
+    fn disabled_by_id(&self, page: &Page, node: NodeId) -> bool {
         let mut n = node;
         loop {
             if self.has(n, DISABLED) {
@@ -2737,7 +2804,13 @@ impl Runtime {
     /// The one door for "show me this row" from code (a list opening on
     /// its selection, a strip following a pick) — each page spelled its own
     /// before, with its own edge rule (D116).
-    pub fn scroll_into_view(&mut self, scroll: NodeId, item: NodeId, rects: &[Rect], margin: f32) -> bool {
+    #[inline]
+    pub fn scroll_into_view(&mut self, scroll: NodeId, item: impl NodeName, rects: &[Rect], margin: f32) -> bool {
+        self.scroll_into_view_by_id(scroll, item.node(), rects, margin)
+    }
+
+    /// What `scroll_into_view` does, by the id of the node.
+    fn scroll_into_view_by_id(&mut self, scroll: NodeId, item: NodeId, rects: &[Rect], margin: f32) -> bool {
         let (Some(v), Some(r)) = (rects.get(scroll.index()).copied(), rects.get(item.index()).copied()) else { return false };
         if v.w <= 0.0 || v.h <= 0.0 || r.w <= 0.0 || r.h <= 0.0 {
             return false; // no box yet (hidden, not laid out)
@@ -2905,7 +2978,8 @@ impl Runtime {
     /// A node past the tables (the page grew and `grow` has not run)
     /// answers dynamic — the safe side.
     #[inline]
-    pub fn is_static(&self, node: NodeId) -> bool {
+    pub fn is_static(&self, node: impl NodeName) -> bool {
+        let node: NodeId = node.node();
         self.static_mask_on && self.static_node.get(node.index()).copied().unwrap_or(false) && !self.written.get(node.index()).copied().unwrap_or(true)
     }
 
@@ -3128,7 +3202,13 @@ impl Runtime {
     /// Needed as a call of its own, beside `set_prop`: a Surface whose
     /// file never writes the word is not among those a frame asks, and
     /// this call adds it.
-    pub fn set_capture_mouse(&mut self, surface: NodeId, is_captured: bool) {
+    #[inline]
+    pub fn set_capture_mouse(&mut self, surface: impl NodeName, is_captured: bool) {
+        self.set_capture_mouse_by_id(surface.node(), is_captured)
+    }
+
+    /// What `set_capture_mouse` does, by the id of the node.
+    fn set_capture_mouse_by_id(&mut self, surface: NodeId, is_captured: bool) {
         if !self.capture_surfaces.contains(&surface) {
             self.capture_surfaces.push(surface);
         }
@@ -3232,7 +3312,13 @@ impl Runtime {
         self.static_look = DeclaredLook::build(page, self.variant);
     }
 
-    pub fn state_active(&self, page: &Page, node: NodeId, state: State) -> bool {
+    #[inline]
+    pub fn state_active(&self, page: &Page, node: impl NodeName, state: State) -> bool {
+        self.state_active_by_id(page, node.node(), state)
+    }
+
+    /// What `state_active` does, by the id of the node.
+    fn state_active_by_id(&self, page: &Page, node: NodeId, state: State) -> bool {
         match state {
             State::Held => self.has(node, HELD),
             State::Hovered => self.has(node, HOVERED),
@@ -3735,7 +3821,13 @@ impl Resolved {
     /// The override that wins for `key` on `node`, if any: the tail (code
     /// writes, anims, tweens — pushed last, so they win) newest first,
     /// then the node's own `when` entries newest first.
-    pub fn override_of(&self, node: NodeId, key: PropKey) -> Option<Value> {
+    #[inline]
+    pub fn override_of(&self, node: impl NodeName, key: PropKey) -> Option<Value> {
+        self.override_of_by_id(node.node(), key)
+    }
+
+    /// What `override_of` does, by the id of the node.
+    fn override_of_by_id(&self, node: NodeId, key: PropKey) -> Option<Value> {
         let tail = self.override_tail as usize;
         let mut at: u32 = self.tail_newest.get(node.index()).copied().unwrap_or(NO_TAIL_ENTRY);
         let mut in_tail: Option<Value> = None;
@@ -3799,7 +3891,13 @@ impl Resolved {
         self.tail_older.clear();
     }
 
-    pub fn prop(&self, page: &Page, node: NodeId, key: PropKey) -> Option<Value> {
+    #[inline]
+    pub fn prop(&self, page: &Page, node: impl NodeName, key: PropKey) -> Option<Value> {
+        self.prop_by_id(page, node.node(), key)
+    }
+
+    /// What `prop` does, by the id of the node.
+    fn prop_by_id(&self, page: &Page, node: NodeId, key: PropKey) -> Option<Value> {
         #[cfg(test)]
         note_key_read(key);
         let raw = self
@@ -3809,7 +3907,13 @@ impl Resolved {
         Some(deref(page, self.variant, raw))
     }
 
-    pub fn color(&self, page: &Page, node: NodeId, key: PropKey) -> Option<Color_Straight_Srgb_4xU8_RGBA> {
+    #[inline]
+    pub fn color(&self, page: &Page, node: impl NodeName, key: PropKey) -> Option<Color_Straight_Srgb_4xU8_RGBA> {
+        self.color_by_id(page, node.node(), key)
+    }
+
+    /// What `color` does, by the id of the node.
+    fn color_by_id(&self, page: &Page, node: NodeId, key: PropKey) -> Option<Color_Straight_Srgb_4xU8_RGBA> {
         let mut c = match self.prop(page, node, key) {
             Some(Value::VColor(c)) => c,
             Some(Value::VStop { color, .. }) => color,
@@ -3855,21 +3959,39 @@ impl Resolved {
         self.snap_slider(page, node, self.num(page, node, PropKey::Value).unwrap_or(min))
     }
 
-    pub fn num(&self, page: &Page, node: NodeId, key: PropKey) -> Option<f32> {
+    #[inline]
+    pub fn num(&self, page: &Page, node: impl NodeName, key: PropKey) -> Option<f32> {
+        self.num_by_id(page, node.node(), key)
+    }
+
+    /// What `num` does, by the id of the node.
+    fn num_by_id(&self, page: &Page, node: NodeId, key: PropKey) -> Option<f32> {
         match self.prop(page, node, key)? {
             Value::VNum(n) => Some(n),
             _ => None,
         }
     }
 
-    pub fn ident<'p>(&self, page: &'p Page, node: NodeId, key: PropKey) -> Option<&'p str> {
+    #[inline]
+    pub fn ident<'p>(&self, page: &'p Page, node: impl NodeName, key: PropKey) -> Option<&'p str> {
+        self.ident_by_id(page, node.node(), key)
+    }
+
+    /// What `ident` does, by the id of the node.
+    fn ident_by_id<'p>(&self, page: &'p Page, node: NodeId, key: PropKey) -> Option<&'p str> {
         match self.prop(page, node, key)? {
             Value::VIdent(id) => Some(page.str(id)),
             _ => None,
         }
     }
 
-    pub fn bool(&self, page: &Page, node: NodeId, key: PropKey) -> Option<bool> {
+    #[inline]
+    pub fn bool(&self, page: &Page, node: impl NodeName, key: PropKey) -> Option<bool> {
+        self.bool_by_id(page, node.node(), key)
+    }
+
+    /// What `bool` does, by the id of the node.
+    fn bool_by_id(&self, page: &Page, node: NodeId, key: PropKey) -> Option<bool> {
         match self.prop(page, node, key)? {
             Value::VBool(b) => Some(b),
             _ => None,
@@ -3954,7 +4076,13 @@ impl Resolved {
 
     /// `visibility=gone` — out of layout. An `automatic=presence` slot
     /// whose state is off is gone too.
-    pub fn gone(&self, page: &Page, node: NodeId) -> bool {
+    #[inline]
+    pub fn gone(&self, page: &Page, node: impl NodeName) -> bool {
+        self.gone_by_id(page, node.node())
+    }
+
+    /// What `gone` does, by the id of the node.
+    fn gone_by_id(&self, page: &Page, node: NodeId) -> bool {
         // A keyed repeat's template never shows — only its clones do.
         if page.repeats.iter().any(|r| r.template == node) {
             return true;
@@ -3989,14 +4117,21 @@ impl Resolved {
     /// longer sits in (todo-bugs B25). Every walk names its tree: hit,
     /// clip, focus, hover, scroll ancestor, disabled, presence, entrances,
     /// inherited props and moved rects want this one.
-    pub fn placed_parent(&self, page: &Page, n: NodeId) -> NodeId {
+    pub fn placed_parent(&self, page: &Page, n: impl NodeName) -> NodeId {
+        let n: NodeId = n.node();
         placed_parent_in(&self.seat, page, n)
     }
 
     /// Whether `node` is `ancestor` or sits anywhere under it in the
     /// PLACED tree (`placed_parent`); the declared one is
     /// `Page::is_under`. `NO_NODE` is under nothing.
-    pub fn placed_is_under(&self, page: &Page, node: NodeId, ancestor: NodeId) -> bool {
+    #[inline]
+    pub fn placed_is_under(&self, page: &Page, node: impl NodeName, ancestor: impl NodeName) -> bool {
+        self.placed_is_under_by_id(page, node.node(), ancestor.node())
+    }
+
+    /// What `placed_is_under` does, by the id of the node.
+    fn placed_is_under_by_id(&self, page: &Page, node: NodeId, ancestor: NodeId) -> bool {
         let mut n: NodeId = node;
         loop {
             if n == ancestor {
@@ -4026,7 +4161,8 @@ impl Resolved {
 
     /// `visibility=space_only` — laid out (the slot holds), not drawn,
     /// no input.
-    pub fn hidden(&self, page: &Page, node: NodeId) -> bool {
+    pub fn hidden(&self, page: &Page, node: impl NodeName) -> bool {
+        let node: NodeId = node.node();
         !self.hiding.contains(&node) && self.ident(page, node, PropKey::Visibility) == Some("space_only")
     }
 }
@@ -4172,12 +4308,14 @@ fn apply_prop_lane(page: &Page, r: &mut Resolved, node: NodeId, key: PropKey, v:
 
 impl Resolved {
     /// Does an anim own this channel on this node right now?
-    pub fn anim_owns(&self, node: NodeId, channel: Channel) -> bool {
+    pub fn anim_owns(&self, node: impl NodeName, channel: Channel) -> bool {
+        let node: NodeId = node.node();
         self.anim_owned.get(node.index()).is_some_and(|b| b & channel.bit() != 0)
     }
 
     /// Does an anim own this PROP lane (GP40) right now?
-    pub fn anim_owns_prop(&self, node: NodeId, key: PropKey) -> bool {
+    pub fn anim_owns_prop(&self, node: impl NodeName, key: PropKey) -> bool {
+        let node: NodeId = node.node();
         self.anim_owned_props.contains(&(node, key))
     }
 

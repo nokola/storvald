@@ -1712,9 +1712,12 @@ View main {
   `draw=`: `NAMES.painting` is a `PictureSurface`, `NAMES.chart` a
   `CommandSurface`, `NAMES.model` a `GpuSurface`. `Runtime::set_picture` takes the first and nothing
   else, so code that fills a Surface another way than its file says does
-  not compile. `.node()` gives the node, for what every node takes
-  (`set_visible`, its rectangle). `draw=` is therefore written on the
-  Surface's own line only, never in a `when`.
+  not compile. A call that takes any node takes the Surface's name as
+  it is (`set_prop`, `set_visible`, its rectangle): no `.node()`. A call
+  that needs one kind of node (the rows of a `repeat`, a Label's text,
+  a Slider's value) takes a node's id alone. `.node()` gives the id, for
+  a list of nodes or a field that holds one. `draw=` is therefore
+  written on the Surface's own line only, never in a `when`.
 - The words of another `draw=` are refused (G7016): `fit=`, `window=`
   and `sampling=` are a `draw=picture` Surface's, `clip_contents=` a
   `draw=commands` one's, and a `draw=gpu` Surface takes none of them;
