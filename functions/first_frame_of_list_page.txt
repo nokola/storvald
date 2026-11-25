@@ -1,9 +1,9 @@
-# `first_frame_of_list_page` at commit ecd045b6136273d7a0800f4134546ab1c0fadcb1: instructions by function, 21546003 in all.
+# `first_frame_of_list_page` at commit 5d29a8fee1bb7224b0d0c3788628a1ec685e899b: instructions by function, 21545163 in all.
 # A function's own code only: what it calls is counted at the called function.
 1547203 <gogo_ui::page::Page>::kind_default::{closure#0}
 1280270 <gogo_ui::runtime::Resolved>::override_of_by_id
 1054173 <gogo_ui::page::Page>::prop_by_id
-1001138 __memcpy_avx_unaligned_erms
+1001142 __memcpy_avx_unaligned_erms
 897070 harfrust::hb::ot_shape::shape_internal
 874740 <gogo_ui::runtime::Resolved>::prop_by_id
 779318 <cosmic_text::attrs::AttrsList>::get_span
@@ -85,8 +85,8 @@
 54540 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&str>
 52487 _int_free_merge_chunk
 52444 <cosmic_text::line_ending::LineIter as core::iter::traits::iterator::Iterator>::next
-52265 <gogo_text::TextEngine>::measure
 51980 roundf
+51743 <gogo_text::TextEngine>::measure
 48264 __memcmp_avx2_movbe
 44844 <gogo_text::TextEngine>::face
 44844 <unicode_segmentation::grapheme::GraphemeCursor>::grapheme_category
@@ -143,9 +143,9 @@
 17372 <core::iter::adapters::rev::Rev<alloc::vec::drain::Drain<cosmic_text::layout::LayoutLine>> as core::iter::traits::iterator::Iterator>::fold::<(), core::iter::adapters::map::map_fold<cosmic_text::layout::LayoutLine, alloc::vec::Vec<cosmic_text::layout::LayoutGlyph>, (), <cosmic_text::shape::ShapeLine>::layout_to_buffer::{closure#1}, core::iter::traits::iterator::Iterator::for_each::call<alloc::vec::Vec<cosmic_text::layout::LayoutGlyph>, <alloc::vec::Vec<alloc::vec::Vec<cosmic_text::layout::LayoutGlyph>>>::extend_trusted<core::iter::adapters::map::Map<core::iter::adapters::rev::Rev<alloc::vec::drain::Drain<cosmic_text::layout::LayoutLine>>, <cosmic_text::shape::ShapeLine>::layout_to_buffer::{closure#1}>>::{closure#0}>::{closure#0}>::{closure#0}>
 17136 gogo_ui::layout::free_axis
 16872 <harfrust::hb::ot_shape_plan::ShapePlanKey>::instance
-16685 <hashbrown::map::HashMap<u64, (f32, f32), std::hash::random::RandomState>>::insert
 16659 __rustc::__rust_alloc
 16405 gogo_ui::runtime::own_word
+16363 <hashbrown::map::HashMap<u64, (f32, f32), std::hash::random::RandomState>>::insert
 15704 <read_fonts::table_ref::TableRef<read_fonts::tables::gsub::LigatureMarker>>::component_glyph_ids
 15352 <alloc::vec::Vec<cosmic_text::shape::ShapeSpan> as core::ops::drop::Drop>::drop
 14751 <read_fonts::tables::layout::CoverageTable as read_fonts::read::FontRead>::read
