@@ -40,8 +40,8 @@ pub struct AppState {
     /// epx. Who changes it tells the page that its margin Surface is out
     /// of date (`PageUi::surface_changed`).
     pub paper_margin_shift_epx: f32,
-    /// What pages wrote when they arrived and when they left, in order.
-    /// A test reads it.
+    /// What pages wrote when they arrived, when they left and when back
+    /// closed a menu of theirs, in order. A test reads it.
     pub page_log: Vec<&'static str>,
 }
 
@@ -140,7 +140,8 @@ mod tests {
 
     /// The home page's menu is a `Popup` its file shows while the "More"
     /// Check is checked. A back request closes it and leaves the page
-    /// where it is; the next one is the page's.
+    /// where it is; the next one is the page's. The page is told of the
+    /// first (`Page::back_closed_popup`) and asked the second.
     #[test]
     fn back_closes_a_menu_before_it_leaves_the_page() {
         let is_menu_open = |program: &Program<AppState>| -> bool { !program.ui().kept.look().gone(&program.ui().page, HOME.more_menu) };
@@ -152,11 +153,80 @@ mod tests {
         let (check, about): (Rect, Rect) = (program.ui().rect(HOME.more), program.ui().rect(HOME.about_notes));
         assert!(about.bottom() <= check.y + 0.5 && about.w > 0.0, "above the Check: {about:?} over {check:?}");
 
+        program.app_mut().page_log.clear();
         assert!(program.back(), "the menu takes the back request");
+        assert_eq!(program.app().page_log, ["home menu closed by back"], "and the page is told, with the call");
         frame(&mut program, 0.016);
         assert!(!is_menu_open(&program) && !program.ui().is_checked(HOME.more), "closed, the Check unchecked");
         assert_eq!(program.depth(), 1, "the page stayed");
         assert!(!program.back(), "the next back request is the first page's: nothing is before it");
+        assert_eq!(program.app().page_log, ["home menu closed by back"], "no menu closed: the page is asked, not told");
+    }
+
+    /// A Popup of a page placed in page on screen takes a back request.
+    /// The placed page hears its Check's `on:change=`, then page on
+    /// screen is told (`Page::back_closed_popup`). `back` of neither is
+    /// asked. The next request is asked of page on screen.
+    ///
+    /// Needed so a page does one thing at every back request (a hint
+    /// that goes away at first back) whichever part of it the menu
+    /// belongs to.
+    #[test]
+    fn the_page_on_screen_is_told_when_back_closed_a_menu_of_a_page_placed_in_it() {
+        /// `home_page.gogo` as a part, its "More" menu open.
+        struct MenuPart;
+        impl Page<AppState> for MenuPart {
+            const PAGE: &'static BuiltPage = &home_page::PAGE;
+            type Handler = home_page::Handler;
+            fn loaded(&mut self, host: &mut Host<AppState>) {
+                host.ui.set_checked(HOME.more, true);
+            }
+            fn handle(&mut self, host: &mut Host<AppState>, event: PageEvent<home_page::Handler>) {
+                if matches!(event.handler, home_page::Handler::More) {
+                    host.app.page_log.push("part: its Check changed");
+                }
+            }
+            fn back(&mut self, host: &mut Host<AppState>) -> Back {
+                host.app.page_log.push("part asked");
+                Back::Stay
+            }
+            fn back_closed_popup(&mut self, host: &mut Host<AppState>) {
+                host.app.page_log.push("part told");
+            }
+        }
+        /// `edit_page.gogo` as a first page with the part in its footer.
+        struct OuterPage;
+        impl Page<AppState> for OuterPage {
+            const PAGE: &'static BuiltPage = &edit_page::PAGE;
+            type Handler = edit_page::Handler;
+            fn loaded(&mut self, host: &mut Host<AppState>) {
+                host.nav.place(EDIT.footer, MenuPart);
+            }
+            fn handle(&mut self, _host: &mut Host<AppState>, _event: PageEvent<edit_page::Handler>) {}
+            fn back(&mut self, host: &mut Host<AppState>) -> Back {
+                host.app.page_log.push("outer asked");
+                Back::Stay
+            }
+            fn back_closed_popup(&mut self, host: &mut Host<AppState>) {
+                host.app.page_log.push("outer told");
+            }
+        }
+        let is_menu_open = |program: &Program<AppState>| -> bool {
+            let part: &PageUi = program.placed_ui(EDIT.footer).expect("the part is placed");
+            !part.kept.look().gone(&part.page, HOME.more_menu)
+        };
+        let mut program: Program<AppState> = Program::new(&crate::ui::BUILT, AppState::default(), OuterPage).expect("the pages can be shown");
+        frame(&mut program, 0.0);
+        frame(&mut program, 0.016);
+        assert!(is_menu_open(&program), "the part's menu shows");
+
+        assert!(program.back(), "the menu takes the back request");
+        assert_eq!(program.app().page_log, ["part: its Check changed", "outer told"]);
+        frame(&mut program, 0.016);
+        assert!(!is_menu_open(&program), "closed");
+
+        assert!(program.back(), "the next one is asked of page on screen, which stays");
+        assert_eq!(program.app().page_log, ["part: its Check changed", "outer told", "outer asked"]);
     }
 
     /// A tap on the menu's line reaches the page's code, which closes the

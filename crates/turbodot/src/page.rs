@@ -154,10 +154,32 @@ pub trait Page<A = ()>: Sized + 'static {
     /// Answers back request: Android back key, Esc on PC, page's own
     /// `Nav::back`.
     ///
+    /// Not asked when a Popup took the request: `back_closed_popup` is
+    /// called in its place.
+    ///
     /// Returns `Back::Leave` unless page writes it.
     fn back(&mut self, host: &mut Host<'_, A>) -> Back {
         let _ = host;
         Back::Leave
+    }
+
+    /// Called when a back request closed a Popup, in place of `back`: a
+    /// Popup of this page, or of a page placed in it.
+    ///
+    /// Needed for what a page does at every back request, whoever
+    /// answers it: a hint "back works here" that goes away at first
+    /// back. Every back request reaches page on screen once: here, or
+    /// as `back`.
+    ///
+    /// Page cannot stop the close. Which Popup closed is not said: a
+    /// Check that showed it raised its `on:change=` before this call
+    /// (`handle`). Page placed in another is not called: page on screen
+    /// is.
+    ///
+    /// WARNING: page's own `Nav::back` goes the same road. With a Popup
+    /// open it closes the Popup, this is called, and page stays.
+    fn back_closed_popup(&mut self, host: &mut Host<'_, A>) {
+        let _ = host;
     }
 
     /// Page's own GPU work, before the pass that draws the pages: draws
@@ -281,6 +303,11 @@ pub trait CachedPage<A = ()>: Sized + 'static {
         Back::Leave
     }
 
+    /// As `Page::back_closed_popup`.
+    fn back_closed_popup(&mut self, host: &mut Host<'_, A>) {
+        let _ = host;
+    }
+
     /// As `Page::gpu_prepare`.
     fn gpu_prepare(&mut self, host: &mut Host<'_, A>, gpu: &Gpu) {
         let _ = (host, gpu);
@@ -328,6 +355,7 @@ pub(crate) trait PageObject<A> {
     fn arrived(&mut self, host: &mut Host<'_, A>);
     fn left(&mut self, host: &mut Host<'_, A>);
     fn back(&mut self, host: &mut Host<'_, A>) -> Back;
+    fn back_closed_popup(&mut self, host: &mut Host<'_, A>);
     /// `CachedPage::reopened` with `fresh`: struct of this page's own
     /// type.
     fn reopened(&mut self, fresh: Box<dyn Any>);
@@ -441,6 +469,9 @@ impl<A: 'static, P: Page<A>> PageObject<A> for Plain<P, P::Handler> {
     fn back(&mut self, host: &mut Host<'_, A>) -> Back {
         self.0.back(host)
     }
+    fn back_closed_popup(&mut self, host: &mut Host<'_, A>) {
+        self.0.back_closed_popup(host);
+    }
     fn reopened(&mut self, _fresh: Box<dyn Any>) {}
     fn into_page(self: Box<Self>) -> Box<dyn Any> {
         Box::new(self.0)
@@ -506,6 +537,9 @@ impl<A: 'static, P: CachedPage<A>> PageObject<A> for Cached<P, P::Handler> {
     }
     fn back(&mut self, host: &mut Host<'_, A>) -> Back {
         self.0.back(host)
+    }
+    fn back_closed_popup(&mut self, host: &mut Host<'_, A>) {
+        self.0.back_closed_popup(host);
     }
     fn reopened(&mut self, fresh: Box<dyn Any>) {
         if let Ok(fresh) = fresh.downcast::<P>() {
@@ -667,6 +701,10 @@ impl<A: 'static> Nav<A> {
     ///
     /// Needed for back button on a page: same road as the key, so both do
     /// same thing on every page.
+    ///
+    /// WARNING: a Popup that shows takes this request, as it takes the
+    /// key's (`Page::back_closed_popup`). Page that must leave closes
+    /// its Popups first.
     pub fn back(&mut self) {
         self.requests.push(Request::Back);
     }

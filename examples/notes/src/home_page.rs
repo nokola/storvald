@@ -41,6 +41,11 @@ impl Page<AppState> for HomePage {
         host.app.page_log.push("home arrived");
     }
 
+    /// A back request closed the "More" menu. The page stays.
+    fn back_closed_popup(&mut self, host: &mut Host<AppState>) {
+        host.app.page_log.push("home menu closed by back");
+    }
+
     /// One call per user action.
     fn handle(&mut self, host: &mut Host<AppState>, event: PageEvent<Handler>) {
         match event.handler {

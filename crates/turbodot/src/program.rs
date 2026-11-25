@@ -1548,11 +1548,13 @@ impl<A: 'static> Program<A> {
     /// One back request, without what the asked page asks for in turn.
     ///
     /// A Popup that shows on page on screen, or on a page placed in it,
-    /// takes the request first: the topmost one is hidden and the page
-    /// is not asked (`Input::hide_top_popup`).
+    /// takes the request first: the topmost one is hidden
+    /// (`Input::hide_top_popup`), and page on screen is told in place of
+    /// asked (`Page::back_closed_popup`).
     fn back_once(&mut self) -> bool {
         let top: PageId = self.top();
         if self.hide_top_popup(top) {
+            self.call(top, |page, host| page.back_closed_popup(host));
             return true;
         }
         match self.call(top, |page, host| page.back(host)) {

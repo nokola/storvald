@@ -1410,7 +1410,8 @@ A `ListItem` takes these less `valign`, `aspect`, `overlay`.
   opens it with no code.
 - **Back hides the topmost one** by ending what shows it
   (`Input::hide_top_popup`): a Check is unchecked, a write from code is
-  written back. TurboDot calls it before it asks the page.
+  written back. TurboDot calls it in place of asking the page, and
+  tells the page that a Popup closed (`Page::back_closed_popup`).
 - **Not a page.** A dialog is a page: any page opens it, it blocks what
   is under it, it has code of its own. A Popup belongs to one control of
   one page and its events go to that page's handlers.
