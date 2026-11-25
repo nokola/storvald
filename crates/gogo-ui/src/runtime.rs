@@ -137,6 +137,49 @@ pub trait ArrangementName: Copy {
     fn id(self) -> ArrangementId;
 }
 
+/// A typed arrangement of one widget (`enum <Widget>Arrangement` of the
+/// build): `Runtime::go_in` takes one.
+///
+/// Needed apart from `ArrangementName` so a widget's arrangement cannot
+/// be handed to `Runtime::go`, which sets the page's: that is a rustc
+/// error.
+pub trait ControlArrangementName: Copy {
+    /// The arrangement's place among the ones the widget declares
+    /// (`BASE` for `Base`).
+    fn id(self) -> ArrangementId;
+
+    /// The arrangement at that place; `Base` for `BASE` and for a place
+    /// the widget does not declare.
+    fn from_id(id: ArrangementId) -> Self;
+}
+
+/// The names of one instance of a widget that declares arrangements
+/// (`<Widget>Names` of the build).
+///
+/// Needed so `Runtime::go_in(&NAMES.restore_switch, …)` takes the
+/// arrangements of that widget and no other widget's.
+pub trait HasArrangements {
+    /// The widget's `enum <Widget>Arrangement`.
+    type Arrangement: ControlArrangementName;
+
+    /// The instance's root node.
+    fn root(&self) -> NodeId;
+}
+
+/// The arrangement one control instance is in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ControlPose {
+    /// The instance's root.
+    root: NodeId,
+    /// The arrangement in force, as a `State::ControlArrangement` holds
+    /// it (a place in `Page::control_arrangement_names`), or `BASE`.
+    arrangement: ArrangementId,
+    /// `ControlArrangements::first` and `count` of the instance: the
+    /// places the widget's own arrangements have.
+    first: u32,
+    count: u32,
+}
+
 /// A page build's typed theme-value handle (`enum Theme` in the generated
 /// module, one variant per `$name = value` the page sees) — code reads
 /// the file's colors through `Runtime::theme_color`, so a renamed theme
@@ -677,6 +720,18 @@ pub struct Runtime {
     instant_flips: Vec<ArrangementId>,
     /// The flip awaiting `arrangement_settled` (the shipped signal).
     pending_settle: Option<ArrangementId>,
+    /// The arrangement of every control instance whose widget declares
+    /// some (`Page::control_arrangements`, same order: lowest root
+    /// first). Empty on a page with no such control.
+    control_poses: Vec<ControlPose>,
+    /// Control flips made by `go_in_instant` and not resolved yet: (the
+    /// instance's root, the arrangement gone to). Such a flip arms no
+    /// tweens, glides or rule anims.
+    instant_control_flips: Vec<(NodeId, ArrangementId)>,
+    /// A timed flip of a control's arrangement started this frame: the
+    /// nodes of that instance, each with the timing its box glides by.
+    /// A box outside the instance is not listed and does not glide.
+    glide_control_rules: Vec<(NodeId, f32, Easing)>,
     /// Per node: the string slot a code `set_text` owns (`NO_STR` = none
     /// yet). Needed so a label that changes every few frames (a stats
     /// line) rewrites ONE string in place instead of interning a new one
@@ -770,6 +825,11 @@ impl Runtime {
             knobs: page.node_ids().filter(|n| draws_own_knob(page, *n)).collect(),
             instant_flips: Vec::new(),
             pending_settle: None,
+            // No allocation on a page with no such control: an empty
+            // list collects into an empty `Vec`.
+            control_poses: page.control_arrangements.iter().map(|c| ControlPose { root: c.root, arrangement: BASE, first: c.first, count: c.count }).collect(),
+            instant_control_flips: Vec::new(),
+            glide_control_rules: Vec::new(),
             dirty: true,
             is_root_posed_by_host: false,
             locale: None,
@@ -872,6 +932,7 @@ impl Runtime {
             is_root_posed_by_host,
             writes,
             customs,
+            control_poses,
             pools,
             list_sel,
             // Reset — rebuilt from the new page by `new`.
@@ -929,6 +990,8 @@ impl Runtime {
             glide_node_rules: _,
             rect_tweens: _,
             instant_flips: _,
+            instant_control_flips: _,
+            glide_control_rules: _,
             pending_settle: _,
             scroll_clamp_pending: _,
             focus_reset_pending: _,
@@ -957,6 +1020,14 @@ impl Runtime {
         rt.customs = customs.iter().map(|(node, state)| (*node, reintern(old_page, new_page, *state))).collect();
         if arrangement.index() < new_page.arrangements.len() {
             rt.go_instant_id(*arrangement);
+        }
+        // A control keeps its arrangement by its place among the ones
+        // its widget declares; `go_in_instant_id` refuses a place the
+        // new file no longer has.
+        for pose in control_poses {
+            if pose.arrangement != BASE {
+                rt.go_in_instant_id(pose.root, ArrangementId::from_index(pose.arrangement.index() - pose.first as usize));
+            }
         }
         // What the items wrote on the old rows: `refill_rows` wrote it
         // again through the new file's row, so the old copy stays behind.
@@ -1125,33 +1196,38 @@ impl Runtime {
     /// on entry and the shown ones on exit — the frame road's version
     /// (`frame_retained`), one copy fewer than `glide` (audit finding 7).
     pub fn glide_in_place(&mut self, rects: &mut Vec<Rect>) {
-        if let Some((duration, easing)) = self.glide_start.take() {
-            if self.last_rects.len() == rects.len() {
-                for i in 0..rects.len() {
-                    if self.last_rects[i] != rects[i] {
-                        // A node that had NO box (gone last frame, or gone
-                        // now) snaps: a gone node's rect is the zero rect
-                        // at the origin, and gliding from it inflates the
-                        // node out of the screen's top-left corner (the
-                        // brush page's color wheel, todo-bugs.md #2).
-                        // Shipped tweened only placement-posed nodes from
-                        // their live offsets, so an appearing plate never
-                        // moved there either.
-                        if self.last_rects[i] == Rect::ZERO || rects[i] == Rect::ZERO {
-                            self.rect_tweens.retain(|t| t.0 != NodeId::from_index(i));
-                            continue;
+        let view: Option<(f32, Easing)> = self.glide_start.take();
+        if (view.is_some() || !self.glide_control_rules.is_empty()) && self.last_rects.len() == rects.len() {
+            match view {
+                // A flip of the page's arrangement: every box that moved.
+                Some((duration, easing)) => {
+                    for i in 0..rects.len() {
+                        if self.last_rects[i] != rects[i] {
+                            let node: NodeId = NodeId::from_index(i);
+                            // The node's own pose-pair rule times its
+                            // share, duration 0 snaps (GPAR72); a node of
+                            // a control that flipped in the same frame
+                            // takes that control's timing.
+                            let (d, e) = self.glide_node_rules.iter().chain(&self.glide_control_rules).find(|(n, _, _)| *n == node).map(|(_, d, e)| (*d, *e)).unwrap_or((duration, easing));
+                            self.start_rect_glide(node, rects[i], d, e);
                         }
-                        // The node's own pose-pair rule times its share;
-                        // duration 0 snaps (GPAR72).
-                        let (d, e) = self.glide_node_rules.iter().find(|(n, _, _)| *n == NodeId::from_index(i)).map(|(_, d, e)| (*d, *e)).unwrap_or((duration, easing));
-                        self.rect_tweens.retain(|t| t.0 != NodeId::from_index(i));
-                        if d > 0.0 {
-                            self.rect_tweens.push((NodeId::from_index(i), self.last_rects[i], rects[i], self.glide_late.min(d), d, e));
+                    }
+                }
+                // A flip of a control's arrangement alone: the boxes of
+                // that instance. A box outside it that the flip moved
+                // jumps, and one still gliding from a flip of the page
+                // goes on gliding.
+                None => {
+                    for at in 0..self.glide_control_rules.len() {
+                        let (node, d, e) = self.glide_control_rules[at];
+                        if self.last_rects[node] != rects[node] {
+                            self.start_rect_glide(node, rects[node], d, e);
                         }
                     }
                 }
             }
         }
+        self.glide_control_rules.clear();
         for (node, from, to, elapsed, duration, easing) in &mut self.rect_tweens {
             // A relayout (a resize, a text change) moves the target with it
             // — `rects[node]` is still the laid-out rect here, each node
@@ -1171,6 +1247,27 @@ impl Runtime {
             if p.resolve_pending_percent(&self.last_rects, &mut self.motion) {
                 self.dirty = true;
             }
+        }
+    }
+
+    /// Starts `node`'s box gliding from where it showed last frame to
+    /// `to`, where the layout put it now, over `duration` seconds; a
+    /// duration of 0 drops a glide in flight and the box jumps.
+    ///
+    /// A node that had NO box (gone last frame, or gone now) jumps: a
+    /// gone node's rect is the zero rect at the origin, and gliding from
+    /// it inflates the node out of the screen's top-left corner (the
+    /// brush page's color wheel, todo-bugs.md #2). Shipped tweened only
+    /// placement-posed nodes from their live offsets, so an appearing
+    /// plate never moved there either.
+    fn start_rect_glide(&mut self, node: NodeId, to: Rect, duration: f32, easing: Easing) {
+        let from: Rect = self.last_rects[node];
+        self.rect_tweens.retain(|t| t.0 != node);
+        if from == Rect::ZERO || to == Rect::ZERO {
+            return;
+        }
+        if duration > 0.0 {
+            self.rect_tweens.push((node, from, to, self.glide_late.min(duration), duration, easing));
         }
     }
 
@@ -1575,6 +1672,11 @@ impl Runtime {
             self.static_node.extend(static_nodes(page, from));
         }
         self.written.resize(n, false);
+        // A cloned control is in none of its arrangements. The page lists
+        // the clones after the entries it had, lowest root first.
+        for c in &page.control_arrangements[self.control_poses.len()..] {
+            self.control_poses.push(ControlPose { root: c.root, arrangement: BASE, first: c.first, count: c.count });
+        }
         // The new rows' `when`s join the reverse table; the row count
         // change itself makes the next resolve a full rebuild
         // (`full_rebuild_needed`).
@@ -3037,6 +3139,128 @@ impl Runtime {
         self.go_id(target);
     }
 
+    /// Moves one control instance to an arrangement its widget declares
+    /// (`rt.go_in(&NAMES.restore_switch, CompactSwitchArrangement::Option1)`).
+    ///
+    /// Needed because a widget's arrangements are one set per instance:
+    /// two switches on a page flip one at a time, and `go` sets the
+    /// page's own.
+    ///
+    /// The `when <name>` blocks of the widget's body restyle that
+    /// instance; a `transition` rule of the body times the flip, and the
+    /// boxes of the instance glide to their new places. A box outside the
+    /// instance that the flip moves jumps.
+    pub fn go_in<C: HasArrangements>(&mut self, control: &C, arrangement: C::Arrangement) {
+        self.go_in_id(control.root(), arrangement.id());
+    }
+
+    /// `go_in` without the motion: the instance restyles, and no
+    /// transition rule times it (no tweens, no glides, no rule anim).
+    pub fn go_in_instant<C: HasArrangements>(&mut self, control: &C, arrangement: C::Arrangement) {
+        self.go_in_instant_id(control.root(), arrangement.id());
+    }
+
+    /// `go_in`, or back to `Base` when the instance is in `arrangement`.
+    pub fn toggle_in<C: HasArrangements>(&mut self, control: &C, arrangement: C::Arrangement) {
+        self.toggle_in_id(control.root(), arrangement.id());
+    }
+
+    /// The arrangement one control instance is in (`Base` when none).
+    pub fn arrangement_in<C: HasArrangements>(&self, control: &C) -> C::Arrangement {
+        C::Arrangement::from_id(self.arrangement_in_id(control.root()))
+    }
+
+    /// `go_in` by the instance's root and the arrangement's place among
+    /// the ones the widget declares (`Page::control_arrangement`), for a
+    /// page compiled at run time (a test, a hot reload).
+    ///
+    /// A root that is no such instance, or a place the widget does not
+    /// declare, is refused and the instance keeps its arrangement, as
+    /// `go_id` does.
+    pub fn go_in_id(&mut self, root: NodeId, arrangement: ArrangementId) {
+        let Ok(at) = self.control_poses.binary_search_by_key(&root, |p| p.root) else { return };
+        let pose: ControlPose = self.control_poses[at];
+        let to: ArrangementId = if arrangement == BASE {
+            BASE
+        } else if arrangement.index() < pose.count as usize {
+            ArrangementId::from_index(pose.first as usize + arrangement.index())
+        } else {
+            return;
+        };
+        if pose.arrangement != to {
+            self.control_poses[at].arrangement = to;
+            self.dirty = true;
+            self.changes.push((root, Some(State::ControlArrangement(pose.arrangement)), Some(State::ControlArrangement(to))));
+        }
+    }
+
+    /// `go_in_instant` by id, as `go_in_id` is `go_in` by id.
+    pub fn go_in_instant_id(&mut self, root: NodeId, arrangement: ArrangementId) {
+        let before: Option<ArrangementId> = self.control_arrangement_at(root);
+        self.go_in_id(root, arrangement);
+        match self.control_arrangement_at(root) {
+            Some(now) if Some(now) != before => self.instant_control_flips.push((root, now)),
+            _ => {}
+        }
+    }
+
+    /// `toggle_in` by id, as `go_in_id` is `go_in` by id.
+    pub fn toggle_in_id(&mut self, root: NodeId, arrangement: ArrangementId) {
+        let target: ArrangementId = if self.arrangement_in_id(root) == arrangement { BASE } else { arrangement };
+        self.go_in_id(root, target);
+    }
+
+    /// The arrangement the control instance rooted at `root` is in, as
+    /// its place among the ones the widget declares; `BASE` when it is in
+    /// none, and for a root that is no such instance.
+    pub fn arrangement_in_id(&self, root: NodeId) -> ArrangementId {
+        let Ok(at) = self.control_poses.binary_search_by_key(&root, |p| p.root) else { return BASE };
+        let pose: ControlPose = self.control_poses[at];
+        if pose.arrangement == BASE { BASE } else { ArrangementId::from_index(pose.arrangement.index() - pose.first as usize) }
+    }
+
+    /// Carries out `go(<name>)` or `toggle(<name>)` written in a widget's
+    /// body, raised on `node`: sets the arrangement of the nearest
+    /// instance around `node` (or `node` itself) whose widget declares
+    /// `place`.
+    ///
+    /// Needed because a handler is shared by every clone of its node (a
+    /// control in a `repeat` row), so it cannot hold the instance's
+    /// root: the root is found from the node the event is on.
+    ///
+    /// `place` is what the `Action` holds: a place in
+    /// `Page::control_arrangement_names`; the one after the widget's last
+    /// name stands for `go(base)`.
+    pub(crate) fn act_in_control(&mut self, page: &Page, node: NodeId, place: ArrangementId, is_toggle: bool) {
+        let mut at_node: NodeId = node;
+        while at_node != NO_NODE {
+            if let Ok(at) = self.control_poses.binary_search_by_key(&at_node, |p| p.root) {
+                let pose: ControlPose = self.control_poses[at];
+                let first: usize = pose.first as usize;
+                let end: usize = first + pose.count as usize;
+                if place.index() >= first && place.index() <= end {
+                    let arrangement: ArrangementId = if place.index() == end { BASE } else { ArrangementId::from_index(place.index() - first) };
+                    if is_toggle {
+                        self.toggle_in_id(at_node, arrangement);
+                    } else {
+                        self.go_in_id(at_node, arrangement);
+                    }
+                    return;
+                }
+            }
+            // Declared on purpose: the instance that WROTE the node owns
+            // the handler, wherever a seat moves the node.
+            at_node = page.declared_parent(at_node);
+        }
+    }
+
+    /// The arrangement of the control instance rooted at `root`, as a
+    /// `State::ControlArrangement` holds it; `None` when `root` is no
+    /// instance of a widget that declares arrangements.
+    fn control_arrangement_at(&self, root: NodeId) -> Option<ArrangementId> {
+        self.control_poses.binary_search_by_key(&root, |p| p.root).ok().map(|at| self.control_poses[at].arrangement)
+    }
+
     /// The host names the live screen orientation and class; every `when
     /// screen.*` re-poses at once, instantly (no transition, like a
     /// rotation). A word the page never mentions is simply not active.
@@ -3478,6 +3702,10 @@ impl Runtime {
             State::ScreenOrientation(w) | State::ScreenClass(w) => self.screen.contains(&w),
             State::ArrangementScreen(i, w) => self.arrangement == i && self.screen.contains(&w),
             State::ScreenPair(o, c) => self.screen.contains(&o) && self.screen.contains(&c),
+            // `node` is the instance's root: the build writes it as the
+            // `of` of every such `when`.
+            State::ControlArrangement(i) => self.control_arrangement_at(node) == Some(i),
+            State::ControlArrangementScreen(i, w) => self.control_arrangement_at(node) == Some(i) && self.screen.contains(&w),
         }
     }
 }
@@ -3643,6 +3871,14 @@ impl Watchers {
                     State::Held | State::Hovered | State::Focused | State::FocusWithin | State::Selected => self.by_owner[owner].push(id),
                     State::StateDisabled => self.disabled.push(id),
                     State::Arrangement(_) | State::ArrangementScreen(..) | State::ScreenOrientation(_) | State::ScreenClass(_) | State::ScreenPair(..) => self.view.push(id),
+                    // A flip of the instance's arrangement lands on its
+                    // root (`w.of`); the composed form also follows the
+                    // screen.
+                    State::ControlArrangement(_) => self.by_owner[owner].push(id),
+                    State::ControlArrangementScreen(..) => {
+                        self.by_owner[owner].push(id);
+                        self.view.push(id);
+                    }
                     // Declared on purpose: the root that WROTE the node
                     // raises its states (`state_active`'s walk).
                     State::Custom(s) => {
@@ -3726,6 +3962,9 @@ struct Retained {
     seen_arrangement: ArrangementId,
     seen_screen: Vec<StrId>,
     seen_customs: Vec<(NodeId, StrId)>,
+    /// The arrangement of every control (`Runtime::control_poses`, same
+    /// order) as the last resolve saw it.
+    seen_control_arrangements: Vec<ArrangementId>,
     seen_mask_on: bool,
     /// The last resolve moved a seat: the `when disabled` watchers re-run
     /// next time, because `disabled` reads placed parents from
@@ -3764,6 +4003,7 @@ impl Retained {
             seen_arrangement: BASE,
             seen_screen: Vec::new(),
             seen_customs: Vec::new(),
+            seen_control_arrangements: Vec::new(),
             seen_mask_on: true,
             seat_moved: false,
             laddered: 0,
@@ -5110,7 +5350,7 @@ fn find_rule(page: &Page, node: NodeId, from: Option<State>, to: Option<State>) 
     };
     // An entering rule to mirror: `any -> X` or `base -> X` (at the view
     // `base` is the home arrangement, on a node the rest state).
-    let from_rest = |t: &Transition| t.from.is_none() || t.from == Some(State::Arrangement(BASE));
+    let from_rest = |t: &Transition| t.from.is_none() || t.from == Some(State::Arrangement(BASE)) || t.from == Some(State::ControlArrangement(BASE));
     let rules: Vec<&Transition> = page.transitions.iter().filter(|t| t.node == node).collect();
     let score = |t: &Transition| -> Option<u8> {
         match (t.from, t.to) {
@@ -5123,7 +5363,7 @@ fn find_rule(page: &Page, node: NodeId, from: Option<State>, to: Option<State>) 
     let best = rules.iter().filter_map(|t| score(t).map(|s| (s, **t))).max_by_key(|(s, _)| *s).map(|(_, t)| t);
     if best.is_none() {
         // Home (base) with no rule: mirror the entering rule of where we came from.
-        if let Some(State::Arrangement(BASE)) = to {
+        if matches!(to, Some(State::Arrangement(BASE)) | Some(State::ControlArrangement(BASE))) {
             return rules.iter().find(|t| from_rest(t) && same(t.to, from)).map(|t| Transition { anim: NO_STR, ..**t });
         }
         // Leaving a built-in state with no rule: mirror its entering rule
@@ -5141,18 +5381,23 @@ fn when_writes_key(page: &Page, node: NodeId, key: PropKey, who: NodeId) -> bool
     let n = &page.nodes[node];
     page.whens[n.whens.0 as usize..(n.whens.0 + n.whens.1) as usize].iter().any(|w| {
         let owner = if w.of == NO_NODE { node } else { w.of };
-        let node_state = matches!(w.state, State::Held | State::Hovered | State::Focused | State::FocusWithin | State::Selected | State::StateDisabled);
+        // A control's arrangement flips on its root, as a state does.
+        let node_state = matches!(w.state, State::Held | State::Hovered | State::Focused | State::FocusWithin | State::Selected | State::StateDisabled) || w.state.is_control_arrangement();
         let flipped = if who == NO_NODE { !node_state } else { node_state && owner == who };
         flipped && page.props[w.props.0 as usize..(w.props.0 + w.props.1) as usize].iter().any(|p| p.key == key)
     })
 }
 
-/// Does a `when` on `node` for either end of a view flip (`from` or
-/// `to`) set `key`? Tells a `go_instant` flip's own responses from other
-/// changes in the same frame.
-fn when_sets_key(page: &Page, node: NodeId, key: PropKey, from: Option<State>, to: Option<State>) -> bool {
+/// Does a `when` on `node` for either end of an arrangement flip (`from`
+/// or `to`) set `key`? Tells the own responses of a `go_instant` or
+/// `go_in_instant` flip from other changes in the same frame.
+///
+/// `who` is `NO_NODE` for a flip of the page's arrangement, and the
+/// instance's root for one of a control's: two instances of one widget
+/// hold the same conditions, and only the one that flipped counts.
+fn when_sets_key(page: &Page, node: NodeId, key: PropKey, who: NodeId, from: Option<State>, to: Option<State>) -> bool {
     let n = &page.nodes[node];
-    page.whens[n.whens.0 as usize..(n.whens.0 + n.whens.1) as usize].iter().any(|w| (Some(w.state) == from || Some(w.state) == to) && page.props[w.props.0 as usize..(w.props.0 + w.props.1) as usize].iter().any(|p| p.key == key))
+    page.whens[n.whens.0 as usize..(n.whens.0 + n.whens.1) as usize].iter().any(|w| (Some(w.state) == from || Some(w.state) == to) && (who == NO_NODE || w.of == who) && page.props[w.props.0 as usize..(w.props.0 + w.props.1) as usize].iter().any(|p| p.key == key))
 }
 
 /// Does a `when` on `node` that the flip on `who` (`NO_NODE` = the view:
@@ -5161,7 +5406,8 @@ fn when_writes(page: &Page, node: NodeId, channel: Channel, who: NodeId) -> bool
     let n = &page.nodes[node];
     page.whens[n.whens.0 as usize..(n.whens.0 + n.whens.1) as usize].iter().any(|w| {
         let owner = if w.of == NO_NODE { node } else { w.of };
-        let node_state = matches!(w.state, State::Held | State::Hovered | State::Focused | State::FocusWithin | State::Selected | State::StateDisabled);
+        // A control's arrangement flips on its root, as a state does.
+        let node_state = matches!(w.state, State::Held | State::Hovered | State::Focused | State::FocusWithin | State::Selected | State::StateDisabled) || w.state.is_control_arrangement();
         let flipped = if who == NO_NODE { !node_state } else { node_state && owner == who };
         flipped && page.props[w.props.0 as usize..(w.props.0 + w.props.1) as usize].iter().any(|p| Channel::of_key(p.key).contains(&channel))
     })
@@ -5245,6 +5491,9 @@ fn resolve_into(page: &Page, rt: &mut Runtime, r: &mut Resolved) {
         if *who == NO_NODE && matches!(to, Some(State::Arrangement(a)) if rt.instant_flips.contains(a)) {
             continue;
         }
+        if matches!(to, Some(State::ControlArrangement(a)) if rt.instant_control_flips.contains(&(*who, *a))) {
+            continue;
+        }
         if to.is_some() {
             if let Some(rule) = find_rule(page, *who, *from, *to) {
                 if rule.anim != NO_STR {
@@ -5267,7 +5516,14 @@ fn resolve_into(page: &Page, rt: &mut Runtime, r: &mut Resolved) {
     // `go_instant` (GP37): the flip restyles but times nothing — its
     // change never meets a rule.
     let instant_flips = std::mem::take(&mut rt.instant_flips);
-    let instant_view = |who: NodeId, to: &Option<State>| who == NO_NODE && matches!(to, Some(State::Arrangement(a)) if instant_flips.contains(a));
+    let instant_control_flips = std::mem::take(&mut rt.instant_control_flips);
+    // True for a flip of the page's arrangement made by `go_instant`,
+    // and for one of a control's made by `go_in_instant`.
+    let instant_view = |who: NodeId, to: &Option<State>| match to {
+        Some(State::Arrangement(a)) => who == NO_NODE && instant_flips.contains(a),
+        Some(State::ControlArrangement(a)) => instant_control_flips.contains(&(who, *a)),
+        _ => false,
+    };
     // What the concerned nodes showed before this frame's flips — read
     // from the retained look now, before the ladder moves it. Only a
     // node the flip can reach is worth the per-key lookups: its own
@@ -5557,6 +5813,28 @@ fn resolve_into(page: &Page, rt: &mut Runtime, r: &mut Resolved) {
                 rt.glide_start = Some((vd, ve));
                 rt.glide_late = late;
             }
+        } else if matches!(to, Some(State::ControlArrangement(_))) && !instant_view(*who, to) {
+            // A timed flip of one control's arrangement: the boxes of
+            // that instance glide to their new rects, each by its own
+            // exact pair rule (duration 0 = it jumps), else by the rule
+            // of the instance's root. With no rule at all nothing is
+            // listed and the flip lands at once.
+            let ease_of = |t: &Transition| if t.easing == NO_STR { Easing::LINEAR } else { Easing::parse(page.str(t.easing)).unwrap_or(Easing::LINEAR) };
+            let root_rule: Option<Transition> = find_rule(page, *who, *from, *to);
+            let listed: usize = rt.glide_control_rules.len();
+            let mut is_timed: bool = false;
+            for node in std::iter::once(*who).chain(page.descendants(*who)) {
+                let own: Option<Transition> = if node == *who { None } else { find_rule(page, node, *from, *to).filter(|t| t.from.is_some() && t.to.is_some()) };
+                if let Some(rule) = own.or(root_rule) {
+                    is_timed |= rule.duration > 0.0;
+                    rt.glide_control_rules.push((node, rule.duration, ease_of(&rule)));
+                }
+            }
+            if is_timed {
+                rt.glide_late = late;
+            } else {
+                rt.glide_control_rules.truncate(listed);
+            }
         }
     }
     // The tween seeding: for every concerned node (captured above), a
@@ -5601,8 +5879,13 @@ fn resolve_into(page: &Page, rt: &mut Runtime, r: &mut Resolved) {
                 // A watched owner's flip is timed by the DECLARING
                 // scope's rules (GPAR10, the shipped one-timing-per-
                 // flip); the target's own rules are the fallback.
-                let node_rule = if scope == NO_NODE { find_rule(page, id, *from, *to).filter(|t| t.from.is_some() && t.to.is_some()) } else { find_rule(page, scope, *from, *to).or_else(|| find_rule(page, id, *from, *to)) };
-                rule = node_rule.or_else(|| if scope == NO_NODE { find_rule(page, NO_NODE, *from, *to) } else { None });
+                // A flip of a control's arrangement is timed as one of
+                // the page's is: the node's own exact pair first, then
+                // the rule of the scope that flipped (the instance's
+                // root).
+                let is_arrangement_flip: bool = scope == NO_NODE || matches!(to, Some(State::ControlArrangement(_)));
+                let node_rule = if is_arrangement_flip { find_rule(page, id, *from, *to).filter(|t| t.from.is_some() && t.to.is_some()) } else { find_rule(page, scope, *from, *to).or_else(|| find_rule(page, id, *from, *to)) };
+                rule = node_rule.or_else(|| if is_arrangement_flip { find_rule(page, scope, *from, *to) } else { None });
                 if rule.is_some() {
                     break;
                 }
@@ -5642,7 +5925,7 @@ fn resolve_into(page: &Page, rt: &mut Runtime, r: &mut Resolved) {
         let from: Value = rt.tweens.iter().find(|t| t.node == id && t.key == pt.key).map(|t| t.value()).unwrap_or(standing);
         rt.tweens.retain(|t| !(t.node == id && t.key == pt.key));
         let shows: bool = rt.vis_seen.get(id.index()).copied().unwrap_or(false);
-        let by_instant_flip: bool = changes.iter().any(|(who, from, to)| instant_view(*who, to) && when_sets_key(page, id, pt.key, *from, *to));
+        let by_instant_flip: bool = changes.iter().any(|(who, from, to)| instant_view(*who, to) && when_sets_key(page, id, pt.key, *who, *from, *to));
         if !shows || by_instant_flip || rt.anim_owns_prop_now(id, pt.key) {
             continue;
         }
@@ -5784,6 +6067,8 @@ fn resolve_into(page: &Page, rt: &mut Runtime, r: &mut Resolved) {
     rt.retained.seen_arrangement = rt.arrangement;
     rt.retained.seen_screen.clone_from(&rt.screen);
     rt.retained.seen_customs.clone_from(&rt.customs);
+    rt.retained.seen_control_arrangements.clear();
+    rt.retained.seen_control_arrangements.extend(rt.control_poses.iter().map(|p| p.arrangement));
     rt.retained.seen_mask_on = rt.static_mask_on;
     rt.retained.tail_touched = touched;
     rt.retained.touched = prev_touched;
@@ -5843,6 +6128,16 @@ impl Runtime {
         for e in self.customs.iter().chain(&t.seen_customs) {
             if !(self.customs.contains(e) && t.seen_customs.contains(e)) {
                 out.extend_from_slice(&t.watchers.by_owner[e.0]);
+            }
+        }
+        // A control whose arrangement changed reaches the nodes of that
+        // instance that watch it. The two lists as a whole first: equal
+        // in most frames, and both empty on a page with no such control.
+        if !self.control_poses.iter().map(|p| p.arrangement).eq(t.seen_control_arrangements.iter().copied()) {
+            for (at, pose) in self.control_poses.iter().enumerate() {
+                if t.seen_control_arrangements.get(at) != Some(&pose.arrangement) {
+                    out.extend_from_slice(&t.watchers.by_owner[pose.root]);
+                }
             }
         }
         out.append(&mut t.write_flips);

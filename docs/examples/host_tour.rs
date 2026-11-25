@@ -105,7 +105,7 @@ impl Hosted {
 pub fn handler_name<'a>(page: &'a Page, ev: &Event) -> Option<&'a str> {
     match ev.action {
         Some(Action::Named(id)) | Some(Action::Emit(id)) => Some(page.str(id)),
-        Some(Action::Go(_)) | Some(Action::ToggleArrangement(_)) | Some(Action::Play(_)) => None,
+        Some(Action::Go(_)) | Some(Action::ToggleArrangement(_)) | Some(Action::GoInControl(_)) | Some(Action::ToggleInControl(_)) | Some(Action::Play(_)) => None,
         None => {
             let mut n: NodeId = ev.node;
             loop {

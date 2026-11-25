@@ -1523,12 +1523,15 @@ impl Input {
     ///
     /// Needed so the three actions a file can wire by itself work with no
     /// code in the host: `go(x)` and `toggle(x)` flip the view's
-    /// arrangement, `play(x)` starts the anim. `emit(X)` and a handler
-    /// name are the host's to answer, from the event.
+    /// arrangement (written in a widget's body, the arrangement of the
+    /// instance `node` is in), `play(x)` starts the anim. `emit(X)` and
+    /// a handler name are the host's to answer, from the event.
     fn push_event(&self, page: &Page, rt: &mut Runtime, events: &mut EventList, node: NodeId, kind: EventKind, action: Option<Action>) {
         match action {
             Some(Action::Go(a)) => rt.go_id(a),
             Some(Action::ToggleArrangement(a)) => rt.toggle_id(a),
+            Some(Action::GoInControl(place)) => rt.act_in_control(page, node, place, false),
+            Some(Action::ToggleInControl(place)) => rt.act_in_control(page, node, place, true),
             Some(Action::Play(anim)) => rt.play_id(page, anim, Finish::Nothing),
             _ => {}
         }

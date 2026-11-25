@@ -146,6 +146,10 @@ struct WidgetDef {
     /// script raises; an instance `when` may name only these and
     /// `states` (GP37, the shipped contract-state fence).
     state_builtins: Vec<String>,
+    /// The `arrangement <name>` lines beside the body, in the file's
+    /// order: each instance is in one of them on its own
+    /// (`Runtime::go_in`), and `when <name>` in the body answers it.
+    arrangements: Vec<String>,
     /// The `keys` line's claim (GP26, `KEYS_*` bits) — stamped onto
     /// every instance root at build.
     keys: u8,
@@ -159,6 +163,20 @@ struct WidgetDef {
     /// drive `slot.<name>.<motion word>` lanes.
     control: bool,
     line: u32,
+}
+
+/// The arrangements of the widget whose body is being built: the names
+/// its `arrangement` lines declare (none for a widget without them), in
+/// the order they sit in `Page::control_arrangement_names`, and the place
+/// of the first one there. A place a build had and the file no longer
+/// declares holds the empty name.
+///
+/// Needed so a word in a body's `when`, `transition` or `go(…)` that
+/// the widget declares is read as that widget's own arrangement, before
+/// the page's and as no other widget's.
+struct ArrangementScope {
+    first: u32,
+    names: Vec<String>,
 }
 
 /// What a widget instance brings for the body's slots: bare children for
@@ -198,6 +216,11 @@ struct TmpNode {
     /// A control instance root's declared states (GPAR116) — recorded
     /// into `Page::custom_states` once the arena id exists.
     custom_states: Vec<StrId>,
+    /// An instance root whose widget declares arrangements: where the
+    /// names sit in `Page::control_arrangement_names`, as (first place,
+    /// count) — recorded into `Page::control_arrangements` once the
+    /// arena id exists. A count of 0 on every other node.
+    arrangements: (u32, u32),
     /// The contract's `keys` claim (GP26) — recorded into
     /// `Page::key_claims` once the arena id exists.
     key_claim: u8,
@@ -720,6 +743,15 @@ pub struct Compiler<'a> {
     /// While a control instance's body builds: its declared states, so
     /// `when <name>`/`transition` words bind to `State::Custom` (GPAR116).
     custom_state_stack: Vec<Vec<String>>,
+    /// One entry per widget body being built, the innermost last
+    /// (`ArrangementScope`). Empty while a line of the page itself is
+    /// compiled; a slot's fill and an instance's own line are compiled
+    /// with the innermost entry set aside, where they were written.
+    arrangement_scopes: Vec<ArrangementScope>,
+    /// Per widget that declares arrangements and is used on this page:
+    /// the place of its first name in `Page::control_arrangement_names`,
+    /// and its names in the order they sit there.
+    control_arrangement_runs: HashMap<String, (u32, Vec<String>)>,
     /// Directory stack of the include chain (GPAR35): a nested `uses`
     /// resolves against the INCLUDING file's directory, so the loader
     /// always sees one path shape — from the top file's own directory.
@@ -859,6 +891,13 @@ pub struct Compiler<'a> {
     /// `k` is declared into place `k` of `Page::arrangements`. Empty for
     /// any other compile.
     built_arrangements: Vec<StrId>,
+    /// Per widget of the built page that declares arrangements: the
+    /// widget's name and its arrangement names in the build's order
+    /// (`compile_keeping_numbers`). A widget's names are written into
+    /// `Page::control_arrangement_names` in that order, so the place a
+    /// program's `enum <Widget>Arrangement` holds still names the same
+    /// arrangement. Empty for any other compile.
+    built_control_arrangements: Vec<(StrId, Vec<StrId>)>,
 }
 
 /// A value as the file spells it, for a message.
@@ -928,13 +967,21 @@ pub fn compile_with<'a>(source: &str, loader: Loader<'a>, options: CompileOption
 
 /// Numbers a build wrote into a program's code for one page: each
 /// string's place in page's strings (`enum Anim`, `enum Theme`), each
-/// arrangement's place in page's arrangement list (`enum Arrangement`).
+/// arrangement's place in page's arrangement list (`enum Arrangement`),
+/// and each widget arrangement's place among the ones its widget
+/// declares (`enum <Widget>Arrangement`).
 #[derive(Clone, Copy)]
 pub(crate) struct BuiltNumbers<'a> {
     /// Built page's strings, in the build's order.
     pub strings: &'a [&'a str],
     /// Built page's arrangement names, in the build's order.
     pub arrangements: &'a [StrId],
+    /// Built page's nodes: an instance's root says which widget it is.
+    pub nodes: &'a [Node],
+    /// Built page's `Page::control_arrangement_names`.
+    pub control_arrangement_names: &'a [StrId],
+    /// Built page's `Page::control_arrangements`.
+    pub control_arrangements: &'a [ControlArrangements],
 }
 
 /// `compile_with` for a page a running program already holds as built
@@ -973,6 +1020,8 @@ pub(crate) fn compile_keeping_numbers<'a>(source: &str, loader: Loader<'a>, opti
         style_scopes: Vec::new(),
         control_scopes: HashSet::new(),
         custom_state_stack: Vec::new(),
+        arrangement_scopes: Vec::new(),
+        control_arrangement_runs: HashMap::new(),
         root_aliases: HashMap::new(),
         use_dirs: Vec::new(),
         origin: 0,
@@ -1012,6 +1061,7 @@ pub(crate) fn compile_keeping_numbers<'a>(source: &str, loader: Loader<'a>, opti
         palette_links: std::collections::HashMap::new(),
         pending_repeats: Vec::new(),
         built_arrangements: Vec::new(),
+        built_control_arrangements: Vec::new(),
     };
     if let Some(built) = built {
         // Built page's strings first, in the build's order: a string
@@ -1020,6 +1070,14 @@ pub(crate) fn compile_keeping_numbers<'a>(source: &str, loader: Loader<'a>, opti
         // A place per built arrangement, empty until file declares it.
         c.page.arrangements = vec![NO_STR; built.arrangements.len()];
         c.built_arrangements = built.arrangements.to_vec();
+        // Every instance of one widget names the same run: the first
+        // instance found says it.
+        for entry in built.control_arrangements {
+            let widget: StrId = built.nodes[entry.root].widget;
+            if !c.built_control_arrangements.iter().any(|(w, _)| *w == widget) {
+                c.built_control_arrangements.push((widget, built.control_arrangement_names[entry.first as usize..(entry.first + entry.count) as usize].to_vec()));
+            }
+        }
     }
     c.page.intern("");
     // The well-known variant name exists on every page, so a host can set
@@ -3177,7 +3235,7 @@ impl<'a> Compiler<'a> {
                 _ => {}
             }
         }
-        let bodies: Vec<&AstNode> = n.children.iter().filter_map(|i| if let AstItem::Node(b) = i { Some(b) } else { None }).filter(|b| !matches!(b.type_word.as_str(), "script" | "state" | "state_builtin" | "signal" | "keys" | "behavior" | "transition" | "when" | "anim" | "style")).collect();
+        let bodies: Vec<&AstNode> = n.children.iter().filter_map(|i| if let AstItem::Node(b) = i { Some(b) } else { None }).filter(|b| !matches!(b.type_word.as_str(), "script" | "state" | "state_builtin" | "signal" | "keys" | "behavior" | "transition" | "when" | "anim" | "style" | "arrangement")).collect();
         if bodies.len() != 1 {
             self.error("G0028", n.line, format!("widget `{name}` needs exactly one root node in its body"));
             return;
@@ -3220,6 +3278,17 @@ impl<'a> Compiler<'a> {
                 _ => self.error("G5001", fp.line, "widget for= takes the stateful host type the body fills: Button, Radio, Check"),
             }
         }
+        // The widget's own arrangements: each instance is in one of
+        // them on its own.
+        let mut arrangements: Vec<String> = Vec::new();
+        for a in n.children.iter().filter_map(|i| if let AstItem::Node(b) = i { Some(b) } else { None }).filter(|b| b.type_word == "arrangement") {
+            let Some(arrangement) = self.arrangement_name(a) else { continue };
+            if arrangements.contains(&arrangement) {
+                self.error("G0033", a.line, format!("arrangement `{arrangement}` is declared twice"));
+                continue;
+            }
+            arrangements.push(arrangement);
+        }
         // The no-host fence is the WIDGET's: a `control` body legitimately
         // carries a default `transition` line for its own states.
         if host.is_none() && n.type_word == "widget" {
@@ -3231,12 +3300,27 @@ impl<'a> Compiler<'a> {
                 if w.type_word == "when" && w.name.as_deref().is_some_and(|s| s.starts_with("screen.")) {
                     continue;
                 }
-                self.error("G5001", w.line, format!("a widget-scope `{}` responds to the HOST's states — this widget declares no host; announce it: `widget {name} for=Radio, …` (hosts: Button, Radio, Check), or pose the body on the screen class: `when screen.landscapeSmall {{ card.width = 420 }}`", w.type_word));
+                // It may also pose its body on its own arrangements, and
+                // time their flips: a `when` that names one, a
+                // `transition` whose ends are all its own (`any` and
+                // `base` with them).
+                if w.type_word == "when" && w.name.as_deref().is_some_and(|s| arrangements.iter().any(|a| a == s)) {
+                    continue;
+                }
+                if w.type_word == "transition" && !arrangements.is_empty() && w.args.iter().filter_map(|a| a.as_ident()).chain(w.arrows.iter().map(String::as_str)).all(|word| word == "any" || word == "base" || arrangements.iter().any(|a| a == word)) {
+                    continue;
+                }
+                self.error("G5001", w.line, format!("a widget-scope `{}` responds to the HOST's states — this widget declares no host; announce it: `widget {name} for=Radio, …` (hosts: Button, Radio, Check), pose the body on the screen class: `when screen.landscapeSmall {{ card.width = 420 }}`, or on an arrangement of its own: `arrangement open` beside the body, then `when open {{ card.width = 420 }}`", w.type_word));
             }
         }
         let states: Vec<String> = n.children.iter().filter_map(|i| if let AstItem::Node(b) = i { Some(b) } else { None }).filter(|b| b.type_word == "state").flat_map(|b| b.args.iter().filter_map(|a| a.as_ident()).map(str::to_string)).collect();
         let state_builtins: Vec<String> = n.children.iter().filter_map(|i| if let AstItem::Node(b) = i { Some(b) } else { None }).filter(|b| b.type_word == "state_builtin").flat_map(|b| b.args.iter().filter_map(|a| a.as_ident()).map(str::to_string)).collect();
         let signals: Vec<String> = n.children.iter().filter_map(|i| if let AstItem::Node(b) = i { Some(b) } else { None }).filter(|b| b.type_word == "signal").flat_map(|b| b.args.iter().filter_map(|a| a.as_ident()).map(str::to_string)).collect();
+        // One word, one meaning: `when <word>` in the body could not say
+        // which of the two it answers.
+        if let Some(word) = states.iter().find(|w| arrangements.contains(w)) {
+            self.error("G0032", n.line, format!("`{word}` is declared as a state and as an arrangement of `{name}` — `when {word}` must mean one thing"));
+        }
         // GP52/GP53: one owner per key group — the behavior answers the
         // groups its spec owns, so a `keys` claim on them would be a
         // second owner. Refused, never a precedence.
@@ -3246,7 +3330,7 @@ impl<'a> Compiler<'a> {
                 keys_mask &= !spec.keys;
             }
         }
-        self.widgets.insert(name, WidgetDef { params: n.params.clone(), body: bodies[0].clone(), anims, host, props, whens, transitions, styles, states, state_builtins, signals, keys: keys_mask, behavior, control: n.type_word == "control", line: n.line });
+        self.widgets.insert(name, WidgetDef { params: n.params.clone(), body: bodies[0].clone(), anims, host, props, whens, transitions, styles, states, state_builtins, arrangements, signals, keys: keys_mask, behavior, control: n.type_word == "control", line: n.line });
     }
 
     /// `easing=name` plus its parameter words on the same line
@@ -4066,7 +4150,10 @@ impl<'a> Compiler<'a> {
         cluster_end
     }
 
-    fn arrangement(&mut self, n: &AstNode) {
+    /// The name an `arrangement` line declares, of the page or of a
+    /// widget; `None` when the line was refused (no name, a reserved
+    /// word, a state word).
+    fn arrangement_name(&mut self, n: &AstNode) -> Option<String> {
         let Some(name) = n.name.clone() else {
             // `base` and `any` are values wherever they stand, so the
             // parser never reads one of them as the name.
@@ -4075,23 +4162,28 @@ impl<'a> Compiler<'a> {
                 Some("any") => self.error("G0032", n.line, "`any` is reserved — in a `transition` it stands for every arrangement"),
                 _ => self.error("G0031", n.line, "`arrangement` needs a name"),
             }
-            return;
+            return None;
         };
         if name == "base" || name == "any" {
             self.error("G0032", n.line, format!("`{name}` is reserved"));
-            return;
+            return None;
         }
         // A state word as an arrangement name would make `when held`
         // two things (GPAR93, the addon's fence).
         if matches!(name.as_str(), "held" | "hovered" | "focused" | "focus_within" | "selected" | "disabled" | "pressed" | "hover" | "focus" | "checked" | "dragging") {
             self.error("G0032", n.line, format!("`{name}` is a state word — an arrangement cannot wear it (`when {name}` must mean one thing)"));
-            return;
+            return None;
         }
         // Arrangements declare NAMES, nothing else — poses go in
         // `when <name> { }` blocks (GPAR93).
         if !n.props.is_empty() || !n.children.is_empty() {
             self.error("G0032", n.line, format!("`arrangement {name}` declares a name, nothing else — poses go in a `when {name} {{ … }}` block"));
         }
+        Some(name)
+    }
+
+    fn arrangement(&mut self, n: &AstNode) {
+        let Some(name) = self.arrangement_name(n) else { return };
         let id = self.intern(&name);
         if self.page.arrangements.contains(&id) {
             self.error("G0033", n.line, format!("arrangement `{name}` is declared twice"));
@@ -4102,6 +4194,63 @@ impl<'a> Compiler<'a> {
             Some(place) if self.page.arrangements[place] == NO_STR => self.page.arrangements[place] = id,
             _ => self.page.arrangements.push(id),
         }
+    }
+
+    /// The place of `word` in `Page::control_arrangement_names` when it
+    /// is an arrangement of the widget whose body is being built.
+    fn own_arrangement(&self, word: &str) -> Option<ArrangementId> {
+        let scope: &ArrangementScope = self.arrangement_scopes.last()?;
+        scope.names.iter().position(|name| name == word).map(|at| ArrangementId::from_index(scope.first as usize + at))
+    }
+
+    /// The place that stands for `go(base)` of the widget whose body is
+    /// being built (the one after its last arrangement name); `None` when
+    /// that widget declares no arrangement, or no body is being built.
+    fn own_base(&self) -> Option<ArrangementId> {
+        let scope: &ArrangementScope = self.arrangement_scopes.last()?;
+        if scope.names.is_empty() { None } else { Some(ArrangementId::from_index(scope.first as usize + scope.names.len())) }
+    }
+
+    /// Where `widget`'s arrangement names sit in
+    /// `Page::control_arrangement_names`: the first place, and the names
+    /// in the order they sit there. They are written there the first
+    /// time the page uses the widget. No names for a widget that
+    /// declares none.
+    ///
+    /// The order is the one `declared` has (the file's), except in a hot
+    /// reload: there a name the build knew keeps the build's place, a
+    /// place whose name the file no longer declares holds the empty
+    /// name, and new names come after.
+    fn control_arrangement_run(&mut self, widget: &str, declared: &[String]) -> (u32, Vec<String>) {
+        if declared.is_empty() {
+            return (0, Vec::new());
+        }
+        if let Some(run) = self.control_arrangement_runs.get(widget) {
+            return run.clone();
+        }
+        let widget_id: StrId = self.intern(widget);
+        let mut names: Vec<String> = Vec::new();
+        if let Some((_, built)) = self.built_control_arrangements.iter().find(|(w, _)| *w == widget_id) {
+            for id in built {
+                let word: &str = self.page.str(*id);
+                names.push(if declared.iter().any(|d| d == word) { word.to_string() } else { String::new() });
+            }
+        }
+        for name in declared {
+            if !names.contains(name) {
+                names.push(name.clone());
+            }
+        }
+        let first: u32 = self.page.control_arrangement_names.len() as u32;
+        for name in &names {
+            let id: StrId = if name.is_empty() { NO_STR } else { self.intern(name) };
+            self.page.control_arrangement_names.push(id);
+        }
+        // The place after the run holds no name: an `Action` uses it for
+        // `go(base)` of this widget.
+        self.page.control_arrangement_names.push(NO_STR);
+        self.control_arrangement_runs.insert(widget.to_string(), (first, names.clone()));
+        (first, names)
     }
 
     /// `any` / `base` / a state / an arrangement name.
@@ -4154,6 +4303,22 @@ impl<'a> Compiler<'a> {
                 t.to = tt;
             }
         }
+        // `base` across from one of a widget's own arrangements is that
+        // instance with no arrangement on, not the page's `base`.
+        if matches!(t.from, Some(State::ControlArrangement(_))) && t.to == Some(State::Arrangement(BASE)) {
+            t.to = Some(State::ControlArrangement(BASE));
+        }
+        if matches!(t.to, Some(State::ControlArrangement(_))) && t.from == Some(State::Arrangement(BASE)) {
+            t.from = Some(State::ControlArrangement(BASE));
+        }
+        // One end an arrangement of the widget and the other a state or
+        // a word of the page: no flip goes from one to the other, so the
+        // rule would time nothing.
+        if let (Some(from), Some(to)) = (t.from, t.to) {
+            if matches!(from, State::ControlArrangement(_)) != matches!(to, State::ControlArrangement(_)) {
+                self.error("G0034", n.line, format!("`transition {} -> {}` times nothing — both ends are arrangements of the widget (a name, `base` or `any`), or neither is", state_word(&self.page, from), state_word(&self.page, to)));
+            }
+        }
         for p in &n.props {
             match p.key.as_str() {
                 "duration" => t.duration = p.value.as_num().unwrap_or(0.0),
@@ -4179,6 +4344,11 @@ impl<'a> Compiler<'a> {
             "focus_within" => State::FocusWithin,
             "selected" => State::Selected,
             "disabled" => State::StateDisabled,
+            // An arrangement of the widget whose body this line is in.
+            // It comes before the page's: a name the widget declares
+            // means the widget's in its own body, whatever the page
+            // that uses the widget declares.
+            _ if self.own_arrangement(word).is_some() => State::ControlArrangement(self.own_arrangement(word).unwrap_or(BASE)),
             // The enclosing control's own words come before the respell
             // aliases: a declared `state dragging` IS that control's
             // state (GPAR116), not a misspelling of `held`.
@@ -4214,7 +4384,12 @@ impl<'a> Compiler<'a> {
                 match id.and_then(|id| self.page.arrangements.iter().position(|a| *a == id)) {
                     Some(i) => State::Arrangement(ArrangementId::from_index(i)),
                     None => {
-                        let hint = if top_level {
+                        // The widget with the lowest name, so the
+                        // message is the same in every build.
+                        let of_widget: Option<String> = self.widgets.iter().filter(|(_, def)| def.arrangements.iter().any(|a| a == word)).map(|(name, _)| name.clone()).min();
+                        let hint = if let Some(widget) = of_widget {
+                            format!("`{word}` is an arrangement of `{widget}`: each instance is in its own, and only `{widget}`'s body answers it (`when {word} {{ … }}` there); code sets it with `Runtime::go_in`")
+                        } else if top_level {
                             let pool: Vec<String> = self.page.arrangements.iter().map(|a| self.page.str(*a).to_string()).collect();
                             let s = suggest(word, &pool);
                             if s.is_empty() { "declare it with `arrangement <name>` first".to_string() } else { s }
@@ -4248,6 +4423,7 @@ impl<'a> Compiler<'a> {
         let second_state = self.state_from_word(&second, n.line, top_level)?;
         match (first, second_state) {
             (State::Arrangement(a), State::ScreenClass(w)) | (State::Arrangement(a), State::ScreenOrientation(w)) => Some(State::ArrangementScreen(a, w)),
+            (State::ControlArrangement(a), State::ScreenClass(w)) | (State::ControlArrangement(a), State::ScreenOrientation(w)) => Some(State::ControlArrangementScreen(a, w)),
             (State::ScreenOrientation(o), State::ScreenClass(c)) => Some(State::ScreenPair(o, c)),
             _ => {
                 self.error("G0038", n.line, format!("`when {word} {second}`: a composed condition is `<arrangement> screen.<class|orientation>` or `screen.<orientation> screen.<class>`"));
@@ -5101,7 +5277,7 @@ impl<'a> Compiler<'a> {
             if self.widget_stack.iter().any(|w| w == &n.type_word) {
                 let path = self.widget_stack.join(" -> ");
                 self.error("G5003", n.line, format!("widget cycle: {path} -> {} — a widget cannot contain itself", n.type_word));
-                return TmpNode { node: Node::fresh(Kind::Layers, n.line), props: Vec::new(), handlers: Vec::new(), whens: Vec::new(), transitions: Vec::new(), children: Vec::new(), custom_states: Vec::new(), key_claim: 0, wearing: Vec::new(), driver: None, follows: Vec::new(), origin: self.origin };
+                return TmpNode { node: Node::fresh(Kind::Layers, n.line), props: Vec::new(), handlers: Vec::new(), whens: Vec::new(), transitions: Vec::new(), children: Vec::new(), custom_states: Vec::new(), arrangements: (0, 0), key_claim: 0, wearing: Vec::new(), driver: None, follows: Vec::new(), origin: self.origin };
             }
             // A `for=` widget fills its host's body and nothing else —
             // anywhere else its `when` lines would answer the wrong node.
@@ -5201,6 +5377,11 @@ impl<'a> Compiler<'a> {
                 self.control_scopes.insert(root);
             }
             self.custom_state_stack.push(if def.control { def.states.clone() } else { Vec::new() });
+            // The widget's own arrangements: a word in a `when`,
+            // `transition` or `go(…)` of its body names one of these.
+            let (first, names): (u32, Vec<String>) = self.control_arrangement_run(&n.type_word, &def.arrangements);
+            let arranged: (u32, u32) = (first, names.len() as u32);
+            self.arrangement_scopes.push(ArrangementScope { first, names });
             // The body root's own name stays addressable (`a/root` IS the
             // instance `a` — the addon's lookup.root-self): an alias, so
             // the widget's anims and responses can target the root by the
@@ -5248,7 +5429,10 @@ impl<'a> Compiler<'a> {
             self.slot_writes.pop();
             // `when`/`transition` blocks written under the INSTANCE line
             // land on the instance root (the shipped _collect_states on
-            // the root; GPAR68) — they were dropped without a word.
+            // the root; GPAR68) — they were dropped without a word. They
+            // are lines of the file that places the instance, so the
+            // widget's own arrangements are set aside while they compile.
+            let body_scope: Option<ArrangementScope> = self.arrangement_scopes.pop();
             for k in &inst_states {
                 if k.type_word == "when" {
                     // GP37: a control's contract lists its states — a
@@ -5278,6 +5462,11 @@ impl<'a> Compiler<'a> {
                     let before = self.diags.len();
                     if let Some(tw) = self.when(k, t.node.kind) {
                         t.whens.push(tw);
+                    } else if k.name.as_deref().is_some_and(|word| def.arrangements.iter().any(|a| a == word)) {
+                        // The widget's own arrangement, named on the
+                        // instance's line: the error stands (it says
+                        // whose the word is). A parked block would sit
+                        // there and never answer.
                     } else {
                         // A control's OWN `state` word (`when dragging`)
                         // has nothing to bind until contract states land
@@ -5291,11 +5480,15 @@ impl<'a> Compiler<'a> {
                     t.transitions.push(tr);
                 }
             }
-            if def.host.is_none() && !def.control {
+            self.arrangement_scopes.extend(body_scope);
+            {
                 // A hostless widget's `when screen.*` blocks pose its own
-                // body (D14): one copy per instance, the body's names under
-                // the instance's prefix, resolved with the page's top-level
-                // whens so the same one-writer and seat checks apply.
+                // body (D14), and so does any widget's `when` on one of
+                // its own arrangements: one copy per instance, the body's
+                // names under the instance's prefix, resolved with the
+                // page's top-level whens so the same one-writer and seat
+                // checks apply. Every other widget-scope `when` answers
+                // the hosting control (`for=`) or the control's states.
                 let inst_full: String = self.prefix.join("/");
                 // A seat a body's line moves a node into is the body's
                 // own, so its name takes the instance's prefix as the
@@ -5312,6 +5505,16 @@ impl<'a> Compiler<'a> {
                     }
                 };
                 for w in &def.whens {
+                    let poses_own_body: bool = (def.host.is_none() && !def.control) || w.name.as_deref().is_some_and(|word| def.arrangements.iter().any(|a| a == word));
+                    if !poses_own_body {
+                        // A `for=` widget's scope responses answer the
+                        // hosting control.
+                        if let Some(mut tw) = self.when(w, t.node.kind) {
+                            tw.host = def.host.is_some();
+                            t.whens.push(tw);
+                        }
+                        continue;
+                    }
                     let Some(state) = self.state_word(w, true) else { continue };
                     let mut items: Vec<AstItem> = w.props.iter().map(|p| AstItem::Assign { key: format!("{inst_full}/{}", p.key), dollar: false, value: scoped_value(&p.key, &p.value), line: p.line }).collect();
                     for item in &w.children {
@@ -5322,14 +5525,6 @@ impl<'a> Compiler<'a> {
                     }
                     self.deferred_whens.push((state, items, w.line, true, w.origin));
                 }
-            } else {
-                // A `for=` widget's scope responses answer the hosting control.
-                for w in &def.whens {
-                    if let Some(mut tw) = self.when(w, t.node.kind) {
-                        tw.host = def.host.is_some();
-                        t.whens.push(tw);
-                    }
-                }
             }
             // A `for=` widget's `transition` rules time the HOSTING
             // control's flips (resolved at lay time, like its `when`
@@ -5337,6 +5532,22 @@ impl<'a> Compiler<'a> {
             // the weakest rule on the instance root (the shipped
             // contract). A hostless widget's were refused at declaration.
             for tr in &def.transitions {
+                // A rule that names one of the widget's own arrangements,
+                // and every rule of a widget with arrangements and no
+                // host, times the flips of this instance's arrangement:
+                // it sits on the instance's root, and `base` in it is the
+                // instance with no arrangement on.
+                let names_own: bool = tr.args.iter().filter_map(|a| a.as_ident()).chain(tr.arrows.iter().map(String::as_str)).any(|word| def.arrangements.iter().any(|a| a == word));
+                if names_own || (def.host.is_none() && !def.control && !def.arrangements.is_empty()) {
+                    let mut t2 = self.transition(tr, PENDING_NODE);
+                    for end in [&mut t2.from, &mut t2.to] {
+                        if *end == Some(State::Arrangement(BASE)) {
+                            *end = Some(State::ControlArrangement(BASE));
+                        }
+                    }
+                    t.transitions.push(t2);
+                    continue;
+                }
                 if def.control {
                     if !tr.args.is_empty() || !tr.arrows.is_empty() {
                         self.error("G0034", tr.line, "a control declaration's transition is its default feel — no endpoints (`transition duration=0.15, easing=cubic_out`); state pairs go on styles or instances");
@@ -5350,6 +5561,8 @@ impl<'a> Compiler<'a> {
                 }
             }
             self.custom_state_stack.pop();
+            self.arrangement_scopes.pop();
+            t.arrangements = arranged;
             if def.control && !def.states.is_empty() {
                 t.custom_states = def.states.iter().map(|w| self.intern(w)).collect();
             }
@@ -5504,7 +5717,7 @@ impl<'a> Compiler<'a> {
             self.names.insert(name.clone());
             node.name = self.intern(name);
         }
-        let mut tmp = TmpNode { node, props: Vec::new(), handlers: Vec::new(), whens: Vec::new(), transitions: Vec::new(), children: Vec::new(), custom_states: Vec::new(), key_claim: 0, wearing: n.styles.iter().cloned().chain(instance.iter().flat_map(|i| i.styles.iter().cloned())).collect(), driver: None, follows: Vec::new(), origin: self.origin };
+        let mut tmp = TmpNode { node, props: Vec::new(), handlers: Vec::new(), whens: Vec::new(), transitions: Vec::new(), children: Vec::new(), custom_states: Vec::new(), arrangements: (0, 0), key_claim: 0, wearing: n.styles.iter().cloned().chain(instance.iter().flat_map(|i| i.styles.iter().cloned())).collect(), driver: None, follows: Vec::new(), origin: self.origin };
 
         if kind == Kind::Gap {
             self.gap(&mut tmp.node, n, parent_kind);
@@ -5697,11 +5910,26 @@ impl<'a> Compiler<'a> {
                 }
             }
         }
+        // Which `on:` words of `all_props` came from an instance's line,
+        // by their place among the `on:` words: the first `own_on` are
+        // the node's own lines', the ones up to `instance_on_end` the
+        // line's of the instance this node is the root of, and the rest
+        // (`signals_bodies` widget bodies out) the line's of the instance
+        // whose body marks this node `signals`.
+        //
+        // Needed because such a handler is a line of the file that places
+        // the instance: `go(x)` in it names that file's arrangement, not
+        // one of the widget's own. Counted, so no word is copied: nothing
+        // between here and the loop that reads them adds, drops or
+        // reorders an `on:` word.
+        let own_on: usize = all_props.iter().filter(|p| p.key.starts_with("on:")).count();
         if let Some(i) = instance {
             let params: Vec<String> = self.scopes.last().map(|s| s.keys().cloned().collect()).unwrap_or_default();
             let root_takes_on = matches!(self.instance_on.last(), None | Some(None));
             all_props.extend(i.props.iter().filter(|p| !params.contains(&p.key) && (root_takes_on || !p.key.starts_with("on:"))).cloned());
         }
+        let instance_on_end: usize = if instance.is_some() { all_props.iter().filter(|p| p.key.starts_with("on:")).count() } else { own_on };
+        let signals_bodies: usize = if instance.is_some() { 2 } else { 1 };
         // `slot.<name>.<prop>=` written on a line (a control instance,
         // or a built-in with parts): checked against the contract
         // standing here, then delivered to the slot node / the node word
@@ -5795,6 +6023,7 @@ impl<'a> Compiler<'a> {
         }
 
         let mut placement_props: Vec<Prop> = Vec::new();
+        let mut on_seen: usize = 0;
         for p in &all_props {
             if p.key == "seat" {
                 // Re-parenting is view geometry, not a node's own look
@@ -5813,7 +6042,13 @@ impl<'a> Compiler<'a> {
                 continue;
             }
             if let Some(action) = p.key.strip_prefix("on:") {
-                if let Some(h) = self.handler(action, p) {
+                let bodies: usize = if on_seen < own_on { 0 } else if on_seen < instance_on_end { 1 } else { signals_bodies };
+                on_seen += 1;
+                let kept: usize = self.arrangement_scopes.len().saturating_sub(bodies);
+                let set_aside: Vec<ArrangementScope> = self.arrangement_scopes.split_off(kept);
+                let handler: Option<OnHandler> = self.handler(action, p);
+                self.arrangement_scopes.extend(set_aside);
+                if let Some(h) = handler {
                     self.check_event_kind(action, kind, p.line);
                     tmp.handlers.push(h);
                 }
@@ -6614,7 +6849,9 @@ impl<'a> Compiler<'a> {
         let fills = self.fills.pop();
         let styles = self.style_scopes.pop();
         let widget = self.widget_stack.pop();
+        let arrangements = self.arrangement_scopes.pop();
         let r = f(self);
+        self.arrangement_scopes.extend(arrangements);
         if let Some(s) = scope {
             self.scopes.push(s);
         }
@@ -6739,13 +6976,13 @@ impl<'a> Compiler<'a> {
             self.error("G7019", root.node.line, "a Popup is written inside the node it opens beside (a Button, a Check) — as the file's root it has no such node");
         }
         let origin: u16 = root.origin;
-        let id = self.push_slot(root.node, root.props, root.handlers, root.whens, root.transitions, root.custom_states, root.key_claim, root.wearing, root.driver, root.follows, NO_NODE);
+        let id = self.push_slot(root.node, root.props, root.handlers, root.whens, root.transitions, root.custom_states, root.arrangements, root.key_claim, root.wearing, root.driver, root.follows, NO_NODE);
         self.note_origin(id, origin);
         self.place_children(id, root.children);
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn push_slot(&mut self, mut node: Node, props: Vec<Prop>, handlers: Vec<OnHandler>, whens: Vec<WhenTmp>, transitions: Vec<Transition>, custom_states: Vec<StrId>, key_claim: u8, wearing: Vec<String>, driver: Option<(String, f32, f32, String)>, follows: Vec<(PropKey, String, f32)>, parent: NodeId) -> NodeId {
+    fn push_slot(&mut self, mut node: Node, props: Vec<Prop>, handlers: Vec<OnHandler>, whens: Vec<WhenTmp>, transitions: Vec<Transition>, custom_states: Vec<StrId>, arrangements: (u32, u32), key_claim: u8, wearing: Vec<String>, driver: Option<(String, f32, f32, String)>, follows: Vec<(PropKey, String, f32)>, parent: NodeId) -> NodeId {
         // Keyboard reach bakes here (GP26): the kinds that answer a tap
         // answer the keyboard — plus a control root whose contract said
         // so (above); `keyboard_target=off` is the deliberate opt-out
@@ -6761,6 +6998,11 @@ impl<'a> Compiler<'a> {
         }
         for cs in custom_states {
             self.page.custom_states.push((id, cs));
+        }
+        // Ids are handed out in rising order, so the list is written
+        // lowest root first, as `Page::control_arrangements_of` reads it.
+        if arrangements.1 != 0 {
+            self.page.control_arrangements.push(ControlArrangements { root: id, first: arrangements.0, count: arrangements.1 });
         }
         if key_claim != 0 {
             self.page.key_claims.push((id, key_claim));
@@ -6813,7 +7055,7 @@ impl<'a> Compiler<'a> {
         let mut slots: Vec<(NodeId, Vec<TmpNode>)> = Vec::new();
         for child in children {
             let origin: u16 = child.origin;
-            let cid = self.push_slot(child.node, child.props, child.handlers, child.whens, child.transitions, child.custom_states, child.key_claim, child.wearing, child.driver, child.follows, id);
+            let cid = self.push_slot(child.node, child.props, child.handlers, child.whens, child.transitions, child.custom_states, child.arrangements, child.key_claim, child.wearing, child.driver, child.follows, id);
             self.note_origin(cid, origin);
             slots.push((cid, child.children));
         }
@@ -6914,22 +7156,31 @@ impl<'a> Compiler<'a> {
                 }
                 match name.as_str() {
                     "go" | "toggle" => {
-                        let target = if arg == "base" {
-                            if name == "toggle" {
-                                self.error("G0050", p.line, "`toggle(base)` — base is home, use `go(base)`");
-                            }
-                            BASE
+                        if arg == "base" && name == "toggle" {
+                            self.error("G0050", p.line, "`toggle(base)` — base is home, use `go(base)`");
+                        }
+                        // In the body of a widget that declares the
+                        // name, it is that widget's own arrangement: the
+                        // action sets the arrangement of the instance
+                        // its node is in. Any other name is the page's.
+                        let own: Option<ArrangementId> = if arg == "base" { self.own_base() } else { self.own_arrangement(arg) };
+                        if let Some(place) = own {
+                            if name == "go" { Action::GoInControl(place) } else { Action::ToggleInControl(place) }
                         } else {
-                            let id = self.intern(arg);
-                            match self.page.arrangements.iter().position(|a| *a == id) {
-                                Some(i) => ArrangementId::from_index(i),
-                                None => {
-                                    self.error("G0051", p.line, format!("`{name}({arg})`: unknown arrangement"));
-                                    return None;
+                            let target = if arg == "base" {
+                                BASE
+                            } else {
+                                let id = self.intern(arg);
+                                match self.page.arrangements.iter().position(|a| *a == id) {
+                                    Some(i) => ArrangementId::from_index(i),
+                                    None => {
+                                        self.error("G0051", p.line, format!("`{name}({arg})`: unknown arrangement"));
+                                        return None;
+                                    }
                                 }
-                            }
-                        };
-                        if name == "go" { Action::Go(target) } else { Action::ToggleArrangement(target) }
+                            };
+                            if name == "go" { Action::Go(target) } else { Action::ToggleArrangement(target) }
+                        }
                     }
                     "play" => Action::Play(self.anim_ref(arg, p.line)),
                     "emit" if arg.is_empty() => {
@@ -7687,6 +7938,20 @@ impl<'a> Compiler<'a> {
                 }
             }
         }
+        // A `when` on one of a widget's own arrangements watches the
+        // root of the instance it is written in: the nearest node above
+        // it (or the node itself) whose widget declares that arrangement.
+        for i in 0..of.len() {
+            for j in 0..of[i].len() {
+                let (State::ControlArrangement(place) | State::ControlArrangementScreen(place, _)) = whens[i][j].state else { continue };
+                let mut at: NodeId = NodeId::from_index(i);
+                while at != NO_NODE && !self.page.control_arrangements_of(at).is_some_and(|c| place.index() >= c.first as usize && place.index() < (c.first + c.count) as usize) {
+                    at = self.page.nodes[at].parent;
+                }
+                debug_assert!(at != NO_NODE, "a `when` on a widget's arrangement sits in no instance of that widget");
+                of[i][j] = at;
+            }
+        }
         // An overlay `fill` axis under a hug parent that no non-overlay
         // child sizes: nothing determines the extent (the spec's overlay
         // law) — refused rather than laid out 0-wide.
@@ -8178,7 +8443,9 @@ impl<'a> Compiler<'a> {
                 let target = &self.page.nodes[lane.node];
                 for w in &self.page.whens[target.whens.0 as usize..(target.whens.0 + target.whens.1) as usize] {
                     let owner = if w.of == NO_NODE { lane.node } else { w.of };
-                    let node_state = matches!(w.state, State::Held | State::Hovered | State::Focused | State::FocusWithin | State::Selected | State::StateDisabled | State::Custom(_));
+                    // A control's arrangement flips on its root, as a
+                    // state does: a rule of the page is no part of it.
+                    let node_state = matches!(w.state, State::Held | State::Hovered | State::Focused | State::FocusWithin | State::Selected | State::StateDisabled | State::Custom(_)) || w.state.is_control_arrangement();
                     let same_scope = if t.node == NO_NODE { !node_state } else { node_state && owner == t.node };
                     if !same_scope {
                         continue;
@@ -8345,7 +8612,7 @@ impl<'a> Compiler<'a> {
         let is_named_arr = |st: &State| matches!(st, State::Arrangement(i) if *i != BASE);
         let mut errs: Vec<(u32, String)> = Vec::new();
         let mut seen: Vec<(NodeId, Option<State>, Option<State>)> = Vec::new();
-        let is_screen = |st: &State| matches!(st, State::ScreenOrientation(_) | State::ScreenClass(_) | State::ArrangementScreen(..) | State::ScreenPair(..));
+        let is_screen = |st: &State| matches!(st, State::ScreenOrientation(_) | State::ScreenClass(_) | State::ArrangementScreen(..) | State::ScreenPair(..) | State::ControlArrangementScreen(..));
         for t in &self.page.transitions {
             let live_node = t.node != NO_NODE && t.node.index() < self.page.nodes.len();
             // A screen flip lands at once: nothing looks a rule up for it,
@@ -8416,6 +8683,17 @@ fn state_word(page: &Page, state: State) -> String {
         State::ArrangementScreen(i, w) => format!("{} screen.{}", page.arrangements.get(i.index()).map(|a| page.str(*a)).unwrap_or("base"), page.str(w)),
         State::ScreenPair(a, b) => format!("screen.{} screen.{}", page.str(a), page.str(b)),
         State::Custom(s) => page.str(s).to_string(),
+        State::ControlArrangement(i) => control_arrangement_word(page, i).to_string(),
+        State::ControlArrangementScreen(i, w) => format!("{} screen.{}", control_arrangement_word(page, i), page.str(w)),
+    }
+}
+
+/// A widget's arrangement as the file spells it; `base` for an instance
+/// with none on.
+fn control_arrangement_word(page: &Page, place: ArrangementId) -> &str {
+    match page.control_arrangement_names.get(place.index()) {
+        Some(name) if *name != NO_STR => page.str(*name),
+        _ => "base",
     }
 }
 

@@ -188,7 +188,7 @@ fn compile_against(source: &str, source_name: &str, loader: Loader<'_>, baked: &
     // Built page of this file: its strings and arrangements keep their
     // numbers, which program's code holds (`Anim`, `Theme`,
     // `Arrangement`).
-    let built: Option<BuiltNumbers<'_>> = baked.pages.iter().find(|p| !p.file.is_empty() && p.file == source_name).map(|p| BuiltNumbers { strings: p.page.strings, arrangements: p.page.arrangements });
+    let built: Option<BuiltNumbers<'_>> = baked.pages.iter().find(|p| !p.file.is_empty() && p.file == source_name).map(|p| BuiltNumbers { strings: p.page.strings, arrangements: p.page.arrangements, nodes: p.page.nodes, control_arrangement_names: p.page.control_arrangement_names, control_arrangements: p.page.control_arrangements });
     let compiled = compile_keeping_numbers(source, loader, options, built);
     if has_errors(&compiled.diags) {
         return Err(compiled.diags.into_iter().filter(|d| d.severity == Severity::Error).collect());

@@ -1541,6 +1541,16 @@ pub enum State {
     /// cleared by the host through `Runtime::set_custom` — the control
     /// script's own vocabulary (GPAR116, the addon's declared_states).
     Custom(StrId),
+    /// `when <name>` in the body of a `widget` or `control` that declares
+    /// `arrangement <name>`: holds while that one instance is in the
+    /// arrangement. The id is a place in
+    /// `Page::control_arrangement_names` (`BASE` = the instance with no
+    /// arrangement on), and the `When`'s `of` is the instance's root, the
+    /// node whose arrangement is read.
+    ControlArrangement(ArrangementId),
+    /// `when <name> screen.<class|orientation>` in such a body: both must
+    /// hold.
+    ControlArrangementScreen(ArrangementId, StrId),
 }
 
 /// The five screen classes a `when screen.<class>` may pose for — a CLOSED
@@ -1640,6 +1650,12 @@ pub const SCREEN_CLASSES: &[&str] = &[
 pub const SCREEN_ORIENTATIONS: &[&str] = &[Orientation::Portrait.word(), Orientation::Landscape.word()];
 
 impl State {
+    /// True for an arrangement of one control instance, alone or with a
+    /// screen word (`ControlArrangement`, `ControlArrangementScreen`).
+    pub fn is_control_arrangement(self) -> bool {
+        matches!(self, State::ControlArrangement(_) | State::ControlArrangementScreen(..))
+    }
+
     /// Rank when several `when` blocks pose the same key. Placement poses
     /// rank by how many conditions must hold: a composed pair (two) beats
     /// any single (arrangement, screen class or orientation — all one).
@@ -1651,8 +1667,8 @@ impl State {
     /// selected < held < disabled.
     pub fn priority(self) -> u8 {
         match self {
-            State::ScreenOrientation(_) | State::ScreenClass(_) | State::Arrangement(_) => 0,
-            State::ArrangementScreen(..) | State::ScreenPair(..) => 1,
+            State::ScreenOrientation(_) | State::ScreenClass(_) | State::Arrangement(_) | State::ControlArrangement(_) => 0,
+            State::ArrangementScreen(..) | State::ScreenPair(..) | State::ControlArrangementScreen(..) => 1,
             State::FocusWithin => 2,
             State::Focused => 3,
             State::Hovered => 4,
@@ -1690,6 +1706,14 @@ pub enum Action {
     Named(StrId),
     Go(ArrangementId),
     ToggleArrangement(ArrangementId),
+    /// `go(<name>)` written in the body of a `widget` or `control` that
+    /// declares `arrangement <name>`: sets the arrangement of the
+    /// instance the handler's node is in. The id is a place in
+    /// `Page::control_arrangement_names`; the place after a widget's last
+    /// name stands for `go(base)`.
+    GoInControl(ArrangementId),
+    /// `toggle(<name>)` in such a body.
+    ToggleInControl(ArrangementId),
     Play(StrId),
     Emit(StrId),
 }
@@ -1728,6 +1752,27 @@ pub struct PropTransition {
     pub easing: StrId,
     /// The file line, for the one-timing-per-property message.
     pub line: u32,
+}
+
+/// One instance of a `widget` or `control` that declares arrangements
+/// (`arrangement <name>` lines in its body): the instance's root and
+/// where the widget's names sit in `Page::control_arrangement_names`.
+///
+/// Needed so each instance is in one arrangement on its own: two
+/// switches on one page flip one at a time. A page's own `arrangement`
+/// is one for the whole page.
+///
+/// Every instance of one widget on a page names the same run. The place
+/// after the run (`first + count`) holds no name: in an `Action` it
+/// stands for `go(base)` of that widget.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ControlArrangements {
+    /// The instance's root node.
+    pub root: NodeId,
+    /// Where the widget's first arrangement name is.
+    pub first: u32,
+    /// How many arrangements the widget declares.
+    pub count: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -2023,6 +2068,10 @@ pub struct StaticPage {
     pub theme: &'static [ThemeEntry],
     pub kind_defaults: &'static [KindDefault],
     pub arrangements: &'static [StrId],
+    /// See `Page::control_arrangement_names`.
+    pub control_arrangement_names: &'static [StrId],
+    /// See `Page::control_arrangements`.
+    pub control_arrangements: &'static [ControlArrangements],
     pub transitions: &'static [Transition],
     pub prop_transitions: &'static [PropTransition],
     pub anims: &'static [AnimTrack],
@@ -2068,6 +2117,17 @@ pub struct Page {
     pub theme: Vec<ThemeEntry>,
     pub kind_defaults: Vec<KindDefault>,
     pub arrangements: Vec<StrId>,
+    /// The arrangement names the page's widgets and controls declare:
+    /// one run per widget, in the order its body declares them, then one
+    /// place with no name (`NO_STR`). A `State::ControlArrangement` holds
+    /// a place in here.
+    pub control_arrangement_names: Vec<StrId>,
+    /// Every instance whose widget declares arrangements, lowest root
+    /// first; the rows cloned since come after, in the same order.
+    ///
+    /// Empty on a page with no such widget, which then pays nothing for
+    /// the feature: no table at start, no compare in a frame.
+    pub control_arrangements: Vec<ControlArrangements>,
     pub transitions: Vec<Transition>,
     pub prop_transitions: Vec<PropTransition>,
     pub anims: Vec<AnimTrack>,
@@ -2199,6 +2259,8 @@ impl Page {
             theme: s.theme.to_vec(),
             kind_defaults: s.kind_defaults.to_vec(),
             arrangements: s.arrangements.to_vec(),
+            control_arrangement_names: s.control_arrangement_names.to_vec(),
+            control_arrangements: s.control_arrangements.to_vec(),
             transitions: s.transitions.to_vec(),
             prop_transitions: s.prop_transitions.to_vec(),
             anims: s.anims.to_vec(),
@@ -2285,6 +2347,15 @@ impl Page {
         self.custom_states.extend(declared);
         let claims: Vec<(NodeId, u8)> = self.key_claims.iter().filter(|(n, _)| *n >= src && *n < end).map(|(n, m)| (shift(*n), *m)).collect();
         self.key_claims.extend(claims);
+        // A cloned control keeps its arrangements, and is in none of them
+        // until code or a tap sets one (`Runtime::grow`).
+        //
+        // The length check is needed so a page with no such control pays
+        // one compare per cloned row.
+        if !self.control_arrangements.is_empty() {
+            let arranged: Vec<ControlArrangements> = self.control_arrangements.iter().filter(|c| c.root >= src && c.root < end).map(|c| ControlArrangements { root: shift(c.root), ..*c }).collect();
+            self.control_arrangements.extend(arranged);
+        }
         // A cloned row's Popups are listed like the template's.
         //
         // The length check is needed so a page with no Popup pays one
@@ -2311,6 +2382,26 @@ impl Page {
         let slides: Vec<PropTransition> = self.prop_transitions.iter().filter(|t| t.node >= src && t.node < end).map(|t| PropTransition { node: shift(t.node), ..*t }).collect();
         self.prop_transitions.extend(slides);
         Cloned { root: base, end: NodeId(base.0 + (end.0 - src.0)) }
+    }
+
+    /// The arrangements entry of the control instance rooted at `root`;
+    /// `None` when `root` is no instance of a widget that declares some.
+    pub fn control_arrangements_of(&self, root: impl NodeName) -> Option<ControlArrangements> {
+        let root: NodeId = root.node();
+        self.control_arrangements.binary_search_by_key(&root, |c| c.root).ok().map(|at| self.control_arrangements[at])
+    }
+
+    /// The arrangement `name` of the control instance rooted at `root`,
+    /// as `Runtime::go_in_id` takes it: its place among the arrangements
+    /// the widget declares.
+    ///
+    /// Needed on a page compiled at run time (a test, a hot reload),
+    /// where no build made the widget's `enum`. `None` when the widget
+    /// declares no such arrangement.
+    pub fn control_arrangement(&self, root: impl NodeName, name: &str) -> Option<ArrangementId> {
+        let entry: ControlArrangements = self.control_arrangements_of(root)?;
+        let names: &[StrId] = &self.control_arrangement_names[entry.first as usize..(entry.first + entry.count) as usize];
+        names.iter().position(|n| self.str(*n) == name).map(ArrangementId::from_index)
     }
 
     pub fn str(&self, id: StrId) -> &str {

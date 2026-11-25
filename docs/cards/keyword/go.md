@@ -5,6 +5,10 @@ active pose re-asserts on rotation and hot reload. From code:
 `Runtime::go_id` on a page compiled while the program runs). One button
 that flips back AND forth is `toggle(name)`.
 
+Written in the body of a `widget` that declares `arrangement` lines of
+its own, `go(name)` sets that widget's arrangement for the instance the
+node is in, and `go(base)` puts that instance back with none on.
+
 ```
 arrangement expanded
 transition any -> expanded duration=0.2, easing=cubic_out

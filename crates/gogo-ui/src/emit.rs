@@ -6,7 +6,8 @@
 //! node ids — a widget instance is a nested `<Widget>Names` entry
 //! (`NAMES.slider_size.track`). Build-wide: `emit_keys` (the translation
 //! keys as `KEYS` + `enum Key`) and `emit_widget_names` (one
-//! `<Widget>Names` struct per widget the build's pages instance).
+//! `<Widget>Names` struct per widget the build's pages instance, and one
+//! `enum <Widget>Arrangement` per widget that declares arrangements).
 
 use crate::locale::Keys;
 use crate::page::*;
@@ -229,6 +230,54 @@ pub fn widget_struct(widget: &str) -> String {
     format!("{}Names", pascal_case(widget))
 }
 
+/// The Rust enum name for the arrangements of widget `CompactSwitch`:
+/// `CompactSwitchArrangement`.
+pub fn widget_arrangement_enum(widget: &str) -> String {
+    format!("{}Arrangement", pascal_case(widget))
+}
+
+/// A widget's arrangements as code: `enum <Widget>Arrangement` (one
+/// variant per `arrangement` line of the widget's body, `#[repr(u32)]` =
+/// its place among them, plus `Base`), its `ControlArrangementName` impl,
+/// and the `HasArrangements` impl that ties the enum to
+/// `<Widget>Names`.
+///
+/// Needed so `Runtime::go_in(&NAMES.restore_switch,
+/// CompactSwitchArrangement::Option1)` cannot name an arrangement the
+/// widget lacks, nor hand one widget's arrangement to another widget's
+/// instance: both are rustc errors.
+///
+/// Returns `Err` when two names spell one variant (`fadeIn` /
+/// `fade_in`), or a name spells `Base`.
+fn widget_arrangements(widget: &str, names: &[String]) -> Result<String, String> {
+    let enum_name: String = widget_arrangement_enum(widget);
+    let mut variants: Vec<String> = Vec::with_capacity(names.len());
+    for name in names {
+        let variant: String = key_variant(name);
+        if variant == "Base" {
+            return Err(format!("widget `{widget}`: arrangement `{name}` becomes `{enum_name}::Base`, the name of the widget with no arrangement on — rename it\n"));
+        }
+        if let Some(at) = variants.iter().position(|v| *v == variant) {
+            return Err(format!("widget `{widget}`: arrangements `{}` and `{name}` both become `{enum_name}::{variant}` — rename one\n", names[at]));
+        }
+        variants.push(variant);
+    }
+    let mut out = String::new();
+    out.push_str(&format!("/// The arrangements `{widget}` declares; `Base` is an instance with none on. Each instance is in one of them on its own (`Runtime::go_in`).\n"));
+    out.push_str(&format!("#[allow(clippy::enum_variant_names, non_camel_case_types, dead_code)]\n#[derive(Clone, Copy, Debug, PartialEq, Eq)]\n#[repr(u32)]\npub enum {enum_name} {{\n"));
+    for (at, variant) in variants.iter().enumerate() {
+        out.push_str(&format!("    {variant} = {at},\n"));
+    }
+    out.push_str(&format!("    Base = {},\n}}\n\n", u32::MAX));
+    out.push_str(&format!("impl gogo_ui::ControlArrangementName for {enum_name} {{\n    fn id(self) -> gogo_ui::ArrangementId {{\n        gogo_ui::ArrangementId::new(self as u32)\n    }}\n\n    fn from_id(id: gogo_ui::ArrangementId) -> {enum_name} {{\n        match id.index() {{\n"));
+    for (at, variant) in variants.iter().enumerate() {
+        out.push_str(&format!("            {at} => {enum_name}::{variant},\n"));
+    }
+    out.push_str(&format!("            _ => {enum_name}::Base,\n        }}\n    }}\n}}\n\n"));
+    out.push_str(&format!("impl gogo_ui::HasArrangements for {} {{\n    type Arrangement = {enum_name};\n\n    fn root(&self) -> NodeId {{\n        self.root\n    }}\n}}\n\n", widget_struct(widget)));
+    Ok(out)
+}
+
 /// The `Names` entries of the nodes directly under `prefix` (`""` = the
 /// page level; `"inst"` = the body of widget instance `inst`): every named
 /// node whose name is `prefix/x` with no further `/`, snake_cased; a
@@ -322,9 +371,21 @@ fn local_name(page: &Page, id: NodeId) -> String {
 
 /// The widget structs a page's instances need: widget → field rows, every
 /// instance of one widget agreeing on the rows (they stamp one body).
-fn collect_widget_shapes(page: &Page, entries: &[(String, NameEntry)], shapes: &mut Vec<(String, Vec<WidgetRow>)>, where_: &str) -> Result<(), String> {
+fn collect_widget_shapes(page: &Page, entries: &[(String, NameEntry)], shapes: &mut Vec<(String, Vec<WidgetRow>)>, arranged: &mut Vec<(String, Vec<String>)>, where_: &str) -> Result<(), String> {
     for (_, e) in entries {
-        if let NameEntry::Instance { widget, body, .. } = e {
+        if let NameEntry::Instance { root, widget, body } = e {
+            // The arrangements the widget declares, read from this
+            // instance: every instance of one widget names the same ones.
+            if let Some(entry) = page.control_arrangements_of(*root) {
+                let names: Vec<String> = page.control_arrangement_names[entry.first as usize..(entry.first + entry.count) as usize].iter().map(|n| page.str(*n).to_string()).collect();
+                match arranged.iter().find(|(w, _)| w == widget) {
+                    Some((_, have)) if *have != names => {
+                        return Err(format!("widget `{widget}`: its instances do not declare the same arrangements (see {where_}) — `{}` cannot be one enum\n", widget_arrangement_enum(widget)));
+                    }
+                    Some(_) => {}
+                    None => arranged.push((widget.clone(), names)),
+                }
+            }
             let mut rows: Vec<WidgetRow> = vec![WidgetRow { field: "root".to_string(), ty: "NodeId".to_string(), local: String::new() }];
             for (f, be) in body {
                 let id = match be {
@@ -340,7 +401,7 @@ fn collect_widget_shapes(page: &Page, entries: &[(String, NameEntry)], shapes: &
                 Some(_) => {}
                 None => shapes.push((widget.clone(), rows)),
             }
-            collect_widget_shapes(page, body, shapes, where_)?;
+            collect_widget_shapes(page, body, shapes, arranged, where_)?;
         }
     }
     Ok(())
@@ -354,14 +415,15 @@ fn collect_widget_shapes(page: &Page, entries: &[(String, NameEntry)], shapes: &
 /// a test's host page) and `rebase` (a repeat slot's copy).
 pub fn emit_widget_names(pages: &[(&str, &Page)]) -> Result<String, String> {
     let mut shapes: Vec<(String, Vec<WidgetRow>)> = Vec::new();
+    let mut arranged: Vec<(String, Vec<String>)> = Vec::new();
     for (module, page) in pages {
         let entries = name_entries(page, "").map_err(|e| format!("{module}: {e}"))?;
-        collect_widget_shapes(page, &entries, &mut shapes, module)?;
+        collect_widget_shapes(page, &entries, &mut shapes, &mut arranged, module)?;
         // A widget placed only inside a repeat's template still needs its
         // struct: the slots are typed through it (`<Repeat>Slot::at`).
         for (_, template) in repeat_templates(page) {
             let entries = name_entries(page, &template).map_err(|e| format!("{module}: {e}"))?;
-            collect_widget_shapes(page, &entries, &mut shapes, module)?;
+            collect_widget_shapes(page, &entries, &mut shapes, &mut arranged, module)?;
         }
     }
     let mut out = String::new();
@@ -373,6 +435,9 @@ pub fn emit_widget_names(pages: &[(&str, &Page)]) -> Result<String, String> {
         }
         out.push_str("}\n\n");
         out.push_str(&names_impl(&widget_struct(widget), rows, ""));
+        if let Some((_, names)) = arranged.iter().find(|(w, _)| w == widget) {
+            out.push_str(&widget_arrangements(widget, names)?);
+        }
     }
     if !shapes.is_empty() {
         out = format!("use gogo_ui::NodeId;\n\n{out}");
@@ -454,6 +519,8 @@ pub fn emit_rust(page: &Page, module: &str) -> Result<String, String> {
     out.push_str(&format!("        theme: {},\n", slice(&page.theme)));
     out.push_str(&format!("        kind_defaults: {},\n", slice(&page.kind_defaults)));
     out.push_str(&format!("        arrangements: {},\n", slice(&page.arrangements)));
+    out.push_str(&format!("        control_arrangement_names: {},\n", slice(&page.control_arrangement_names)));
+    out.push_str(&format!("        control_arrangements: {},\n", slice(&page.control_arrangements)));
     out.push_str(&format!("        custom_states: {},\n", slice(&page.custom_states)));
     out.push_str(&format!("        key_claims: {},\n", slice(&page.key_claims)));
     out.push_str(&format!("        popups: {},\n", slice(&page.popups)));

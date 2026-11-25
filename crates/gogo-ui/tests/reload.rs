@@ -508,3 +508,36 @@ fn the_builds_arrangement_number_names_the_same_arrangement_after_a_reload() {
     swap(&mut page, &mut runtime, fresh).unwrap();
     assert_eq!((page.str(page.arrangements[names.index()]), page.str(page.arrangements[1])), ("", "wide"));
 }
+
+/// A saved file with one more arrangement ahead of a widget's built one
+/// still sets the built one through the number the build wrote.
+///
+/// Needed because the program's code holds that number
+/// (`SwitchArrangement::On` is 0) and is not built again by a reload:
+/// without it, after such a save `Runtime::go_in(&NAMES.a,
+/// SwitchArrangement::On)` shows the instance in the new arrangement,
+/// until the next build.
+#[test]
+fn the_builds_number_of_a_widgets_arrangement_names_the_same_one_after_a_reload() {
+    let source = "widget Switch {\n    arrangement on\n    when on { knob.width = 30 }\n    Panel box width=40, height=20 { Rectangle knob width=10, height=10, halign=left, valign=top, color=#FFFFFFFF }\n}\nView page { Switch a halign=left, valign=top }\n";
+    let kit = build(&[("page.gogo", source)], &[], &[]);
+    let mut page: Page = kit.page("page.gogo");
+    let mut runtime = Runtime::new(&page);
+    let a: NodeId = page.find("a").unwrap();
+    let on = ArrangementId::new(0);
+    assert_eq!(page.control_arrangement(a, "on"), Some(on), "the build's `SwitchArrangement::On` holds 0");
+    runtime.go_in_id(a, on);
+
+    kit.edit("page.gogo", "    arrangement on\n", "    arrangement wide\n    arrangement on\n    when wide { knob.width = 20 }\n");
+    let fresh: Page = kit.recompile("page.gogo").unwrap();
+    swap(&mut page, &mut runtime, fresh).unwrap();
+    assert_eq!((page.control_arrangement(a, "on"), page.control_arrangement(a, "wide")), (Some(on), Some(ArrangementId::new(1))), "the number in the build's `SwitchArrangement::On` names another arrangement after the reload");
+    assert_eq!(runtime.arrangement_in_id(a), on, "the instance is still in `on`");
+
+    // The file drops the built arrangement: its place stays, with no
+    // name, so the new one never takes the number the code holds.
+    kit.edit("page.gogo", "    arrangement on\n    when wide { knob.width = 20 }\n    when on { knob.width = 30 }\n", "    when wide { knob.width = 20 }\n");
+    let fresh: Page = kit.recompile("page.gogo").unwrap();
+    swap(&mut page, &mut runtime, fresh).unwrap();
+    assert_eq!((page.control_arrangement(a, "on"), page.control_arrangement(a, "wide")), (None, Some(ArrangementId::new(1))));
+}

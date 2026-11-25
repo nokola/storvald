@@ -28,3 +28,25 @@ Layers stage width=220, height=160 {
         on:activate=toggle(expanded)
 }
 ```
+
+Inside a `widget` or `control` body the word declares an arrangement of
+that widget. Each instance is in its own: `when name` in the body
+answers it, `go(name)` in the body sets it for the instance the tapped
+node is in, and code sets it with `Runtime::go_in`. A tap on the left
+drawer below opens the left one only.
+
+```
+widget Drawer {
+    arrangement open
+    transition any -> open duration=0.2, easing=cubic_out
+    when open { tray.height = 60 }
+    Column box width=120 {
+        Button handle text="more", on:activate=toggle(open)
+        Rectangle tray color=accent, width=fill, height=10
+    }
+}
+Row drawers spacing=12, halign=center, valign=top {
+    Drawer left
+    Drawer right
+}
+```

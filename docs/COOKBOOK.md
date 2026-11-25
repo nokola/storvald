@@ -34,7 +34,7 @@ name off an event:
 pub fn handler_name<'a>(page: &'a Page, ev: &Event) -> Option<&'a str> {
     match ev.action {
         Some(Action::Named(id)) | Some(Action::Emit(id)) => Some(page.str(id)),
-        Some(Action::Go(_)) | Some(Action::ToggleArrangement(_)) | Some(Action::Play(_)) => None,
+        Some(Action::Go(_)) | Some(Action::ToggleArrangement(_)) | Some(Action::GoInControl(_)) | Some(Action::ToggleInControl(_)) | Some(Action::Play(_)) => None,
         None => {
             let mut n: NodeId = ev.node;
             loop {
@@ -2359,6 +2359,13 @@ Rectangle plate 60x120 {
     transition option1 -> option2 duration=0.4, easing=cubic_out
 }
 ```
+
+To place such a switch twice on one page, write it as a `widget` and move
+its `arrangement` lines, its rules and its `when` blocks inside, beside
+the body: each instance is then in an arrangement of its own, and code
+sets one with `rt.go_in(&NAMES.<instance>, …)` (REFERENCE, "Arrangements
+inside a widget"). Written as the page's arrangements, the two would flip
+together.
 
 ---
 

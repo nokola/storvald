@@ -984,6 +984,47 @@ poses stays code-behind).
 The flip tweens with the matching rule; the ACTIVE pose holds across
 rotation and hot reload, and hot reload keeps the active arrangement.
 
+### Arrangements inside a widget or control (decided 2026-11-24)
+
+`arrangement <name>` written beside the body of a `widget` or a `control`
+declares an arrangement of that widget. Each instance is in one of its
+widget's arrangements at a time, on its own: two instances on one page
+flip one at a time, and neither follows the page's arrangement.
+
+- `base` is an instance with no arrangement on: the body as written.
+- A name the widget declares, written in a `when`, a `transition`, a
+  `go(…)` or a `toggle(…)` of the widget's body, is the widget's own
+  arrangement, whatever the page declares. A name the widget does not
+  declare is the page's, as in any node: every instance then follows
+  the page's flip. A `when <name> { part.prop = value }` block beside
+  the body names the body's nodes; a `when <name>` inside a node of the
+  body sets that node's own words. `when <name>
+  screen.<class|orientation>` composes as on a page.
+- A `transition` beside the body times the flips of one instance
+  (`transition option1 -> option2 duration=0.5`; `any` and `base` as on
+  a page). A node of the body times its own share with an exact pair,
+  and `duration=0` there means that node jumps.
+- On a timed flip the boxes of that instance glide to their new places.
+  A box outside the instance that the flip moves jumps: what is outside
+  a widget is not the widget's to time.
+- `on:<event>=go(<name>)` and `toggle(<name>)` on a node of the body set
+  the arrangement of the instance that node is in.
+- The page's own lines cannot name a widget's arrangement (G0036). The
+  instance's own line, the blocks under it and what the page puts into
+  a slot are the page's lines: a name there is the page's. A page reads
+  an instance's arrangement from code only.
+- In a `repeat` row each row is in an arrangement of its own; a new row
+  is in none.
+- From code: `Runtime::go_in(&NAMES.<instance>,
+  <Widget>Arrangement::<Name>)`, `toggle_in`, `go_in_instant` and
+  `arrangement_in`. A build writes `enum <Widget>Arrangement` for every
+  such widget, tied to the widget's `<Widget>Names`, so one widget's
+  arrangement handed to another widget's instance does not compile.
+  `Runtime::go` sets the page's arrangement and takes no widget's.
+- A hot reload keeps each instance in its arrangement.
+- A name cannot also be a `state` of the same control (G0032), and the
+  names reserved for a page's arrangements are reserved here.
+
 ### Screen classes and orientation (`when screen.<class>` M15, `when screen.<orientation>` D265)
 
 Two more pose axes, orthogonal to arrangements: the SCREEN's size class

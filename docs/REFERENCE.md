@@ -2346,6 +2346,81 @@ smooth-slide recipe).
   Arrangements rank below every built-in state when both touch a
   property.
 
+### Arrangements inside a widget
+
+A page's `arrangement` is one for the whole page. Put a switch with two
+poses on a page twice, write its poses as the page's arrangements, and a
+tap on one switch flips both. So a `widget` (or a `control`) declares
+arrangements of its own, beside its body, and each instance is in one of
+them:
+
+```kdl
+widget OptionSwitch {
+    arrangement first
+    arrangement second
+
+    transition first -> second duration=0.5, easing=cubic_out
+    transition second -> first duration=0.5, easing=cubic_out
+
+    when first { other.margin_top = -60 }
+    when second { one.margin_top = 60 }
+
+    Layers box width=60, height=60 {
+        Button other 60x60, halign=left, valign=top, overlay=true,
+            text="2", on:activate=go(second)
+        Button one 60x60, halign=left, valign=top, overlay=true,
+            text="1", on:activate=go(first)
+    }
+}
+
+View page {
+    Row switches halign=center, valign=center, spacing=20 {
+        OptionSwitch restoreSwitch
+        OptionSwitch adjustSwitch
+    }
+}
+```
+
+A tap on `restoreSwitch` moves its two tiles and leaves `adjustSwitch`
+where it is.
+
+- **`base`** is an instance with no arrangement on: the body as written.
+- **A name the widget declares is the widget's own in its body.** In a
+  `when`, a `transition`, a `go(…)` or a `toggle(…)` written in the
+  widget's body, `first` is `OptionSwitch`'s arrangement, whatever the
+  page declares. A name the widget does not declare is the page's, as
+  in any node. A `when <name> { … }` block beside the body names the
+  body's nodes (`one.margin_top = 60`); inside a node it sets that
+  node's own words. `when <name> screen.<class>` composes as on a page.
+- **The page's own lines cannot name a widget's arrangement.** That is
+  a build error which says whose the name is. The instance's own line,
+  the blocks under it and what the page puts into a slot are the page's
+  lines: `OptionSwitch s on:press=go(expanded)` flips the page.
+- **Timing.** A `transition` beside the body times the flips of one
+  instance; a node of the body times its own share with an exact pair
+  (`duration=0`: that node jumps). The boxes of the instance glide to
+  their new places. A box outside the instance that the flip moves
+  jumps.
+- **In a `repeat` row** each row is in an arrangement of its own.
+
+From code, a build writes one `enum` per widget that declares
+arrangements, and the calls name the instance (nothing checks this
+example: the names are the ones a build writes):
+
+```rust partial
+rt.go_in(&NAMES.restore_switch, OptionSwitchArrangement::Second);
+rt.toggle_in(&NAMES.adjust_switch, OptionSwitchArrangement::First);
+if rt.arrangement_in(&NAMES.restore_switch) == OptionSwitchArrangement::Base {
+    // `restoreSwitch` is in neither
+}
+```
+
+`OptionSwitchArrangement` belongs to `OptionSwitchNames`: handing it to
+another widget's instance, or to `rt.go` (the page's own), does not
+compile. `rt.go_in_instant` flips with no motion. On a page compiled
+while the program runs, `page.control_arrangement(root, "second")` finds
+the arrangement by its name and `rt.go_in_id(root, …)` sets it.
+
 ### Screen classes and orientation (`when screen.*`)
 
 ```kdl partial
@@ -3022,6 +3097,7 @@ glide freezes mid-flight until the next input.
 |------|---------|
 | `rt.play` / `stop` / `is_playing` / `take_finished` (and the `_id` forms) | Animations (see Animations, Playing). |
 | `rt.go` / `toggle` / `go_instant` / `arrangement_is` / `arrangement_settled` | Arrangements — flip the standing pose (`Arrangement::Base` = the declarations). |
+| `rt.go_in` / `toggle_in` / `go_in_instant` / `arrangement_in` (and the `_id` forms) | The arrangement of one widget instance (`<Widget>Arrangement::Base` = none on). |
 | `rt.set_screen(&page, orientation, class)` | Names the screen's orientation and size class; every `when screen.*` re-poses at once. |
 | `rt.safe = [l, t, r, b]` (then `rt.dirty = true`) | Safe-area insets in epx; every `safe` padding and margin follows. |
 | `rt.set_theme_variant(&page, name)`, `rt.theme_color`, `rt.theme_number` | Switch the theme variant; read a theme value from code. |

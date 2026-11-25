@@ -203,6 +203,38 @@ View v {
 }
 ";
 
+/// Arrangements inside a control, two instances: one seats a node of
+/// the body and moves it (timed), one hides a part of the body with a
+/// button in it, one composes with a screen word.
+const CONTROL_ARRANGED: &str = "widget Dock {
+    arrangement parked
+    arrangement shut
+    transition any -> parked duration=0.3
+    when parked {
+        car.seat = bay
+        car.halign = right
+    }
+    when shut { road.visibility = gone }
+    when shut screen.landscape { lot.width = 60 }
+    Row box height=20, spacing=0 {
+        Layers road width=40, height=20 {
+            Button car width=10, height=10, halign=left, valign=top {
+                transition any -> held duration=0.2
+                when held opacity=0.5
+            }
+        }
+        Layers lot width=40, height=20 { seat bay }
+    }
+}
+View v {
+    Column both halign=left, valign=top, spacing=0 {
+        Dock d1
+        Dock d2
+        Label tail text=\"t\"
+    }
+}
+";
+
 // ---------------------------------------------------------------- the three roads
 
 /// One fixture's three runtimes on the same page (compiled once and
@@ -425,12 +457,13 @@ fn whens_writing(page: &Page, key: PropKey) -> Vec<(NodeId, State, NodeId)> {
 /// the host's platform enums; the script leaves them to `set_screen`
 /// pins elsewhere.
 fn flippable(state: State) -> bool {
-    !matches!(state, State::ScreenOrientation(_) | State::ScreenClass(_) | State::ArrangementScreen(..) | State::ScreenPair(..))
+    !matches!(state, State::ScreenOrientation(_) | State::ScreenClass(_) | State::ArrangementScreen(..) | State::ScreenPair(..) | State::ControlArrangementScreen(..))
 }
 
 /// Turns `state` on `owner` on or off the way code does: an arrangement
-/// through `go_id` (off = back to base), a built-in state through its
-/// bit, a custom state on the declared ancestor that declares it.
+/// through `go_id` (off = back to base), a control's own through
+/// `go_in_id`, a built-in state through its bit, a custom state on the
+/// declared ancestor that declares it.
 fn flip(page: &Page, rt: &mut Runtime, owner: NodeId, state: State, on: bool) {
     match state {
         State::Arrangement(i) => rt.go_id(if on { i } else { BASE }),
@@ -450,7 +483,13 @@ fn flip(page: &Page, rt: &mut Runtime, owner: NodeId, state: State, on: bool) {
                 a = page.declared_parent(a);
             }
         }
-        State::ScreenOrientation(_) | State::ScreenClass(_) | State::ArrangementScreen(..) | State::ScreenPair(..) => {}
+        State::ControlArrangement(place) => {
+            // `owner` is the instance's root; the runtime takes the
+            // arrangement's place among the ones the widget declares.
+            let first: usize = page.control_arrangements_of(owner).map_or(0, |entry| entry.first as usize);
+            rt.go_in_id(owner, if on { ArrangementId::from_index(place.index() - first) } else { BASE });
+        }
+        State::ScreenOrientation(_) | State::ScreenClass(_) | State::ArrangementScreen(..) | State::ScreenPair(..) | State::ControlArrangementScreen(..) => {}
     }
 }
 
@@ -514,6 +553,17 @@ fn run_script(name: &str, page: Page) -> (usize, usize) {
     if arrangements > 0 {
         roads.step("back to the base pose", |_, rt| rt.go_id(BASE));
         roads.tick("tick after the return", 1.0);
+    }
+    // Every arrangement of every control instance: in, a tick through
+    // the glide, then back to none.
+    let controls: Vec<gogo_ui::ControlArrangements> = roads.page().control_arrangements.clone();
+    for entry in &controls {
+        for place in 0..entry.count as usize {
+            roads.step("a control goes to an arrangement", |_, rt| rt.go_in_id(entry.root, ArrangementId::from_index(place)));
+            roads.tick("tick mid-flip", 0.1);
+        }
+        roads.step("the control back to none", |_, rt| rt.go_in_id(entry.root, BASE));
+        roads.tick("tick after the return", 0.6);
     }
     // A flip on a node deep in a SEATED subtree: every `when` that seats
     // a node (`x.seat = name`) is turned on — by its arrangement, or the
@@ -728,7 +778,7 @@ fn compiled(name: &str, src: &str) -> Page {
 
 #[test]
 fn inline_fixtures_resolve_the_same_on_all_three_roads() {
-    let fixtures: &[(&str, &str)] = &[("SEAT_VIEW", SEAT_VIEW), ("STATE_VIEW", STATE_VIEW), ("POSE_TIMING", POSE_TIMING), ("DRIFT", DRIFT), ("ANIM_MIX", ANIM_MIX), ("FADER", FADER), ("TALL_LIST", TALL_LIST), ("FOCUS_WITHIN", FOCUS_WITHIN_VIEW), ("KEYED", KEYED), ("BARS", BARS), ("SEATED_DEEP", SEATED_DEEP), ("HIDE_PARENT", HIDE_PARENT)];
+    let fixtures: &[(&str, &str)] = &[("SEAT_VIEW", SEAT_VIEW), ("STATE_VIEW", STATE_VIEW), ("POSE_TIMING", POSE_TIMING), ("DRIFT", DRIFT), ("ANIM_MIX", ANIM_MIX), ("FADER", FADER), ("TALL_LIST", TALL_LIST), ("FOCUS_WITHIN", FOCUS_WITHIN_VIEW), ("KEYED", KEYED), ("BARS", BARS), ("SEATED_DEEP", SEATED_DEEP), ("HIDE_PARENT", HIDE_PARENT), ("CONTROL_ARRANGED", CONTROL_ARRANGED)];
     let mut any_static = 0;
     let mut any_dynamic = 0;
     for (name, src) in fixtures {

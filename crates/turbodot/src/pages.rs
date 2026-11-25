@@ -773,7 +773,7 @@ impl PageUi {
     pub fn handler_name_id_with(&self, event: &Event, is_inside_widget: impl Fn(StrId) -> bool) -> Option<StrId> {
         match event.action {
             Some(Action::Named(id)) | Some(Action::Emit(id)) => Some(id),
-            Some(Action::Go(_)) | Some(Action::ToggleArrangement(_)) | Some(Action::Play(_)) => None,
+            Some(Action::Go(_)) | Some(Action::ToggleArrangement(_)) | Some(Action::GoInControl(_)) | Some(Action::ToggleInControl(_)) | Some(Action::Play(_)) => None,
             None => {
                 let mut at: NodeId = event.node;
                 loop {
