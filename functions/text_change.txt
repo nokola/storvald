@@ -1,4 +1,4 @@
-# `text_change` at commit b358ab2dd2b8a208419bef41caec2e35eafd44e3: instructions by function, 68762 in all.
+# `text_change` at commit a44cc70e3422e9e45ecf394c4f8f66508e4952a4: instructions by function, 68975 in all.
 # A function's own code only: what it calls is counted at the called function.
 14178 gogo_ui::draw::walk'2
 8150 <gogo_ui::page::Page>::kind_default::{closure#0}
@@ -37,7 +37,7 @@
 172 <gogo_ui::runtime::Runtime>::frame_retained
 172 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&u64>
 160 <gogo_ui::runtime::Resolved>::color_by_id
-146 <turbodot::program::Program<storvald_perf::AppState>>::frame
+158 <turbodot::program::Program<storvald_perf::AppState>>::frame
 140 roundf
 136 <gogo_text::TextEngine>::measure
 126 gogo_ui::runtime::resolve_into::{closure#46}
@@ -46,10 +46,11 @@
 121 <gogo_text::EpxMeasure as gogo_ui::layout::TextMeasure>::identity
 120 <alloc::raw_vec::RawVecInner>::finish_grow
 118 <gogo_ui::input::Input>::tick
+113 <turbodot::pages::PageUi>::relayout
 112 <gogo_text::EpxMeasure as gogo_ui::layout::TextMeasure>::measure
-108 <turbodot::pages::PageUi>::relayout
 93 <alloc::vec::Vec<(gogo_ui::page::NodeId, gogo_ui::layout::Memo)>>::extend_trusted::<core::iter::adapters::map::Map<alloc::vec::drain::Drain<gogo_ui::layout::Memo>, <gogo_ui::layout::LayoutCache>::patch::{closure#3}>>
 93 <gogo_ui::runtime::Runtime>::root_pose
+84 <turbodot::program::Program<storvald_perf::AppState>>::do_what_layouts_left
 83 gogo_ui::runtime::compose_anim
 81 <gogo_ui::runtime::Runtime>::set_text
 76 __memset_avx2_unaligned_erms
@@ -58,12 +59,14 @@
 72 core::ptr::drop_glue::<gogo_ui::runtime::Resolved>
 69 <gogo_ui::page::Value as core::cmp::PartialEq>::eq
 69 __libc_malloc2
+67 <turbodot::program::Program<storvald_perf::AppState>>::tell_page_laid_out
 66 <gogo_ui::runtime::Runtime>::compose_motion
 66 malloc
 64 <gogo_ui::layout::Lay>::text_of
 63 gogo_ui::layout::diff_pairs::<f32>
 60 <gogo_ui::runtime::Runtime>::set_prop_by_id
 58 <gogo_ui::runtime::Resolved>::push_override
+55 <turbodot::pages::PageStack>::get_mut
 53 <gogo_ui::runtime::Runtime>::glide_in_place
 52 <gogo_ui::layout::LayoutCache>::remember_part
 52 <turbodot::pages::PageUi>::root_pose
@@ -87,15 +90,16 @@
 24 gogo_ui::layout::sym_diff_nodes
 24 storvald_perf::counts::counted::<storvald_perf::scenarios::text_change::{closure#0}>::{closure#0}
 22 <gogo_ui::runtime::Resolved>::font
-22 <turbodot::pages::PageStack>::get_mut
 19 <alloc::vec::Vec<gogo_ui::page::NodeId>>::extend_desugared::<core::iter::adapters::filter::Filter<core::iter::adapters::copied::Copied<core::slice::iter::Iter<gogo_ui::page::NodeId>>, <gogo_ui::layout::LayoutCache>::patch::{closure#0}>>
 16 <gogo_ui::runtime::Resolved>::ident_by_id
 15 alloc_perturb
 13 <gogo_ui::runtime::Resolved>::font_size
+11 <turbodot::pages::PageStack>::get
 10 <alloc::vec::Vec<gogo_ui::layout::StackLists> as core::ops::drop::Drop>::drop
 9 __rustc::__rust_alloc
 8 <(gogo_ui::page::NodeId, gogo_ui::page::Prop) as core::slice::cmp::SlicePartialEq<(gogo_ui::page::NodeId, gogo_ui::page::Prop)>>::equal_same_length
 7 <turbodot::pages::PageUi>::set_text
 3 __rustc::__rust_no_alloc_shim_is_unstable_v2
 2 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
+1 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::left
 1 storvald_perf_measured

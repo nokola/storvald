@@ -1,6 +1,6 @@
-# `open_controls_page` at commit b358ab2dd2b8a208419bef41caec2e35eafd44e3: instructions by function, 121357 in all.
+# `open_controls_page` at commit a44cc70e3422e9e45ecf394c4f8f66508e4952a4: instructions by function, 121446 in all.
 # A function's own code only: what it calls is counted at the called function.
-27019 __memcpy_avx_unaligned_erms
+27031 __memcpy_avx_unaligned_erms
 11820 <gogo_ui::tree::PlacedTree>::build
 8560 gogo_ui::runtime::ladder_node
 7840 <core::iter::adapters::map::Map<core::ops::range::Range<usize>, gogo_ui::runtime::static_nodes::{closure#0}> as core::iter::traits::iterator::Iterator>::fold::<(), core::iter::traits::iterator::Iterator::for_each::call<bool, <alloc::vec::Vec<bool>>::extend_trusted<core::iter::adapters::map::Map<core::ops::range::Range<usize>, gogo_ui::runtime::static_nodes::{closure#0}>>::{closure#0}>::{closure#0}>
@@ -23,8 +23,8 @@
 1245 <gogo_ui::page::Page>::from_static
 1140 gogo_ui::input::event_action
 868 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::alloc
+766 __memcmp_avx2_movbe
 717 <gogo_ui::input::Input>::touch
-717 __memcmp_avx2_movbe
 612 <alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global>
 599 <gogo_ui::anim::Player>::new
 590 gogo_ui::draw::hit_laid_at
@@ -50,8 +50,8 @@
 130 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::dealloc
 129 <gogo_ui::input::Input>::grant
 125 <turbodot::program::Program<storvald_perf::AppState>>::pointer
-119 <turbodot::program::Program<storvald_perf::AppState>>::carry_out_requests
-119 <turbodot::program::Program<storvald_perf::AppState>>::order_drawn_pages
+120 <turbodot::program::Program<storvald_perf::AppState>>::carry_out_requests
+120 <turbodot::program::Program<storvald_perf::AppState>>::order_drawn_pages
 118 <gogo_ui::anim::Easing>::parse
 117 <turbodot::pages::PageUi>::new
 105 gogo_ui::runtime::static_nodes
@@ -64,6 +64,7 @@
 72 <turbodot::program::Program<storvald_perf::AppState>>::open
 72 _int_free_maybe_trim
 68 __rustc::__rust_dealloc
+66 core::slice::memchr::memchr_aligned
 63 <gogo_ui::runtime::Runtime>::disabled::<gogo_ui::page::NodeId>
 63 <turbodot::program::Program<storvald_perf::AppState>>::page_that_takes
 62 __libc_calloc2
@@ -81,7 +82,6 @@
 48 <alloc::vec::Vec<bool> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<bool, core::iter::adapters::map::Map<core::ops::range::Range<usize>, gogo_ui::runtime::static_nodes::{closure#0}>>>::from_iter
 48 __cxa_thread_atexit_impl
 48 __rustc::__rust_alloc_zeroed
-40 core::slice::memchr::memchr_aligned
 38 <gogo_ui::runtime::Resolved>::hidden_by_id
 38 pthread_mutex_lock@@GLIBC_2.2.5
 37 <turbodot::page::Nav<storvald_perf::AppState>>::go::<storvald_perf::pages::ControlsPage, turbodot::page::AsPage>
@@ -122,9 +122,9 @@
 6 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::kind
 4 <alloc::vec::Vec<gogo_ui::anim::Tween>>::retain::<<gogo_ui::runtime::Runtime>::play_id::{closure#8}>
 3 <<turbodot::program::Program<storvald_perf::AppState>>::open::{closure#5} as core::ops::function::FnOnce<(&mut dyn turbodot::page::PageObject<storvald_perf::AppState>, &mut turbodot::page::Host<storvald_perf::AppState>)>>::call_once
-2 0x0000000004d1f430
-2 0x0000000004d1f4c0
-2 0x0000000004d1f680
+2 0x0000000004d21430
+2 0x0000000004d214c0
+2 0x0000000004d21680
 2 <gogo_ui::runtime::Runtime>::play_entrances
 2 <turbodot::page::Plain<storvald_perf::pages::ControlsPage, storvald_perf::ui::controls_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::built
 2 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::left

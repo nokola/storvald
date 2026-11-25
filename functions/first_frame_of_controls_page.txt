@@ -1,10 +1,10 @@
-# `first_frame_of_controls_page` at commit b358ab2dd2b8a208419bef41caec2e35eafd44e3: instructions by function, 4896464 in all.
+# `first_frame_of_controls_page` at commit a44cc70e3422e9e45ecf394c4f8f66508e4952a4: instructions by function, 4897137 in all.
 # A function's own code only: what it calls is counted at the called function.
 403474 <gogo_ui::page::Page>::kind_default::{closure#0}
 315542 <gogo_ui::page::Page>::prop_by_id
 276146 <gogo_ui::runtime::Resolved>::override_of_by_id
 228765 <gogo_ui::runtime::Resolved>::prop_by_id
-170587 __memcpy_avx_unaligned_erms
+170591 __memcpy_avx_unaligned_erms
 163930 harfrust::hb::ot_shape::shape_internal
 140806 <cosmic_text::attrs::AttrsList>::get_span
 126352 cosmic_text::shape::shape_fallback
@@ -65,7 +65,7 @@
 16376 <harfrust::hb::glyph_metrics::GlyphMetrics>::populate_advance_widths
 16366 <core::iter::adapters::map::Map<core::str::iter::CharIndices, unicode_linebreak::linebreaks::{closure#0}> as core::iter::traits::iterator::Iterator>::try_fold::<(), &mut <core::iter::adapters::scan::Scan<_, _, _> as core::iter::traits::iterator::Iterator>::try_fold::scan<(usize, u8), (u8, bool), (usize, bool, bool), (), core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>, unicode_linebreak::linebreaks::{closure#1}, core::iter::traits::iterator::Iterator::find_map::check<(usize, bool, bool), (usize, unicode_linebreak::BreakOpportunity), &mut unicode_linebreak::linebreaks::{closure#2}>::{closure#0}>::{closure#0}, core::ops::control_flow::ControlFlow<core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>>>
 16188 <harfrust::hb::buffer::hb_buffer_t>::guess_segment_properties
-15819 <gogo_text::TextEngine>::measure
+15983 <gogo_text::TextEngine>::measure
 15778 harfrust::hb::ot::lookup::pair_pos1_cached
 15264 <alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global>
 15221 <gogo_ui::runtime::Resolved>::gone_by_id
@@ -94,7 +94,7 @@
 9683 <harfrust::hb::buffer::hb_buffer_t>::sync
 9424 <cosmic_text::buffer_line::BufferLine>::layout
 9422 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::dealloc
-9210 __memcmp_avx2_movbe
+9217 __memcmp_avx2_movbe
 9095 <gogo_ui::layout::Lay>::content_min
 9052 <cosmic_text::buffer_line::BufferLine>::shape
 8996 realloc
@@ -133,9 +133,9 @@
 5312 <read_fonts::table_ref::TableRef<read_fonts::tables::aat::Lookup8Marker> as read_fonts::read::FontRead>::read
 5312 <read_fonts::table_ref::TableRef<read_fonts::tables::gdef::LigGlyphMarker> as read_fonts::read::FontRead>::read
 5276 gogo_ui::draw::push_shown
+5165 <hashbrown::map::HashMap<u64, (f32, f32), std::hash::random::RandomState>>::insert
 5060 <hashbrown::raw::RawTable<(u64, (f32, f32))>>::reserve_rehash::<hashbrown::map::make_hasher<u64, (f32, f32), std::hash::random::RandomState>::{closure#0}>
 5052 <core::iter::adapters::chain::Chain<core::iter::adapters::map::Map<core::str::iter::CharIndices, unicode_linebreak::linebreaks::{closure#0}>, core::iter::sources::once::Once<(usize, u8)>> as core::iter::traits::iterator::Iterator>::try_fold::<(), <core::iter::adapters::scan::Scan<_, _, _> as core::iter::traits::iterator::Iterator>::try_fold::scan<(usize, u8), (u8, bool), (usize, bool, bool), (), core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>, unicode_linebreak::linebreaks::{closure#1}, core::iter::traits::iterator::Iterator::find_map::check<(usize, bool, bool), (usize, unicode_linebreak::BreakOpportunity), &mut unicode_linebreak::linebreaks::{closure#2}>::{closure#0}>::{closure#0}, core::ops::control_flow::ControlFlow<core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>>>
-4999 <hashbrown::map::HashMap<u64, (f32, f32), std::hash::random::RandomState>>::insert
 4978 <read_fonts::table_ref::TableRef<read_fonts::tables::gsub::LigatureMarker> as read_fonts::read::FontRead>::read
 4712 <alloc::vec::Vec<cosmic_text::shape::ShapeSpan> as core::ops::drop::Drop>::drop
 4672 _int_free_maybe_trim
@@ -238,9 +238,9 @@
 288 <alloc::raw_vec::RawVec<gogo_ui::page::Placement>>::grow_one
 280 <read_fonts::table_ref::TableRef<read_fonts::tables::gpos::PairPosFormat2Marker>>::class_def1
 255 alloc_perturb
+249 <turbodot::program::Program<storvald_perf::AppState>>::frame
 242 <gogo_text::EpxMeasure as gogo_ui::layout::TextMeasure>::identity
 240 <alloc::raw_vec::RawVec<bool>>::grow_one
-238 <turbodot::program::Program<storvald_perf::AppState>>::frame
 224 <gogo_ui::runtime::Runtime>::state_active_by_id
 206 gogo_ui::runtime::kind_visual_default
 198 <read_fonts::table_ref::TableRef<read_fonts::tables::gpos::PairPosFormat1Marker> as harfrust::hb::ot_layout_gsubgpos::Apply>::apply_with_external_cache::{closure#3}
@@ -254,14 +254,16 @@
 166 <gogo_ui::layout::LayoutCache>::run
 166 <turbodot::pages::PageUi>::frame
 165 <gogo_ui::layout::Lay>::place_children
+164 <turbodot::pages::PageUi>::relayout
 160 <gogo_ui::tree::PlacedTree as core::clone::Clone>::clone_from
 157 gogo_ui::layout::follow_table::<gogo_ui::layout::Rect>
-154 <turbodot::pages::PageUi>::relayout
 144 core::ptr::drop_glue::<gogo_ui::runtime::Resolved>
-142 0x0000000004d1f680
+142 0x0000000004d21680
+134 <turbodot::program::Program<storvald_perf::AppState>>::tell_page_laid_out
 131 gogo_ui::layout::follow_table::<[f32; 2]>
 127 <gogo_ui::runtime::Runtime>::glide_in_place
 125 <gogo_ui::anim::Player>::apply_at
+123 <turbodot::program::Program<storvald_perf::AppState>>::do_what_layouts_left
 123 <turbodot::program::Program<storvald_perf::AppState>>::frame_pages
 120 <read_fonts::table_ref::TableRef<read_fonts::tables::gpos::PairPosFormat2Marker>>::class_def2
 120 gogo_ui::layout::scroll_axes_of
@@ -271,6 +273,7 @@
 108 <gogo_ui::layout::LookCopy>::follow
 106 gogo_ui::draw::walk::{closure#2}
 96 <gogo_ui::runtime::Runtime>::root_pose
+88 <turbodot::pages::PageStack>::get_mut
 81 <gogo_ui::frame::KeptFrame>::frame_retained
 78 <read_fonts::table_ref::TableRef<read_fonts::tables::layout::ClassDefFormat1Marker>>::class_value_array
 74 gogo_ui::runtime::compose_anim::{closure#0}
@@ -285,11 +288,11 @@
 45 <turbodot::pages::PageUi>::root_pose
 44 <alloc::vec::drain::Drain<(gogo_ui::page::NodeId, gogo_ui::page::State, gogo_ui::page::StrId, alloc::vec::Vec<(gogo_ui::page::NodeId, gogo_ui::anim::Channel, f32, bool)>, alloc::vec::Vec<(gogo_ui::page::NodeId, gogo_ui::page::PropKey, gogo_ui::page::Value, bool)>)> as core::iter::traits::iterator::Iterator>::partition::<alloc::vec::Vec<(gogo_ui::page::NodeId, gogo_ui::page::State, gogo_ui::page::StrId, alloc::vec::Vec<(gogo_ui::page::NodeId, gogo_ui::anim::Channel, f32, bool)>, alloc::vec::Vec<(gogo_ui::page::NodeId, gogo_ui::page::PropKey, gogo_ui::page::Value, bool)>)>, <gogo_ui::runtime::Runtime>::end_state_anims::{closure#0}>
 44 <gogo_ui::anim::Easing>::apply
+44 <turbodot::pages::PageStack>::get
 42 gogo_ui::layout::diff_pairs::<bool>
 40 <alloc::vec::Vec<gogo_ui::anim::Player> as core::ops::drop::Drop>::drop
 36 <gogo_ui::layout::Lay>::place_alone
 36 <read_fonts::table_ref::TableRef<read_fonts::tables::layout::ClassDefFormat1Marker>>::start_glyph_id
-36 <turbodot::program::Program<storvald_perf::AppState>>::do_what_layouts_left
 34 core::ptr::drop_glue::<gogo_ui::layout::Tables>
 34 gogo_ui::anim::ease_in
 32 <gogo_ui::anim::Player>::resolve_pending_percent
@@ -301,8 +304,6 @@
 24 <alloc::raw_vec::RawVec<gogo_ui::layout::StackLists>>::grow_one
 24 <alloc::raw_vec::RawVec<gogo_ui::runtime::Before>>::grow_one
 24 gogo_ui::layout::sym_diff_nodes
-22 <turbodot::pages::PageStack>::get
-22 <turbodot::pages::PageStack>::get_mut
 19 <alloc::vec::Vec<gogo_ui::page::NodeId>>::extend_desugared::<core::iter::adapters::filter::Filter<core::iter::adapters::copied::Copied<core::slice::iter::Iter<gogo_ui::page::NodeId>>, <gogo_ui::layout::LayoutCache>::patch::{closure#0}>>
 10 <alloc::vec::Vec<gogo_ui::layout::StackLists> as core::ops::drop::Drop>::drop
 10 __glibc_morecore
@@ -311,4 +312,6 @@
 4 <alloc::vec::Vec<gogo_ui::page::NodeId>>::retain::<<gogo_ui::layout::LayoutCache>::patch::{closure#2}>
 2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
 2 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
+1 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::left
+1 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::left
 1 storvald_perf_measured

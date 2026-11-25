@@ -1,4 +1,4 @@
-# `mouse_move` at commit b358ab2dd2b8a208419bef41caec2e35eafd44e3: instructions by function, 113505 in all.
+# `mouse_move` at commit a44cc70e3422e9e45ecf394c4f8f66508e4952a4: instructions by function, 113718 in all.
 # A function's own code only: what it calls is counted at the called function.
 16093 gogo_ui::runtime::resolve_into
 15435 gogo_ui::draw::walk'2
@@ -40,25 +40,27 @@
 172 <gogo_ui::runtime::Runtime>::frame_retained
 167 <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as core::hash::Hasher>::write
 160 <gogo_ui::runtime::Resolved>::snap_slider
+158 <turbodot::program::Program<storvald_perf::AppState>>::frame
 156 core::ptr::drop_glue::<alloc::vec::drain::Drain<(gogo_ui::page::NodeId, gogo_ui::page::State, gogo_ui::page::StrId, alloc::vec::Vec<(gogo_ui::page::NodeId, gogo_ui::anim::Channel, f32, bool)>, alloc::vec::Vec<(gogo_ui::page::NodeId, gogo_ui::page::PropKey, gogo_ui::page::Value, bool)>)>>
 150 <alloc::vec::Vec<&gogo_ui::page::Transition> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<&gogo_ui::page::Transition, core::iter::adapters::filter::Filter<core::slice::iter::Iter<gogo_ui::page::Transition>, gogo_ui::runtime::find_rule::{closure#3}>>>::from_iter
-146 <turbodot::program::Program<storvald_perf::AppState>>::frame
 125 <gogo_ui::layout::LayoutCache>::run
 123 <turbodot::program::Program<storvald_perf::AppState>>::frame_pages
 121 <gogo_text::EpxMeasure as gogo_ui::layout::TextMeasure>::identity
 118 <gogo_ui::input::Input>::tick
 118 <gogo_ui::layout::LookCopy>::diff
+113 <turbodot::pages::PageUi>::relayout
 111 gogo_ui::input::event_action
 108 <gogo_ui::layout::LookCopy>::follow
-108 <turbodot::pages::PageUi>::relayout
 93 <gogo_ui::runtime::Runtime>::root_pose
 91 <turbodot::pages::PageStack>::hover
+84 <turbodot::program::Program<storvald_perf::AppState>>::do_what_layouts_left
 83 gogo_ui::runtime::compose_anim
 80 <gogo_ui::runtime::Resolved>::slider_value
 74 <gogo_ui::draw::DrawCache>::run
 74 <gogo_ui::input::Input>::hover_sample
 74 gogo_ui::runtime::compose_anim::{closure#0}
 72 core::ptr::drop_glue::<gogo_ui::runtime::Resolved>
+67 <turbodot::program::Program<storvald_perf::AppState>>::tell_page_laid_out
 66 <gogo_ui::runtime::Runtime>::compose_motion
 64 <gogo_ui::runtime::Resolved>::num_by_id
 63 <turbodot::program::Program<storvald_perf::AppState>>::page_that_takes
@@ -73,20 +75,21 @@
 49 <turbodot::pages::PageUi>::covers
 48 <alloc::vec::Vec<(turbodot::pages::PageId, gogo_ui::input::Event)>>::extend_desugared::<core::iter::adapters::map::Map<gogo_ui::input::EventListIntoIter, <turbodot::pages::PageStack>::hover::{closure#0}>>
 44 <gogo_ui::frame::KeptFrame>::frame_retained
+44 <turbodot::pages::PageStack>::get_mut
 42 gogo_ui::layout::diff_pairs::<bool>
 40 <alloc::vec::Vec<gogo_ui::anim::Player> as core::ops::drop::Drop>::drop
 39 <gogo_ui::input::Input>::unhover
 38 <turbodot::program::Program<storvald_perf::AppState>>::hand_hover_events
+33 <turbodot::pages::PageStack>::get
 33 <turbodot::program::Program<storvald_perf::AppState>>::carry_out_requests
 33 storvald_perf::counts::counted::<storvald_perf::scenarios::mouse_move::{closure#0}>::{closure#0}
 31 core::ptr::drop_glue::<gogo_ui::tree::PlacedTree>
 24 gogo_ui::layout::sym_diff_nodes
-22 <turbodot::pages::PageStack>::get
 19 <alloc::vec::Vec<gogo_ui::page::NodeId>>::extend_desugared::<core::iter::adapters::filter::Filter<core::iter::adapters::copied::Copied<core::slice::iter::Iter<gogo_ui::page::NodeId>>, <gogo_ui::layout::LayoutCache>::patch::{closure#0}>>
 19 <gogo_ui::runtime::Resolved>::hidden_by_id
 12 <turbodot::pages::PageUi>::hit
-11 <turbodot::pages::PageStack>::get_mut
 6 <gogo_ui::input::EventList as core::ops::drop::Drop>::drop
 4 <alloc::vec::Vec<gogo_ui::page::NodeId>>::retain::<<gogo_ui::layout::LayoutCache>::patch::{closure#2}>
 2 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
+1 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::left
 1 storvald_perf_measured

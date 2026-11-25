@@ -1,4 +1,4 @@
-# `slider_drag_step` at commit b358ab2dd2b8a208419bef41caec2e35eafd44e3: instructions by function, 62701 in all.
+# `slider_drag_step` at commit a44cc70e3422e9e45ecf394c4f8f66508e4952a4: instructions by function, 62928 in all.
 # A function's own code only: what it calls is counted at the called function.
 14228 gogo_ui::draw::walk'2
 5988 <gogo_ui::page::Page>::kind_default::{closure#0}
@@ -17,7 +17,7 @@
 680 gogo_ui::runtime::deref
 617 gogo_ui::draw::clips
 605 gogo_ui::draw::walk
-535 __memcmp_avx2_movbe
+549 __memcmp_avx2_movbe
 529 <gogo_ui::input::Input>::touch
 438 gogo_ui::runtime::settle_seats
 342 <gogo_ui::runtime::Runtime>::tick
@@ -34,18 +34,19 @@
 183 <gogo_ui::layout::LayoutCache>::patch
 172 <gogo_ui::runtime::Runtime>::frame_retained
 167 <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as core::hash::Hasher>::write
-146 <turbodot::program::Program<storvald_perf::AppState>>::frame
+158 <turbodot::program::Program<storvald_perf::AppState>>::frame
 125 <gogo_ui::input::Input>::tick
 125 <gogo_ui::layout::LayoutCache>::run
 123 <turbodot::program::Program<storvald_perf::AppState>>::frame_pages
 121 <gogo_text::EpxMeasure as gogo_ui::layout::TextMeasure>::identity
 118 gogo_ui::runtime::ladder_motion_and_seat
-108 <turbodot::pages::PageUi>::relayout
+113 <turbodot::pages::PageUi>::relayout
 108 gogo_ui::draw::push_shown
 105 <gogo_ui::page::Value as core::cmp::PartialEq>::eq
 94 gogo_ui::layout::mark_differing
 93 <gogo_ui::runtime::Runtime>::root_pose
 85 <gogo_ui::runtime::Runtime>::set_prop_by_id
+84 <turbodot::program::Program<storvald_perf::AppState>>::do_what_layouts_left
 83 gogo_ui::runtime::compose_anim
 82 gogo_ui::runtime::ladder_node
 74 <gogo_ui::draw::DrawCache>::run
@@ -55,6 +56,7 @@
 71 <turbodot::program::Program<storvald_perf::AppState>>::hand_events
 69 <core::iter::adapters::chain::Chain<core::slice::iter::Iter<(gogo_ui::page::NodeId, gogo_ui::page::Prop)>, core::slice::iter::Iter<(gogo_ui::page::NodeId, gogo_ui::page::Prop)>> as core::iter::traits::iterator::Iterator>::try_fold::<(), core::iter::traits::iterator::Iterator::any::check<&(gogo_ui::page::NodeId, gogo_ui::page::Prop), gogo_ui::layout::keys_differ<gogo_ui::layout::inherits>::{closure#1}>::{closure#0}, core::ops::control_flow::ControlFlow<()>>
 68 gogo_ui::input::slider_value
+67 <turbodot::program::Program<storvald_perf::AppState>>::tell_page_laid_out
 66 <gogo_ui::input::Input>::push_event
 66 <gogo_ui::runtime::Runtime>::compose_motion
 66 <turbodot::program::Program<storvald_perf::AppState>>::carry_out_requests
@@ -64,6 +66,7 @@
 58 <gogo_ui::runtime::Resolved>::push_override
 58 <turbodot::program::Program<storvald_perf::AppState>>::pointer
 57 __memset_avx2_unaligned_erms
+55 <turbodot::pages::PageStack>::get_mut
 53 <gogo_ui::runtime::Runtime>::glide_in_place
 52 <gogo_ui::layout::LayoutCache>::remember_part
 52 <turbodot::pages::PageUi>::root_pose
@@ -82,16 +85,16 @@
 31 gogo_ui::runtime::push_tail
 30 gogo_ui::input::value_of
 24 gogo_ui::layout::sym_diff_nodes
-22 <turbodot::pages::PageStack>::get_mut
+22 <turbodot::pages::PageStack>::get
 21 <gogo_ui::runtime::Runtime>::follow_value_with
 19 <alloc::vec::Vec<gogo_ui::page::NodeId>>::extend_desugared::<core::iter::adapters::filter::Filter<core::iter::adapters::copied::Copied<core::slice::iter::Iter<gogo_ui::page::NodeId>>, <gogo_ui::layout::LayoutCache>::patch::{closure#0}>>
 19 <gogo_ui::runtime::Resolved>::hidden_by_id
 16 <&mut core::iter::traits::iterator::Iterator::any::check<&(gogo_ui::page::NodeId, gogo_ui::page::Prop), gogo_ui::layout::keys_differ<gogo_ui::layout::mark_differing::{closure#0}>::{closure#1}>::{closure#0} as core::ops::function::FnMut<((), &(gogo_ui::page::NodeId, gogo_ui::page::Prop))>>::call_mut
 13 <turbodot::pages::PageStack>::touched_by
-11 <turbodot::pages::PageStack>::get
 10 <&mut core::iter::traits::iterator::Iterator::any::check<&(gogo_ui::page::NodeId, gogo_ui::page::Prop), gogo_ui::layout::keys_differ<gogo_ui::layout::inherits>::{closure#1}>::{closure#0} as core::ops::function::FnMut<((), &(gogo_ui::page::NodeId, gogo_ui::page::Prop))>>::call_mut
 8 <(gogo_ui::page::NodeId, gogo_ui::page::Prop) as core::slice::cmp::SlicePartialEq<(gogo_ui::page::NodeId, gogo_ui::page::Prop)>>::equal_same_length
 6 <&mut core::iter::traits::iterator::Iterator::any::check<&(gogo_ui::page::NodeId, gogo_ui::page::Prop), gogo_ui::layout::keys_differ<gogo_ui::layout::mark_differing::{closure#1}>::{closure#1}>::{closure#0} as core::ops::function::FnMut<((), &(gogo_ui::page::NodeId, gogo_ui::page::Prop))>>::call_mut
 4 <alloc::vec::Vec<gogo_ui::page::NodeId>>::retain::<<gogo_ui::layout::LayoutCache>::patch::{closure#2}>
 2 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
+1 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::left
 1 storvald_perf_measured
