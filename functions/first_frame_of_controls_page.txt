@@ -1,4 +1,4 @@
-# `first_frame_of_controls_page` at commit 4be3ae077534385ecddcf5e3e44e99416dbcfe1c: instructions by function, 4896554 in all.
+# `first_frame_of_controls_page` at commit b358ab2dd2b8a208419bef41caec2e35eafd44e3: instructions by function, 4896464 in all.
 # A function's own code only: what it calls is counted at the called function.
 403474 <gogo_ui::page::Page>::kind_default::{closure#0}
 315542 <gogo_ui::page::Page>::prop_by_id
@@ -65,7 +65,7 @@
 16376 <harfrust::hb::glyph_metrics::GlyphMetrics>::populate_advance_widths
 16366 <core::iter::adapters::map::Map<core::str::iter::CharIndices, unicode_linebreak::linebreaks::{closure#0}> as core::iter::traits::iterator::Iterator>::try_fold::<(), &mut <core::iter::adapters::scan::Scan<_, _, _> as core::iter::traits::iterator::Iterator>::try_fold::scan<(usize, u8), (u8, bool), (usize, bool, bool), (), core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>, unicode_linebreak::linebreaks::{closure#1}, core::iter::traits::iterator::Iterator::find_map::check<(usize, bool, bool), (usize, unicode_linebreak::BreakOpportunity), &mut unicode_linebreak::linebreaks::{closure#2}>::{closure#0}>::{closure#0}, core::ops::control_flow::ControlFlow<core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>>>
 16188 <harfrust::hb::buffer::hb_buffer_t>::guess_segment_properties
-15877 <gogo_text::TextEngine>::measure
+15819 <gogo_text::TextEngine>::measure
 15778 harfrust::hb::ot::lookup::pair_pos1_cached
 15264 <alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global>
 15221 <gogo_ui::runtime::Resolved>::gone_by_id
@@ -94,7 +94,7 @@
 9683 <harfrust::hb::buffer::hb_buffer_t>::sync
 9424 <cosmic_text::buffer_line::BufferLine>::layout
 9422 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::dealloc
-9208 __memcmp_avx2_movbe
+9210 __memcmp_avx2_movbe
 9095 <gogo_ui::layout::Lay>::content_min
 9052 <cosmic_text::buffer_line::BufferLine>::shape
 8996 realloc
@@ -135,7 +135,7 @@
 5276 gogo_ui::draw::push_shown
 5060 <hashbrown::raw::RawTable<(u64, (f32, f32))>>::reserve_rehash::<hashbrown::map::make_hasher<u64, (f32, f32), std::hash::random::RandomState>::{closure#0}>
 5052 <core::iter::adapters::chain::Chain<core::iter::adapters::map::Map<core::str::iter::CharIndices, unicode_linebreak::linebreaks::{closure#0}>, core::iter::sources::once::Once<(usize, u8)>> as core::iter::traits::iterator::Iterator>::try_fold::<(), <core::iter::adapters::scan::Scan<_, _, _> as core::iter::traits::iterator::Iterator>::try_fold::scan<(usize, u8), (u8, bool), (usize, bool, bool), (), core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>, unicode_linebreak::linebreaks::{closure#1}, core::iter::traits::iterator::Iterator::find_map::check<(usize, bool, bool), (usize, unicode_linebreak::BreakOpportunity), &mut unicode_linebreak::linebreaks::{closure#2}>::{closure#0}>::{closure#0}, core::ops::control_flow::ControlFlow<core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>>>
-5033 <hashbrown::map::HashMap<u64, (f32, f32), std::hash::random::RandomState>>::insert
+4999 <hashbrown::map::HashMap<u64, (f32, f32), std::hash::random::RandomState>>::insert
 4978 <read_fonts::table_ref::TableRef<read_fonts::tables::gsub::LigatureMarker> as read_fonts::read::FontRead>::read
 4712 <alloc::vec::Vec<cosmic_text::shape::ShapeSpan> as core::ops::drop::Drop>::drop
 4672 _int_free_maybe_trim

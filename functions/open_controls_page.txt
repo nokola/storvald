@@ -1,4 +1,4 @@
-# `open_controls_page` at commit 4be3ae077534385ecddcf5e3e44e99416dbcfe1c: instructions by function, 121379 in all.
+# `open_controls_page` at commit b358ab2dd2b8a208419bef41caec2e35eafd44e3: instructions by function, 121357 in all.
 # A function's own code only: what it calls is counted at the called function.
 27019 __memcpy_avx_unaligned_erms
 11820 <gogo_ui::tree::PlacedTree>::build
@@ -24,7 +24,7 @@
 1140 gogo_ui::input::event_action
 868 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::alloc
 717 <gogo_ui::input::Input>::touch
-715 __memcmp_avx2_movbe
+717 __memcmp_avx2_movbe
 612 <alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global>
 599 <gogo_ui::anim::Player>::new
 590 gogo_ui::draw::hit_laid_at
@@ -64,7 +64,6 @@
 72 <turbodot::program::Program<storvald_perf::AppState>>::open
 72 _int_free_maybe_trim
 68 __rustc::__rust_dealloc
-66 core::slice::memchr::memchr_aligned
 63 <gogo_ui::runtime::Runtime>::disabled::<gogo_ui::page::NodeId>
 63 <turbodot::program::Program<storvald_perf::AppState>>::page_that_takes
 62 __libc_calloc2
@@ -82,15 +81,16 @@
 48 <alloc::vec::Vec<bool> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<bool, core::iter::adapters::map::Map<core::ops::range::Range<usize>, gogo_ui::runtime::static_nodes::{closure#0}>>>::from_iter
 48 __cxa_thread_atexit_impl
 48 __rustc::__rust_alloc_zeroed
+40 core::slice::memchr::memchr_aligned
 38 <gogo_ui::runtime::Resolved>::hidden_by_id
 38 pthread_mutex_lock@@GLIBC_2.2.5
 37 <turbodot::page::Nav<storvald_perf::AppState>>::go::<storvald_perf::pages::ControlsPage, turbodot::page::AsPage>
 37 _dl_find_dso_for_object
 36 <turbodot::page::Plain<storvald_perf::pages::ControlsPage, storvald_perf::ui::controls_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::read_handler_names
+36 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::handle
 36 <turbodot::program::Program<storvald_perf::AppState>>::order_top_with_placed
 35 <turbodot::pages::PagePlatform>::apply
 34 <gogo_ui::input::EventList as core::ops::drop::Drop>::drop
-34 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::handle
 33 <turbodot::pages::PageStack>::get_mut
 32 <alloc::vec::Vec<(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>)> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>), core::iter::adapters::map::Map<core::slice::iter::Iter<gogo_ui::runtime::Pool>, gogo_ui::runtime::resolve_ladder::{closure#0}>>>::from_iter
 30 __rustc::__rust_realloc

@@ -1,4 +1,4 @@
-# `scroll_step` at commit 4be3ae077534385ecddcf5e3e44e99416dbcfe1c: instructions by function, 3347564 in all.
+# `scroll_step` at commit b358ab2dd2b8a208419bef41caec2e35eafd44e3: instructions by function, 3347572 in all.
 # A function's own code only: what it calls is counted at the called function.
 662840 gogo_ui::draw::walk'2
 636741 <gogo_ui::page::Page>::kind_default::{closure#0}
@@ -40,7 +40,7 @@
 3305 gogo_ui::layout::follow_table::<[f32; 2]>
 3216 <gogo_ui::runtime::Resolved>::ident_by_id
 2629 <gogo_ui::runtime::Resolved>::font_size
-2185 __memcmp_avx2_movbe
+2193 __memcmp_avx2_movbe
 1608 <(gogo_ui::page::NodeId, gogo_ui::page::Prop) as core::slice::cmp::SlicePartialEq<(gogo_ui::page::NodeId, gogo_ui::page::Prop)>>::equal_same_length
 1605 gogo_ui::draw::walk
 1413 gogo_ui::runtime::settle_seats

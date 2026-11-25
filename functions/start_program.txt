@@ -1,4 +1,4 @@
-# `start_program` at commit 4be3ae077534385ecddcf5e3e44e99416dbcfe1c: instructions by function, 1173103 in all.
+# `start_program` at commit b358ab2dd2b8a208419bef41caec2e35eafd44e3: instructions by function, 1173077 in all.
 # A function's own code only: what it calls is counted at the called function.
 368487 __memcpy_avx_unaligned_erms
 117720 __memset_avx2_unaligned_erms
@@ -231,7 +231,6 @@
 240 sysmalloc_mmap
 239 <turbodot::program::Program<storvald_perf::AppState>>::make
 229 <gogo_ui::runtime::Runtime>::frame_retained
-225 core::slice::memchr::memchr_aligned
 224 <gogo_text::EpxMeasure as gogo_ui::layout::TextMeasure>::measure
 221 <read_fonts::table_ref::TableRef<read_fonts::tables::layout::ClassDefFormat1Marker>>::class_value_array
 220 <read_fonts::table_ref::TableRef<read_fonts::tables::gpos::PairPosFormat2Marker>>::value_format1
@@ -247,6 +246,7 @@
 204 gogo_ui::draw::own_opacity
 200 <alloc::vec::drain::Drain<cosmic_text::shape::ShapeSpan> as core::ops::drop::Drop>::drop
 200 <read_fonts::table_ref::TableRef<read_fonts::tables::layout::ChainedSequenceContextFormat3Marker> as harfrust::hb::ot_layout_gsubgpos::Apply>::apply
+199 core::slice::memchr::memchr_aligned
 198 <harfrust::hb::ot::OtTables>::new
 192 <alloc::raw_vec::RawVec<harfrust::hb::ot_map::StageMap>>::grow_one
 192 <alloc::raw_vec::RawVec<harfrust::hb::ot_map::feature_info_t>>::grow_one
