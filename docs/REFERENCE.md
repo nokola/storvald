@@ -2976,7 +2976,10 @@ What `on:` takes:
   the file no longer has does not compile.
 - **Nothing**: with no `on:` line for an event, the handler it names is
   the node's own name (`saveButton`). One name serves all of a node's
-  events; the event's kind says which one happened. `press`, `release`,
+  events; the event's kind says which one happened. A node inside a
+  widget reports under the name of the instance (`Prompt ask` with two
+  buttons inside: `ask`, and `Handler::Ask` in a build), and the event's
+  node says which part it was (`NAMES.ask.keep`). `press`, `release`,
   `pointer`, `hover` and `wheel` are the exception: gogo reports them only
   on a node whose line has that `on:`.
 - **`emit(Name)`**: the event is reported under `Name`. Use it to give

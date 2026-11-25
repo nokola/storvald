@@ -747,9 +747,26 @@ handler the file no longer has stops compiling, so a renamed node can
 never silently lose its handler. The names that get a variant: every name
 an `on:` line writes; every named Button, Check, Toggle or Radio with no
 `on:activate`; every named Slider or Input with no `on:change`; every
-named `choice` with no `on:change`. A name inside a widget body or a
-repeat template gets none; a widget instance whose body marks a
-`signals` node gets one under the instance name.
+named `choice` with no `on:change`; every signal a control on the page
+declares (`drag_started` becomes `Handler::DragStarted`). A name inside a
+widget body or a repeat template gets none.
+
+**What happens inside a widget is reported under the name of the
+instance.** `Prompt ask`, a widget with two buttons inside, gives
+`Handler::Ask`; the event's node says which button it was
+(`NAMES.ask.keep`). An instance's name gets a variant when a node inside
+it reports with no `on:` line of its own:
+
+- a Button, Check, Toggle, Radio or ListItem with no `on:activate`;
+- a Slider or Input with no `on:change`;
+- a control with a `behavior` line and no `on:change` on the instance (its
+  value arrives as `Edit` and `Change`, like a Slider's);
+- a control with a `keys` line (a claimed key arrives as `Key`).
+
+A widget inside a widget reports under the outer instance, the name the
+page's file wrote. A widget whose every button names a handler
+(`on:activate=emit(PromptKeep)`) adds no variant for the instance, and
+neither does a widget with nothing to press.
 
 (The Godot addon wired events to host methods named `On<Name><Event>` and
 checked at load that they existed. The Rust crate has no such methods.)

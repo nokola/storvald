@@ -777,4 +777,35 @@ mod tests {
         assert_eq!(table.handler_of(&ui, &event), Some(Handler::Save), "node `{}`", ui.page.str(ui.page.nodes[inside].name));
         assert_eq!(ui.handler_name(&event), Some("save"));
     }
+
+    /// Every name an event inside a widget is for is a name the build
+    /// writes a `Handler` variant for: a button inside a widget with a
+    /// plain root, the value of a control with a `behavior` line, and a
+    /// signal that control declares.
+    ///
+    /// Needed because the two are written in two crates: with a name
+    /// missing from the build's list, a page's `handle` is never called
+    /// for that event.
+    #[test]
+    fn a_name_an_event_inside_a_widget_is_for_is_one_the_build_writes() {
+        const PAGE: &str = "widget Prompt {\n    Column {\n        Button keep text=\"Keep\"\n    }\n}\ncontrol Fader $value=0, $min=0, $max=100 {\n    behavior slider by $value in $min..$max\n    signal drag_started, drag_ended\n    Layers {\n        slot track width=fill, height=24 {\n            slot thumb automatic=position by $value in $min..$max { Circle 12x12 }\n        }\n    }\n}\nView root {\n    Column col {\n        Prompt save\n        Fader gain value=25\n    }\n}\n";
+        let compiled = gogo_ui::compile(PAGE, &|_| None);
+        assert!(!gogo_ui::has_errors(&compiled.diags), "{:?}", compiled.diags);
+        let ui: PageUi = PageUi::new(compiled.page);
+        let written: Vec<String> = gogo_ui::emit::handler_names(&ui.page);
+        let fader = ui.page.behaviors[0];
+        let events: [(Event, &str); 4] = [
+            (Event { node: ui.page.find("save/keep").expect("the button"), kind: EventKind::Activate, action: None }, "save"),
+            (Event { node: fader.root, kind: EventKind::Edit(gogo_ui::Value::VNum(30.0)), action: None }, "gain"),
+            (Event { node: fader.root, kind: EventKind::Signal, action: Some(Action::Emit(fader.drag_started)) }, "drag_started"),
+            (Event { node: fader.root, kind: EventKind::Signal, action: Some(Action::Emit(fader.drag_ended)) }, "drag_ended"),
+        ];
+        for (event, name) in events {
+            assert_eq!(ui.handler_name(&event), Some(name));
+            assert!(written.iter().any(|written_name| written_name == name), "`{name}` is not among the build's handler names {written:?}");
+        }
+        let mut table: HandlerTable<Handler> = HandlerTable::new();
+        table.read(&ui);
+        assert_eq!(table.handler_of(&ui, &events[0].0), Some(Handler::Save));
+    }
 }

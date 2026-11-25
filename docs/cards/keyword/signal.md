@@ -19,7 +19,8 @@ Fader gain value=25
 
 A declared signal reaches code as a `Signal` event on the control's root
 (`gain`), and the handler that event names is the signal's own name
-(`drag_started`). A contract without the `signal` line raises none.
+(`drag_started`; a build writes `Handler::DragStarted` for a page that
+places the control). A contract without the `signal` line raises none.
 Signals are not wired with `on:` — `on:drag_ended=` on an instance is
 build error G0049. Value events are never declared here — gogo
 synthesizes `edit`/`change` for the control's value (D181); `signal` is

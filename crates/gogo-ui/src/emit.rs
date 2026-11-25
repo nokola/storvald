@@ -67,7 +67,10 @@ pub fn pascal_case(name: &str) -> String {
 /// Handler names: every `Action::Named`, plus every named Button/Check/
 /// Toggle/Radio without an `on:activate` and every named Slider/Input
 /// without an `on:change` (the auto-wiring convention: the node's own
-/// name is its handler, for `activate` and for `change`/`edit` alike).
+/// name is its handler, for `activate` and for `change`/`edit` alike),
+/// plus the name of every widget instance with such a node inside it, or
+/// with a `behavior` line and no `on:change` (`instance_that_hears`), plus
+/// every signal a control on the page declares.
 pub fn handler_names(page: &Page) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
     for h in &page.handlers {
@@ -102,7 +105,81 @@ pub fn handler_names(page: &Page) -> Vec<String> {
             }
         }
     }
+    // Instance names come last, so a page's other variants keep their
+    // order when a widget is placed on it.
+    for (index, node) in page.nodes.iter().enumerate() {
+        // A control with a `behavior` line reports its value as a Slider does.
+        let value_control: bool = matches!(node.kind, Kind::Slider | Kind::Input) || page.behaviors.iter().any(|behavior| behavior.root.index() == index);
+        if !(node.kind.is_press_surface() || value_control) {
+            continue;
+        }
+        let wired: StrId = if value_control { change } else { activate };
+        let is_heard_by_own_line: bool = page.handlers[node.handlers.0 as usize..(node.handlers.0 + node.handlers.1) as usize].iter().any(|h| h.event == wired);
+        if is_heard_by_own_line {
+            continue;
+        }
+        if let Some(instance) = instance_that_hears(page, NodeId::from_index(index)) {
+            let n: String = page.str(instance).to_string();
+            if !names.contains(&n) {
+                names.push(n);
+            }
+        }
+    }
+    // A key a control claims (`keys` line) is reported like its value.
+    let key: StrId = page.intern_lookup("key");
+    for (root, _) in &page.key_claims {
+        let node: &Node = &page.nodes[root.index()];
+        let is_heard_by_own_line: bool = page.handlers[node.handlers.0 as usize..(node.handlers.0 + node.handlers.1) as usize].iter().any(|h| h.event == key);
+        if is_heard_by_own_line {
+            continue;
+        }
+        if let Some(instance) = instance_that_hears(page, *root) {
+            let n: String = page.str(instance).to_string();
+            if !names.contains(&n) {
+                names.push(n);
+            }
+        }
+    }
+    // A control's declared signal is reported under the signal's own
+    // name, as an `emit()` is.
+    for behavior in &page.behaviors {
+        for signal in [behavior.drag_started, behavior.drag_ended] {
+            if signal != NO_STR {
+                let n: String = page.str(signal).to_string();
+                if !names.contains(&n) {
+                    names.push(n);
+                }
+            }
+        }
+    }
     names
+}
+
+/// Name of the widget instance that answers for `node`, a node that
+/// reports with no `on:` line.
+///
+/// Needed so a page hears a button inside a widget it placed: the event
+/// walks up to the nearest name the page's file wrote, and that name
+/// needs a `Handler` variant. Without one, a tap on `ctlSave/btnSave`
+/// reaches no code of a page that matches on `Handler`.
+///
+/// Same walk as a host's `handler_name`: a name with `/` belongs to a
+/// widget's body and is passed.
+///
+/// Returns `None` when the nearest such name is a plain node's: only an
+/// instance's name is given a variant here.
+fn instance_that_hears(page: &Page, node: NodeId) -> Option<StrId> {
+    let mut at: NodeId = node;
+    loop {
+        let here: &Node = &page.nodes[at.index()];
+        if here.name != NO_STR && !page.str(here.name).contains('/') {
+            return if here.widget != NO_STR { Some(here.name) } else { None };
+        }
+        if here.parent == NO_NODE {
+            return None;
+        }
+        at = here.parent;
+    }
 }
 
 fn slice<T: std::fmt::Debug>(items: &[T]) -> String {
@@ -888,6 +965,56 @@ mod tests {
         assert!(src.contains("pub save_button: NodeId"));
         assert!(src.contains("kind: Button"));
         assert!(src.contains("strings: &[\"\", \"dark\", \"View\", \"v\""), "the well-known variant name is interned on every page (GPAR111)");
+    }
+
+    /// Handler names of `page_lines` after `widgets`, sorted.
+    fn sorted_handler_names(widgets: &str, page_lines: &str) -> Vec<String> {
+        let c = compile(&format!("{widgets}View v {{\n    Column c {{\n{page_lines}    }}\n}}\n"), &|_| None);
+        assert!(!crate::has_errors(&c.diags), "{:#?}", c.diags);
+        let mut names: Vec<String> = handler_names(&c.page);
+        names.sort();
+        names
+    }
+
+    /// A button inside a widget is heard under the name of the instance:
+    /// `Prompt ask` gives `Handler::Ask`, and the event's node says which
+    /// button. A widget whose buttons each name a handler gives none, nor
+    /// does one with nothing to press. A widget inside a widget reports
+    /// under the outer instance, the name the page's file wrote.
+    #[test]
+    fn an_instance_with_a_button_inside_gets_a_handler_name() {
+        const WIDGETS: &str = "widget Prompt {\n    Column {\n        Label title text=\"Keep?\"\n        Button keep text=\"Keep\"\n        Button drop text=\"Drop\"\n    }\n}\nwidget Wired {\n    Column {\n        Button go text=\"Go\", on:activate=emit(WiredGo)\n    }\n}\nwidget Plate {\n    Column {\n        Label words text=\"x\"\n    }\n}\nwidget Outer {\n    Column {\n        Prompt inner\n    }\n}\n";
+        assert_eq!(sorted_handler_names(WIDGETS, "        Prompt ask\n"), ["ask"]);
+        assert_eq!(sorted_handler_names(WIDGETS, "        Wired wired\n"), ["WiredGo"]);
+        assert_eq!(sorted_handler_names(WIDGETS, "        Plate plate\n"), [""; 0]);
+        assert_eq!(sorted_handler_names(WIDGETS, "        Outer outer\n"), ["outer"]);
+        assert_eq!(sorted_handler_names(WIDGETS, "        Prompt ask\n        Prompt again\n        Button own text=\"Own\"\n"), ["again", "ask", "own"]);
+        assert_eq!(sorted_handler_names(WIDGETS, "        Button text=\"No name\"\n"), [""; 0], "a button with no name under a plain node names no handler: `c` is no instance");
+        let c = compile(&format!("{WIDGETS}View v {{\n    Column c {{\n        Prompt ask\n    }}\n}}\n"), &|_| None);
+        let src = emit_rust(&c.page, "t").unwrap();
+        assert!(src.contains("pub enum Handler {\n        Ask,\n    }"), "{src}");
+        assert!(src.contains("\"ask\" => Some(Handler::Ask),"), "{src}");
+    }
+
+    /// A control with a `behavior` line reports its value under the name
+    /// of the instance, as a Slider does under its own, and each signal
+    /// it declares under the signal's name. With `on:change=` written on
+    /// the instance, the value goes to that name alone.
+    #[test]
+    fn a_control_with_a_behavior_gets_a_handler_name_and_its_signals() {
+        const FADER: &str = "control Fader $value=0, $min=0, $max=100 {\n    behavior slider by $value in $min..$max\n    state_builtin held\n    signal drag_started, drag_ended\n    Layers {\n        slot track width=fill, height=24 {\n            slot thumb automatic=position by $value in $min..$max { Circle 12x12 }\n        }\n    }\n}\ncontrol Quiet $value=0, $min=0, $max=100 {\n    behavior slider by $value in $min..$max\n    Layers {\n        slot track width=fill, height=24 {\n            slot thumb automatic=position by $value in $min..$max { Circle 12x12 }\n        }\n    }\n}\n";
+        assert_eq!(sorted_handler_names(FADER, "        Fader gain value=25\n"), ["drag_ended", "drag_started", "gain"]);
+        assert_eq!(sorted_handler_names(FADER, "        Quiet low value=25\n"), ["low"]);
+        assert_eq!(sorted_handler_names(FADER, "        Quiet low value=25, on:change=LowChanged\n"), ["LowChanged"]);
+    }
+
+    /// A control that claims keys and takes its input in code reports a
+    /// claimed key under the name of the instance.
+    #[test]
+    fn a_control_that_claims_keys_gets_a_handler_name() {
+        const KNOB: &str = "control Knob {\n    keys enter\n    Layers width=40, height=40 {\n        Rectangle plate width=fill, height=fill, color=#333333FF, interactive=true, on:pointer=KnobPointer\n    }\n}\ncontrol Still {\n    Layers width=40, height=40 {\n        Rectangle plate width=fill, height=fill, color=#333333FF, interactive=true, on:pointer=StillPointer\n    }\n}\n";
+        assert_eq!(sorted_handler_names(KNOB, "        Knob knob\n"), ["KnobPointer", "knob"]);
+        assert_eq!(sorted_handler_names(KNOB, "        Still still\n"), ["StillPointer"]);
     }
 
     /// A page's anims are a typed handle too: `enum Anim { Appear = <str id> }`

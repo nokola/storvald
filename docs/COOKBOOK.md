@@ -55,8 +55,8 @@ pub fn handler_name<'a>(page: &'a Page, ev: &Event) -> Option<&'a str> {
 - `on:activate=HandleOk` and `on:activate=emit(HandleOk)` both name
   `HandleOk`.
 - With no `on:` line for the event, the name is the node's own
-  (`okButton`); an unnamed node inside a widget answers with the name of
-  the instance around it.
+  (`okButton`); a node inside a widget answers with the name of the
+  instance around it.
 - `go(...)` and `play(...)` actions are carried out by gogo itself and name
   no handler.
 
@@ -83,6 +83,31 @@ for ev in events {
 
 (The tests do not compile this last example: it needs the code a build
 generates.)
+
+A widget with buttons inside is heard the same way. Here `Prompt ask`
+puts two buttons on the page:
+
+```kdl
+widget Prompt {
+    Column {
+        Button keep text="Keep"
+        Button drop text="Drop"
+    }
+}
+
+Prompt ask
+```
+
+A tap on either button is reported under `ask`, the name of the instance.
+The build writes `Handler::Ask`, and the event's node says which button it
+was:
+
+```rust partial
+(Handler::Ask, EventKind::Activate) if ev.node == NAMES.ask.keep => keep_changes(),
+(Handler::Ask, EventKind::Activate) if ev.node == NAMES.ask.drop => drop_changes(),
+```
+
+(Not compiled by the tests either, for the same reason.)
 
 ---
 
