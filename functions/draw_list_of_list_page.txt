@@ -1,6 +1,6 @@
-# `draw_list_of_list_page` at commit 5d29a8fee1bb7224b0d0c3788628a1ec685e899b: instructions by function, 2702447 in all.
+# `draw_list_of_list_page` at commit ac2d143232d109810faed65ae46094536437b7b1: instructions by function, 2702037 in all.
 # A function's own code only: what it calls is counted at the called function.
-633085 gogo_ui::draw::walk'2
+632676 gogo_ui::draw::walk'2
 557058 <gogo_ui::page::Page>::kind_default::{closure#0}
 478099 <gogo_ui::runtime::Resolved>::override_of_by_id
 373618 <gogo_ui::page::Page>::prop_by_id
@@ -20,7 +20,7 @@
 4100 roundf
 3216 <gogo_ui::runtime::Resolved>::ident_by_id
 2629 <gogo_ui::runtime::Resolved>::font_size
-1532 gogo_ui::draw::walk
+1531 gogo_ui::draw::walk
 438 realloc
 324 _int_realloc
 280 <alloc::raw_vec::RawVecInner>::finish_grow

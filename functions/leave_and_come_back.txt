@@ -1,115 +1,107 @@
-# `leave_and_come_back` at commit 5d29a8fee1bb7224b0d0c3788628a1ec685e899b: instructions by function, 254930 in all.
+# `leave_and_come_back` at commit ac2d143232d109810faed65ae46094536437b7b1: instructions by function, 117702 in all.
 # A function's own code only: what it calls is counted at the called function.
-73376 <gogo_ui::layout::LookCopy>::diff
-28808 __memcpy_avx_unaligned_erms
-27752 <gogo_ui::draw::DrawCache>::patch
 22314 <gogo_ui::runtime::Runtime>::set_screen
-11244 _int_free_merge_chunk
-9105 gogo_ui::runtime::resolve_into
-7999 free
+10574 _int_free_merge_chunk
+7790 free
 6478 <gogo_ui::runtime::Runtime>::tick
-5715 __memcmp_avx2_movbe
-5015 <gogo_ui::layout::LayoutCache>::patch
+5738 __memcmp_avx2_movbe
 4909 <gogo_ui::runtime::Runtime>::is_hook_playing_by_id
+4410 gogo_ui::runtime::resolve_into
+3673 gogo_ui::layout::follow_table::<gogo_ui::layout::Rect>
 3560 <turbodot::program::Program<storvald_perf::AppState>>::frame
-3442 _int_free_maybe_trim
 3284 <gogo_ui::anim::Player>::apply_at
+3226 _int_free_maybe_trim
 2432 <turbodot::pages::PageUi>::frame
-2431 _int_free_chunk
-1888 <(gogo_ui::page::NodeId, gogo_ui::page::Prop) as core::slice::cmp::SlicePartialEq<(gogo_ui::page::NodeId, gogo_ui::page::Prop)>>::equal_same_length
+2330 __memcpy_avx_unaligned_erms
+2278 _int_free_chunk
+2033 gogo_ui::layout::follow_table::<[f32; 2]>
 1855 <gogo_ui::runtime::Runtime>::root_pose
-1855 unlink_chunk.isra.0
-1815 <gogo_ui::layout::LayoutCache>::run
 1779 <turbodot::program::Program<storvald_perf::AppState>>::frame_pages
-1760 gogo_ui::runtime::settle_seats
-1724 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::dealloc
-1689 <gogo_ui::draw::DrawCache>::run
+1767 unlink_chunk.isra.0
+1682 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::dealloc
 1652 <gogo_ui::input::Input>::tick
 1322 core::ptr::drop_glue::<gogo_ui::layout::Tables>
 1189 <gogo_ui::anim::Player>::new
 1006 <turbodot::pages::PageUi>::relayout
 1001 <gogo_ui::anim::Easing>::apply
-960 __rustc::__rust_dealloc
+968 gogo_ui::runtime::settle_seats
+936 __rustc::__rust_dealloc
+897 <gogo_ui::draw::DrawCache>::patch
 884 gogo_ui::anim::ease_in
 858 core::ptr::drop_glue::<gogo_ui::runtime::Retained>
 744 <turbodot::program::Program<storvald_perf::AppState>>::place_code_pictures
-714 <gogo_ui::runtime::Resolved as core::clone::Clone>::clone_from
 708 core::ptr::drop_glue::<gogo_ui::page::Page>
 640 <gogo_ui::runtime::Runtime>::play_id
 617 <alloc::vec::Vec<gogo_ui::anim::Player> as core::ops::drop::Drop>::drop
 560 <turbodot::pages::PageUi>::root_pose
 560 roundf
+549 <gogo_ui::layout::LayoutCache>::patch
+537 <gogo_ui::runtime::Resolved>::follow
 516 <gogo_ui::runtime::Runtime>::frame_retained
 501 <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as core::hash::Hasher>::write
 464 <turbodot::program::Program<storvald_perf::AppState>>::carry_out_requests
 424 core::ptr::drop_glue::<gogo_ui::runtime::Resolved>
 422 <gogo_ui::runtime::Runtime>::play_hook_on_drawn_nodes
+375 <gogo_ui::layout::LayoutCache>::run
 374 <turbodot::pages::PageStack>::get_mut
 363 <gogo_text::EpxMeasure as gogo_ui::layout::TextMeasure>::identity
-333 <gogo_ui::tree::PlacedTree as core::clone::Clone>::clone_from
+354 <gogo_ui::layout::LookCopy>::diff
 331 <gogo_ui::runtime::Runtime>::play_action
 330 <turbodot::pages::PageStack>::get
+324 <gogo_ui::layout::LookCopy>::follow
 297 <gogo_ui::page::Page>::kind_default::{closure#0}
 294 gogo_ui::runtime::compose_anim
-287 core::ptr::drop_glue::<gogo_ui::runtime::Runtime>
+286 core::ptr::drop_glue::<gogo_ui::runtime::Runtime>
 238 <gogo_ui::anim::Easing>::parse
+222 <gogo_ui::draw::DrawCache>::run
 213 core::ptr::drop_glue::<gogo_ui::tree::PlacedTree>
-199 <gogo_ui::runtime::Runtime>::compose_motion
+201 <gogo_ui::runtime::Runtime>::compose_motion
 189 gogo_ui::layout::diff_pairs::<f32>
 188 <gogo_ui::anim::Channel>::parse
 180 <turbodot::program::Program<storvald_perf::AppState>>::call_with_placed
 170 <alloc::vec::Vec<(gogo_ui::page::NodeId, gogo_ui::page::PropKey, bool)> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<(gogo_ui::page::NodeId, gogo_ui::page::PropKey, bool), core::iter::adapters::filter_map::FilterMap<core::iter::adapters::filter::Filter<core::slice::iter::Iter<gogo_ui::page::AnimTrack>, <gogo_ui::runtime::Runtime>::play_id::{closure#1}>, <gogo_ui::runtime::Runtime>::play_id::{closure#2}>>>::from_iter
 168 <gogo_ui::runtime::Runtime>::glide_in_place
+156 <gogo_ui::layout::LayoutCache>::remember_part
 156 <turbodot::program::Program<storvald_perf::AppState>>::back_once
 154 <turbodot::program::Program<storvald_perf::AppState>>::order_drawn_pages
-153 core::ptr::drop_glue::<gogo_ui::draw::DrawCache>
 148 gogo_ui::runtime::compose_anim::{closure#0}
 135 storvald_perf::scenarios::close
+132 <gogo_ui::frame::KeptFrame>::frame_retained
 129 <gogo_ui::runtime::Resolved>::override_of_by_id
 126 gogo_ui::layout::diff_pairs::<bool>
 120 <turbodot::pages::PageStack>::order_top
-120 _int_malloc
-118 __memset_avx2_unaligned_erms
 112 <gogo_ui::runtime::Resolved>::prop_by_id
 107 <alloc::vec::Vec<gogo_ui::layout::StackLists> as core::ops::drop::Drop>::drop
+107 core::ptr::drop_glue::<gogo_ui::draw::DrawCache>
 90 <gogo_ui::page::Page>::prop_by_id
-87 core::ptr::drop_glue::<gogo_ui::layout::LayoutCache>
 84 <turbodot::program::Program<storvald_perf::AppState>>::free
-84 gogo_ui::runtime::copy_repeat_rows
-78 <gogo_ui::frame::KeptFrame>::frame_retained
 72 gogo_ui::layout::sym_diff_nodes
+70 core::ptr::drop_glue::<gogo_ui::layout::LayoutCache>
 66 core::ptr::drop_glue::<gogo_ui::layout::LookCopy>
 64 <gogo_ui::anim::Player>::resolve_pending_percent
+57 <alloc::vec::Vec<gogo_ui::page::NodeId>>::extend_desugared::<core::iter::adapters::filter::Filter<core::iter::adapters::copied::Copied<core::slice::iter::Iter<gogo_ui::page::NodeId>>, <gogo_ui::layout::LayoutCache>::patch::{closure#0}>>
 54 <turbodot::program::Program<storvald_perf::AppState>>::order_top_with_placed
 49 <turbodot::pages::PageStack>::remove
 48 <turbodot::program::Program<storvald_perf::AppState>>::start_leave
 44 core::ptr::drop_glue::<turbodot::pages::PageUi>
-40 <alloc::raw_vec::RawVecInner>::finish_grow
-36 <alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global>
 36 <turbodot::program::Program<storvald_perf::AppState>>::do_what_layouts_left
 28 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
 27 <gogo_ui::runtime::Runtime>::play_hook_by_id
 27 <turbodot::program::Program<storvald_perf::AppState>>::end_leave
 26 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
-24 <(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>) as core::slice::cmp::SlicePartialEq<(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>)>>::equal_same_length
-23 __libc_malloc2
 23 core::ptr::drop_glue::<gogo_ui::input::Input>
-22 malloc
+19 core::ptr::drop_glue::<gogo_ui::runtime::ResolveChanges>
 14 <alloc::vec::Vec<alloc::boxed::Box<dyn gogo_ui::input::Behavior>> as core::ops::drop::Drop>::drop
-14 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::alloc
 12 <alloc::vec::Vec<gogo_ui::page::NodeId>>::retain::<<gogo_ui::layout::LayoutCache>::patch::{closure#2}>
 8 <alloc::vec::Vec<gogo_ui::anim::Tween>>::retain::<<gogo_ui::runtime::Runtime>::play_id::{closure#8}>
 8 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::kind
 7 core::ptr::drop_glue::<turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler>>
 6 storvald_perf::counts::counted::<storvald_perf::scenarios::leave_and_come_back::{closure#0}>::{closure#0}
-5 alloc_perturb
 3 <<turbodot::program::Program<storvald_perf::AppState>>::end_leave::{closure#0} as core::ops::function::FnOnce<(&mut dyn turbodot::page::PageObject<storvald_perf::AppState>, &mut turbodot::page::Host<storvald_perf::AppState>)>>::call_once
 3 <<turbodot::program::Program<storvald_perf::AppState>>::open::{closure#5} as core::ops::function::FnOnce<(&mut dyn turbodot::page::PageObject<storvald_perf::AppState>, &mut turbodot::page::Host<storvald_perf::AppState>)>>::call_once
 3 <<turbodot::program::Program<storvald_perf::AppState>>::tell_arrival::{closure#0} as core::ops::function::FnOnce<(&mut dyn turbodot::page::PageObject<storvald_perf::AppState>, &mut turbodot::page::Host<storvald_perf::AppState>)>>::call_once
-3 __rustc::__rust_alloc
 2 <gogo_ui::runtime::Runtime>::play_uncovers
 2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::left
 2 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::back
 1 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::left
-1 __rustc::__rust_no_alloc_shim_is_unstable_v2
 1 storvald_perf_measured
