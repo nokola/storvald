@@ -13,15 +13,28 @@ use crate::page::*;
 use crate::reload::{ShapeChange, Why, first_changed_node};
 use crate::tree::{Children, PlacedTree};
 
-/// What the last resolve tells the retained layout and draw list
-/// (B36-DES stage 3; `Runtime::resolve_changes`). The two find what
-/// changed by comparing the look with the copy they kept
-/// (`layout::LookCopy`); this is the part a compare cannot tell.
+/// What the last resolve tells the retained layout, the retained draw
+/// list and a host's copy of the look (B36-DES stage 3;
+/// `Runtime::resolve_changes`): which nodes it may have changed since
+/// the resolve before.
+///
+/// Needed so a frame that changes one box costs the same on a page of
+/// 100 nodes and on one of 3000, hidden or shown: the three compare
+/// the look with the copy they kept (`layout::LookCopy`) at the nodes
+/// named here and at no other. Comparing every node cost about 60 ns
+/// a node and frame.
+///
+/// The lists name where to LOOK, not what changed: a node named here
+/// may show the same as before, and the compare finds that. A node not
+/// named shows what it showed after the resolve before. The lists are
+/// not filled when `full` is set.
 #[derive(Clone, Debug, Default)]
 pub struct ResolveChanges {
-    /// Counts the resolves. A cache that last compared at serial k may
-    /// patch at k (nothing resolved since) or k + 1; anything else is a
-    /// resolve it never compared against, so it takes the full road.
+    /// Counts the resolves, from a start no other Runtime of the process
+    /// counts from (`first_serial`). A cache that last compared at
+    /// serial k may patch at k (nothing resolved since) or k + 1;
+    /// anything else is a resolve it never compared against, or another
+    /// Runtime's, so it takes the full road.
     pub serial: u64,
     /// This resolve rebuilt the whole look (`full_rebuild_needed`).
     pub full: bool,
@@ -30,6 +43,46 @@ pub struct ResolveChanges {
     /// string id before and after, so only this list says the words
     /// changed.
     pub rewritten: Vec<NodeId>,
+    /// Nodes whose placement, words, motion or anim ownership this
+    /// resolve may have changed: the ones that ran their `when` ladder,
+    /// and the ones a code write, a tween or an anim stood on in this
+    /// resolve or in the one before. Sorted, each once.
+    pub moved: Vec<NodeId>,
+    /// Nodes whose motion `Runtime::compose_motion` changed after this
+    /// resolve.
+    pub restamped: Vec<NodeId>,
+    /// Nodes whose state bits (`Resolved::states`) differ from the
+    /// resolve before.
+    pub flipped: Vec<NodeId>,
+    /// Nodes whose scroll offset (`Resolved::scroll`) differs from the
+    /// resolve before.
+    pub scrolled: Vec<NodeId>,
+    /// This resolve rewrote a node's `when` entries in the override
+    /// list: the entries after them, and their spans, may sit elsewhere.
+    pub has_rewritten_ladder: bool,
+    /// A node sits under another placed parent than after the resolve
+    /// before (`Resolved::seat`).
+    pub has_moved_seat: bool,
+    /// A repeat shows other rows than after the resolve before
+    /// (`Resolved::repeat_rows`).
+    pub has_changed_rows: bool,
+    /// The paint-order bumps differ from the resolve before
+    /// (`Resolved::raised`).
+    pub has_changed_raise: bool,
+    /// This resolve built the placed tree again (`Resolved::tree`).
+    pub has_rebuilt_tree: bool,
+}
+
+/// The serial a new Runtime's resolves count from: a block of 2^32
+/// serials no other Runtime of the process uses.
+///
+/// Needed because a host's copy of the look (`KeptFrame`) follows a
+/// look by the serial alone: a copy last brought up to date from one
+/// Runtime must never read another Runtime's next resolve as the one
+/// after its own.
+fn first_serial() -> u64 {
+    static NEXT_BLOCK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT_BLOCK.fetch_add(1, std::sync::atomic::Ordering::Relaxed) << 32
 }
 
 pub const HELD: u8 = 1;
@@ -759,7 +812,7 @@ impl Runtime {
             written: vec![false; page.nodes.len()],
             static_mask_on: true,
             static_look: DeclaredLook::default(),
-            resolve_changes: ResolveChanges::default(),
+            resolve_changes: ResolveChanges { serial: first_serial(), ..ResolveChanges::default() },
             pending_rewrites: Vec::new(),
             retained_layout: LayoutCache::default(),
             retained_draw: DrawCache::default(),
@@ -3091,10 +3144,11 @@ impl Runtime {
     /// the glide, after that resolve (B38: the settings sheet drew at its
     /// seat for one frame, then jumped below the screen and slid). Players
     /// × owned channels: no allocation, no second resolve, no change serial
-    /// bumped — the draw cache diffs `motion` per node and walks only the
-    /// mover's subtree.
+    /// bumped — a node whose motion changes here is named in
+    /// `ResolveChanges::restamped`, where the draw cache and a host's
+    /// copy of the look find it.
     pub fn compose_motion(&mut self) {
-        let Runtime { resolved, held, players, motion, pulses, is_root_posed_by_host, .. } = self;
+        let Runtime { resolved, held, players, motion, pulses, is_root_posed_by_host, resolve_changes, retained, .. } = self;
         let n: usize = resolved.motion.len();
         let mut stamp = |node: NodeId, channel: Channel, v: f32| {
             // Host draws these itself (`is_root_posed_by_host`).
@@ -3102,7 +3156,14 @@ impl Runtime {
                 return;
             }
             if node.index() < n && !matches!(channel, Channel::Opacity | Channel::ColorA | Channel::RevealX | Channel::RevealY) {
-                resolved.motion[node].set(channel, v);
+                // Bits, so a value that is not a number counts as kept.
+                if resolved.motion[node].get(channel).to_bits() != v.to_bits() {
+                    resolved.motion[node].set(channel, v);
+                    resolve_changes.restamped.push(node);
+                    // The next resolve reads this node again, whether or
+                    // not an anim still stands on it then.
+                    retained.tail_touched.push(node);
+                }
             }
         };
         for (node, channel, v) in held.iter() {
@@ -3902,6 +3963,116 @@ impl Clone for Resolved {
 }
 
 impl Resolved {
+    /// Brings this copy of a look up to `from`, writing only what
+    /// `changes` says may differ. This copy must hold the look as the
+    /// resolve before `changes` left it, or as this one did.
+    ///
+    /// Needed by a host's kept frame (`KeptFrame`), which copies the
+    /// look every frame: `clone_from` writes about 200 bytes a node, on
+    /// a page of any size, for a frame that moved one box.
+    pub(crate) fn follow(&mut self, from: &Resolved, changes: &ResolveChanges) {
+        debug_assert!(!changes.full, "a look made anew is copied whole");
+        let same_chains: bool = self.tail_newest.len() == from.tail_newest.len();
+        for id in changes.moved.iter().chain(&changes.restamped) {
+            let i = id.index();
+            self.anim_owned[i] = from.anim_owned[i];
+            self.placement[i] = from.placement[i];
+            self.motion[i] = from.motion[i];
+            if same_chains {
+                self.tail_newest[i] = from.tail_newest[i];
+            }
+        }
+        if !same_chains {
+            self.tail_newest.clone_from(&from.tail_newest);
+        }
+        self.anim_owned_props.clone_from(&from.anim_owned_props);
+        if changes.has_rewritten_ladder || self.override_tail != from.override_tail {
+            self.overrides.clone_from(&from.overrides);
+            self.override_span.clone_from(&from.override_span);
+        } else {
+            // The code writes, tweens and anim values: made anew by
+            // every resolve.
+            self.overrides.truncate(self.override_tail as usize);
+            self.overrides.extend_from_slice(&from.overrides[from.override_tail as usize..]);
+        }
+        self.override_tail = from.override_tail;
+        self.tail_older.clone_from(&from.tail_older);
+        self.variant = from.variant;
+        for id in &changes.scrolled {
+            self.scroll[id.index()] = from.scroll[id.index()];
+        }
+        self.safe = from.safe;
+        if changes.has_moved_seat {
+            self.seat.clone_from(&from.seat);
+        }
+        for id in &changes.flipped {
+            self.states[id.index()] = from.states[id.index()];
+        }
+        if changes.has_changed_raise {
+            self.raised.clone_from(&from.raised);
+        }
+        if changes.has_changed_rows {
+            copy_repeat_rows(&mut self.repeat_rows, &from.repeat_rows);
+        }
+        if changes.has_rebuilt_tree {
+            self.tree.clone_from(&from.tree);
+        }
+        self.hiding.clone_from(&from.hiding);
+        self.auto.clone_from(&from.auto);
+        self.knob.clone_from(&from.knob);
+        self.presence.clone_from(&from.presence);
+        self.caret = from.caret;
+        self.selection = from.selection;
+        self.sel_handles = from.sel_handles;
+        let same_locale: bool = match (&self.locale, &from.locale) {
+            (None, None) => true,
+            (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+            _ => false,
+        };
+        if !same_locale {
+            self.locale.clone_from(&from.locale);
+        }
+        debug_assert!(self.same_tables(from), "a copy of the look differs from the look at a node the resolve did not name");
+    }
+
+    /// Whether every table of this look equals `from`'s; the language
+    /// is compared by which one it is, not word by word.
+    ///
+    /// Needed by `follow`'s check in a debug build.
+    fn same_tables(&self, from: &Resolved) -> bool {
+        let same_locale: bool = match (&self.locale, &from.locale) {
+            (None, None) => true,
+            (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+            _ => false,
+        };
+        same_locale
+            && self.anim_owned == from.anim_owned
+            && self.anim_owned_props == from.anim_owned_props
+            && self.placement == from.placement
+            && self.overrides == from.overrides
+            && self.override_span == from.override_span
+            && self.override_tail == from.override_tail
+            && self.tail_newest == from.tail_newest
+            && self.tail_older == from.tail_older
+            && self.variant == from.variant
+            && self.scroll == from.scroll
+            && self.safe == from.safe
+            && self.motion == from.motion
+            && self.seat == from.seat
+            && self.states == from.states
+            && self.raised == from.raised
+            && self.repeat_rows == from.repeat_rows
+            && self.tree == from.tree
+            && self.tree.paint_order() == from.tree.paint_order()
+            && self.hiding == from.hiding
+            && self.auto == from.auto
+            && self.presence == from.presence
+            && self.knob == from.knob
+            && self.caret == from.caret
+            && self.selection == from.selection
+            && self.sel_handles == from.sel_handles
+    }
+
     /// The prop's current value: state overrides → node props → kind
     /// defaults. `$refs` are followed through the theme.
     /// The override that wins for `key` on `node`, if any: the tail (code
@@ -4601,7 +4772,18 @@ fn settle_seats(page: &Page, rt: &Runtime, seat: &mut [NodeId], outbid: &mut Vec
 /// `seat`.
 fn settle_seat_claims(page: &Page, rt: &Runtime, seat: &mut [NodeId], outbid: &mut Vec<(NodeId, NodeId)>, claims: &mut Vec<(NodeId, NodeId)>) {
     claims.clear();
-    claims.extend(seat.iter().enumerate().filter(|(_, s)| **s != NO_NODE).map(|(i, s)| (*s, NodeId::from_index(i))));
+    // Read in blocks: most pages send no node to a seat, and a block
+    // that holds none costs one compare.
+    for (block, seats) in seat.chunks(crate::layout::FOLLOW_BLOCK_ENTRIES).enumerate() {
+        let mut apart: u32 = 0;
+        for s in seats {
+            apart |= crate::layout::SameBits::bits_apart(s, &NO_NODE);
+        }
+        if apart == 0 {
+            continue;
+        }
+        claims.extend(seats.iter().enumerate().filter(|(_, s)| **s != NO_NODE).map(|(at, s)| (*s, NodeId::from_index(block * crate::layout::FOLLOW_BLOCK_ENTRIES + at))));
+    }
     if claims.len() < 2 {
         return;
     }
@@ -5077,6 +5259,11 @@ fn resolve_into(page: &Page, rt: &mut Runtime, r: &mut Resolved) {
     }
     let n = page.nodes.len();
     let full: bool = full_rebuild_needed(rt, r, n);
+    rt.resolve_changes.moved.clear();
+    rt.resolve_changes.restamped.clear();
+    rt.resolve_changes.flipped.clear();
+    rt.resolve_changes.scrolled.clear();
+    let mut has_rewritten_ladder: bool = false;
     // `go_instant` (GP37): the flip restyles but times nothing — its
     // change never meets a rule.
     let instant_flips = std::mem::take(&mut rt.instant_flips);
@@ -5138,15 +5325,27 @@ fn resolve_into(page: &Page, rt: &mut Runtime, r: &mut Resolved) {
     } else {
         r.clear_tail();
         rt.gather_reach(r, &mut reach);
-        reladder(page, rt, r, &reach);
+        has_rewritten_ladder = reladder(page, rt, r, &reach);
     }
     rt.retained.laddered = if full { n as u32 } else { reach.len() as u32 };
     // The per-resolve copies. `states` AFTER `gather_reach`, which diffs
     // the copy the last resolve took against the runtime's.
     r.variant = rt.variant;
-    r.scroll.clone_from(&rt.scroll);
+    if full || r.scroll.len() != rt.scroll.len() {
+        r.scroll.clone_from(&rt.scroll);
+    } else {
+        crate::layout::follow_table(&mut r.scroll, &rt.scroll, &mut rt.resolve_changes.scrolled);
+    }
     r.safe = rt.safe;
-    r.states.clone_from(&rt.states);
+    if full || r.states.len() != rt.states.len() {
+        r.states.clone_from(&rt.states);
+    } else {
+        // `gather_reach` found the nodes whose bits differ.
+        for id in &rt.resolve_changes.flipped {
+            r.states[id.index()] = rt.states[id.index()];
+        }
+        debug_assert!(r.states == rt.states, "a state bit differs on a node `gather_reach` did not name");
+    }
     let raised_changed: bool = r.raised != rt.raised;
     r.raised.clone_from(&rt.raised);
     r.locale.clone_from(&rt.locale);
@@ -5174,10 +5373,18 @@ fn resolve_into(page: &Page, rt: &mut Runtime, r: &mut Resolved) {
     }
     // The tail, first half: the code writes win over states. A node the
     // tail touched last frame goes back to its ladder look first.
-    r.anim_owned.clear();
-    r.anim_owned.resize(n, 0);
-    r.anim_owned_props.clear();
     let prev_touched: Vec<NodeId> = std::mem::take(&mut rt.retained.tail_touched);
+    if full || r.anim_owned.len() != n {
+        r.anim_owned.clear();
+        r.anim_owned.resize(n, 0);
+    } else {
+        // Every node an anim owned a channel on is one the tail touched.
+        for id in &prev_touched {
+            r.anim_owned[id.index()] = 0;
+        }
+        debug_assert!(r.anim_owned.iter().all(|bits| *bits == 0), "an anim owned a channel on a node the tail did not touch");
+    }
+    r.anim_owned_props.clear();
     let mut touched: Vec<NodeId> = std::mem::take(&mut rt.retained.touched);
     touched.clear();
     if !full {
@@ -5502,11 +5709,14 @@ fn resolve_into(page: &Page, rt: &mut Runtime, r: &mut Resolved) {
     // since the last copy sends the `when disabled` watchers through
     // their ladder next resolve (`gather_reach`).
     rt.retained.seat_moved = seat_table_moved(&rt.last_seat, &r.seat);
-    rt.last_seat.clone_from(&r.seat);
+    if rt.retained.seat_moved || rt.last_seat.len() != r.seat.len() {
+        rt.last_seat.clone_from(&r.seat);
+    }
     // The placed tree the walks read (`Resolved::tree`): rebuilt only when
     // something that shapes it moved — a seat, a repeat's rows, a raise,
     // the node count — else last resolve's tables stand.
-    if full || raised_changed || rows_changed || rt.retained.seat_moved || r.tree.len() != n {
+    let has_rebuilt_tree: bool = full || raised_changed || rows_changed || rt.retained.seat_moved || r.tree.len() != n;
+    if has_rebuilt_tree {
         r.tree.build(page, &r.seat, &r.repeat_rows, &r.raised);
     }
     // What shows now, per node — the live value a new play starts from.
@@ -5555,6 +5765,20 @@ fn resolve_into(page: &Page, rt: &mut Runtime, r: &mut Resolved) {
     rt.resolve_changes.full = full;
     rt.resolve_changes.rewritten.clear();
     rt.resolve_changes.rewritten.append(&mut rt.pending_rewrites);
+    rt.resolve_changes.has_rewritten_ladder = has_rewritten_ladder;
+    rt.resolve_changes.has_moved_seat = rt.retained.seat_moved;
+    rt.resolve_changes.has_changed_rows = rows_changed;
+    rt.resolve_changes.has_changed_raise = raised_changed;
+    rt.resolve_changes.has_rebuilt_tree = has_rebuilt_tree;
+    if !full {
+        // The same three lists `shown` was read again for, above.
+        let moved: &mut Vec<NodeId> = &mut rt.resolve_changes.moved;
+        moved.extend_from_slice(&reach);
+        moved.extend_from_slice(&prev_touched);
+        moved.extend_from_slice(&touched);
+        moved.sort_unstable();
+        moved.dedup();
+    }
     // What the next resolve diffs against, and the scratch buffers back.
     rt.retained.valid = true;
     rt.retained.seen_arrangement = rt.arrangement;
@@ -5598,14 +5822,19 @@ impl Runtime {
         // A seat move changes which ancestors `disabled` folds — it
         // matters only while some node carries DISABLED at all.
         let mut disabled_flip: bool = std::mem::take(&mut t.seat_moved) && self.states.iter().any(|s| s & DISABLED != 0);
-        for (i, (now, seen)) in self.states.iter().zip(&r.states).enumerate() {
-            let flipped: u8 = now ^ seen;
-            if flipped == 0 {
-                continue;
-            }
-            out.extend_from_slice(&t.watchers.by_owner[i]);
-            if flipped & DISABLED != 0 {
-                disabled_flip = true;
+        // The two tables as a whole first: no bit flips in most frames,
+        // and that compare reads many nodes at a time.
+        if self.states != r.states {
+            for (i, (now, seen)) in self.states.iter().zip(&r.states).enumerate() {
+                let flipped: u8 = now ^ seen;
+                if flipped == 0 {
+                    continue;
+                }
+                self.resolve_changes.flipped.push(NodeId::from_index(i));
+                out.extend_from_slice(&t.watchers.by_owner[i]);
+                if flipped & DISABLED != 0 {
+                    disabled_flip = true;
+                }
             }
         }
         if self.arrangement != t.seen_arrangement || self.screen != t.seen_screen {
@@ -5671,10 +5900,14 @@ fn fill_ladder_full(page: &Page, rt: &mut Runtime, r: &mut Resolved) {
 /// every later span start by the deltas before it, so the list reads
 /// exactly as a full rebuild would write it (`override_of` stays a read
 /// of the node's own few entries).
-fn reladder(page: &Page, rt: &mut Runtime, r: &mut Resolved, reach: &[NodeId]) {
+///
+/// Returns true when a node's entries were written again: a copy of
+/// the list kept elsewhere is then out of date as a whole.
+fn reladder(page: &Page, rt: &mut Runtime, r: &mut Resolved, reach: &[NodeId]) -> bool {
     let mut entries: Vec<(NodeId, Prop)> = std::mem::take(&mut rt.retained.entries);
     let mut fixes: Vec<(usize, i64)> = std::mem::take(&mut rt.retained.fixes);
     fixes.clear();
+    let mut has_rewritten: bool = false;
     // The sum of the deltas spliced so far: the recorded start of every
     // later span is stale by this much until the pass below.
     let mut shift: i64 = 0;
@@ -5686,6 +5919,7 @@ fn reladder(page: &Page, rt: &mut Runtime, r: &mut Resolved, reach: &[NodeId]) {
         let start: usize = (start0 as i64 + shift) as usize;
         let len: usize = len as usize;
         if r.overrides[start..start + len] != entries[..] {
+            has_rewritten = true;
             r.overrides.splice(start..start + len, entries.iter().copied());
             let delta: i64 = entries.len() as i64 - len as i64;
             if delta != 0 {
@@ -5720,6 +5954,7 @@ fn reladder(page: &Page, rt: &mut Runtime, r: &mut Resolved, reach: &[NodeId]) {
     }
     rt.retained.entries = entries;
     rt.retained.fixes = fixes;
+    has_rewritten
 }
 
 /// The node's own visibility word: does it show itself (the `own` half
@@ -5746,6 +5981,11 @@ fn own_word(page: &Page, rt: &Runtime, r: &Resolved, id: NodeId) -> bool {
 /// — reads as "at home" for the missing rows, the way
 /// `placed_parent_in` reads it.
 fn seat_table_moved(last: &[NodeId], now: &[NodeId]) -> bool {
+    // Tables of one length, as they are from the second resolve on,
+    // are compared in blocks.
+    if last.len() == now.len() {
+        return !crate::layout::same_table(last, now);
+    }
     now.iter().enumerate().any(|(i, s)| last.get(i).copied().unwrap_or(NO_NODE) != *s)
 }
 

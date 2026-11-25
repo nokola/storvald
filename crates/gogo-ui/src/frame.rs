@@ -14,7 +14,7 @@
 use crate::draw::Draw;
 use crate::layout::{Rect, TextMeasure, layout};
 use crate::page::{NodeId, Page};
-use crate::runtime::{Resolved, Runtime};
+use crate::runtime::{ResolveChanges, Resolved, Runtime};
 
 /// A look and the rects it was laid out to, borrowed together. Two
 /// borrows, `Copy`: pass it by value. Made only inside this crate, so a
@@ -52,15 +52,29 @@ impl<'a> Frame<'a> {
 pub struct KeptFrame {
     look: Resolved,
     rects: Vec<Rect>,
+    /// The resolve `look` was last brought up to (`ResolveChanges::serial`);
+    /// 0 = none, a look laid out fresh.
+    seen_serial: u64,
 }
 
 impl KeptFrame {
     /// The frame road into this kept frame — `Runtime::frame_retained`
-    /// into `rects` and `draws`, then the look copied in (`clone_from`,
-    /// buffers reused). `split`: the `above_children` road, see there.
+    /// into `rects` and `draws`, then the look brought up to the
+    /// runtime's: where the resolve says it may have changed
+    /// (`Resolved::follow`) when this frame holds the look of the
+    /// resolve before, else copied whole (`clone_from`, buffers reused).
+    /// `split`: the `above_children` road, see there.
     pub fn frame_retained(&mut self, rt: &mut Runtime, page: &Page, viewport: Rect, text: &dyn TextMeasure, draws: &mut Vec<Draw>, split: Option<(NodeId, &mut Vec<Draw>)>) {
         rt.frame_retained(page, viewport, text, &mut self.rects, draws, split);
-        self.look.clone_from(rt.resolved());
+        let changes: &ResolveChanges = rt.resolve_changes();
+        let from: &Resolved = rt.resolved();
+        let is_seen: bool = changes.serial == self.seen_serial || changes.serial == self.seen_serial.wrapping_add(1);
+        if is_seen && !changes.full && self.look.placement.len() == from.placement.len() {
+            self.look.follow(from, changes);
+        } else {
+            self.look.clone_from(from);
+        }
+        self.seen_serial = changes.serial;
     }
 
     /// The fresh road, for pins: `look` (a `resolve` or `resolve_animated`)
@@ -71,7 +85,7 @@ impl KeptFrame {
     pub fn fresh(page: &Page, look: Resolved, viewport: Rect, text: &dyn TextMeasure) -> KeptFrame {
         let mut rects: Vec<Rect> = layout(page, &look, viewport, text);
         crate::popup::seat_popups(page, &look, viewport, &mut rects);
-        KeptFrame { look, rects }
+        KeptFrame { look, rects, seen_serial: 0 }
     }
 
     /// The glide over this frame's rects (`Runtime::glide_in_place`): the

@@ -2297,6 +2297,91 @@ fn inherits(key: PropKey) -> bool {
     matches!(key, PropKey::Font | PropKey::FontSize | PropKey::FontColor)
 }
 
+/// A table entry two copies of which are the same when their bits are.
+///
+/// Needed by `follow_table`, which reads a table in blocks: a compare
+/// of bits has no branch in it, so a block of entries is compared in a
+/// few instructions.
+pub(crate) trait SameBits: Copy {
+    /// 0 when `self` and `other` hold the same bits.
+    fn bits_apart(&self, other: &Self) -> u32;
+}
+
+impl SameBits for [f32; 2] {
+    #[inline]
+    fn bits_apart(&self, other: &[f32; 2]) -> u32 {
+        (self[0].to_bits() ^ other[0].to_bits()) | (self[1].to_bits() ^ other[1].to_bits())
+    }
+}
+
+impl SameBits for Rect {
+    #[inline]
+    fn bits_apart(&self, other: &Rect) -> u32 {
+        (self.x.to_bits() ^ other.x.to_bits()) | (self.y.to_bits() ^ other.y.to_bits()) | (self.w.to_bits() ^ other.w.to_bits()) | (self.h.to_bits() ^ other.h.to_bits())
+    }
+}
+
+impl SameBits for NodeId {
+    #[inline]
+    fn bits_apart(&self, other: &NodeId) -> u32 {
+        self.index() as u32 ^ other.index() as u32
+    }
+}
+
+/// Entries `follow_table` compares at a time.
+pub(crate) const FOLLOW_BLOCK_ENTRIES: usize = 16;
+
+/// Whether two per-node tables hold the same bits at every entry.
+/// Tables of two lengths are not the same.
+///
+/// Needed where two tables are compared every frame and differ in few
+/// frames: read in blocks, a table costs a few instructions per sixteen
+/// nodes.
+pub(crate) fn same_table<T: SameBits>(a: &[T], b: &[T]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    for (a_block, b_block) in a.chunks(FOLLOW_BLOCK_ENTRIES).zip(b.chunks(FOLLOW_BLOCK_ENTRIES)) {
+        let mut apart: u32 = 0;
+        for (x, y) in a_block.iter().zip(b_block) {
+            apart |= x.bits_apart(y);
+        }
+        if apart != 0 {
+            return false;
+        }
+    }
+    true
+}
+
+/// Brings `kept`, a copy of a per-node table, up to `now`, and pushes
+/// onto `changed` every node whose entry differed, lowest first.
+///
+/// Needed where a table has no list of the nodes that changed it (the
+/// rects a frame shows, the scroll offsets code writes bare): every
+/// node is read, sixteen at a time, and a block that holds no change
+/// costs one compare.
+///
+/// An entry counts as changed when its bits differ: `-0.0` against
+/// `0.0` is a change, a value that is not a number against itself is
+/// not.
+pub(crate) fn follow_table<T: SameBits>(kept: &mut [T], now: &[T], changed: &mut Vec<NodeId>) {
+    for (block, (kept_block, now_block)) in kept.chunks_mut(FOLLOW_BLOCK_ENTRIES).zip(now.chunks(FOLLOW_BLOCK_ENTRIES)).enumerate() {
+        let mut apart: u32 = 0;
+        for (k, v) in kept_block.iter().zip(now_block) {
+            apart |= k.bits_apart(v);
+        }
+        if apart == 0 {
+            continue;
+        }
+        for (at, (k, v)) in kept_block.iter_mut().zip(now_block).enumerate() {
+            if k.bits_apart(v) != 0 {
+                *k = *v;
+                changed.push(NodeId::from_index(block * FOLLOW_BLOCK_ENTRIES + at));
+            }
+        }
+    }
+}
+
 /// A kept copy of the look's per-node tables — the placement and the
 /// override list with its spans — and the compare that finds which
 /// nodes changed since. Needed because the retained roads (layout, draw)
@@ -2305,6 +2390,11 @@ fn inherits(key: PropKey) -> bool {
 /// nothing a resolve moves can slip by unmarked. The one change a
 /// compare cannot see — a string rewritten in place — the runtime
 /// reports (`ResolveChanges::rewritten`).
+///
+/// The compare reads the nodes a resolve names (`ResolveChanges::moved`)
+/// and no other: a node the resolve did not touch shows what it showed.
+/// A debug build reads every other node too and stops at one that
+/// differs.
 #[derive(Default)]
 pub(crate) struct LookCopy {
     placement: Vec<Placement>,
@@ -2327,6 +2417,32 @@ impl LookCopy {
         self.override_tail = res.override_tail;
     }
 
+    /// Brings a copy that held the look of the resolve before (or of
+    /// this one) up to `res`, writing only what `changes` says may
+    /// differ.
+    ///
+    /// Needed so the copy costs what the frame changed and not the
+    /// page's size: `take` copies about 100 bytes a node.
+    ///
+    /// The code writes, tweens and anim values are written again as a
+    /// whole: a resolve makes that part of the list anew.
+    pub(crate) fn follow(&mut self, res: &Resolved, changes: &ResolveChanges) {
+        for id in &changes.moved {
+            if let (Some(kept), Some(now)) = (self.placement.get_mut(id.index()), res.placement.get(id.index())) {
+                *kept = *now;
+            }
+        }
+        if changes.has_rewritten_ladder || self.override_tail != res.override_tail {
+            self.overrides.clone_from(&res.overrides);
+            self.override_span.clone_from(&res.override_span);
+        } else {
+            self.overrides.truncate(self.override_tail as usize);
+            self.overrides.extend_from_slice(&res.overrides[res.override_tail as usize..]);
+        }
+        self.override_tail = res.override_tail;
+        debug_assert!(self.placement == res.placement && self.overrides == res.overrides && self.override_span == res.override_span, "the copy of the look differs from the look at a node the resolve did not name");
+    }
+
     /// Whether the copy is of a page with `n` nodes.
     pub(crate) fn fits(&self, n: usize) -> bool {
         self.placement.len() == n && self.override_span.len() == n
@@ -2346,10 +2462,29 @@ impl LookCopy {
     /// `layout_only`, takes the nodes where `text` is the one layout key
     /// that changed, and `out` does not get them: the kept layout asks
     /// such a node whether its size held before it places anything.
-    pub(crate) fn diff(&mut self, res: &Resolved, layout_only: bool, out: &mut Vec<NodeId>, mut inherited: Option<&mut Vec<NodeId>>, mut retexted: Option<&mut Vec<NodeId>>) {
+    ///
+    /// `moved` names the nodes to compare (`ResolveChanges::moved`).
+    ///
+    /// Returns how many nodes it compared.
+    pub(crate) fn diff(&mut self, res: &Resolved, moved: &[NodeId], layout_only: bool, out: &mut Vec<NodeId>, mut inherited: Option<&mut Vec<NodeId>>, mut retexted: Option<&mut Vec<NodeId>>) -> u32 {
         let n = self.placement.len().min(res.placement.len());
+        let mut compared: u32 = 0;
+        // Every node the resolve did not name shows what it showed.
+        #[cfg(debug_assertions)]
         for i in 0..n {
-            let id = NodeId::from_index(i);
+            if moved.binary_search(&NodeId::from_index(i)).is_ok() {
+                continue;
+            }
+            let (os, ol) = self.override_span[i];
+            let (ns, nl) = res.override_span[i];
+            debug_assert!(self.placement[i] == res.placement[i] && self.overrides[os as usize..(os + ol) as usize] == res.overrides[ns as usize..(ns + nl) as usize], "node {i} changed and the resolve did not name it");
+        }
+        for id in moved {
+            let (id, i) = (*id, id.index());
+            if i >= n {
+                continue;
+            }
+            compared += 1;
             if self.placement[i] != res.placement[i] {
                 out.push(id);
                 continue;
@@ -2370,7 +2505,7 @@ impl LookCopy {
         let old_tail = &self.overrides[self.override_tail as usize..];
         let new_tail = &res.overrides[res.override_tail as usize..];
         if old_tail == new_tail {
-            return;
+            return compared;
         }
         self.old_idx.clear();
         self.old_idx.extend(0..old_tail.len() as u32);
@@ -2407,6 +2542,7 @@ impl LookCopy {
                 }
             }
         }
+        compared
     }
 }
 
@@ -2428,6 +2564,10 @@ pub struct LayoutStats {
     /// changed. Their kept rects were shown at the new offset, none was
     /// placed or measured.
     pub moved: u32,
+    /// Nodes whose words were compared with the copy kept: every node on
+    /// a full run, the ones the resolve named on a partial one
+    /// (`ResolveChanges::moved`).
+    pub compared: u32,
 }
 
 /// Every layout run in the process since it started, summed over every
@@ -2513,8 +2653,6 @@ pub struct LayoutCache {
     variant: StrId,
     locale: Option<Arc<Locale>>,
     safe: [f32; 4],
-    seat: Vec<NodeId>,
-    repeat_rows: Vec<(NodeId, Vec<NodeId>)>,
     scroll: Vec<[f32; 2]>,
     hiding: Vec<NodeId>,
     presence: Vec<(NodeId, bool)>,
@@ -2565,8 +2703,6 @@ impl Default for LayoutCache {
             variant: NO_STR,
             locale: None,
             safe: [0.0; 4],
-            seat: Vec::new(),
-            repeat_rows: Vec::new(),
             scroll: Vec::new(),
             hiding: Vec::new(),
             presence: Vec::new(),
@@ -2609,7 +2745,10 @@ impl LayoutCache {
             (Some(a), Some(b)) => Arc::ptr_eq(a, b),
             _ => false,
         };
-        let seen_resolve: bool = changes.serial == self.seen_serial || changes.serial == self.seen_serial + 1;
+        // The resolve after the one this cache compared at: what it
+        // says moved, moved since the tables kept here.
+        let is_next_resolve: bool = changes.serial == self.seen_serial.wrapping_add(1);
+        let seen_resolve: bool = changes.serial == self.seen_serial || is_next_resolve;
         let full: bool = !self.on
             || !self.valid
             || changes.full
@@ -2617,6 +2756,7 @@ impl LayoutCache {
             || !self.look.fits(n)
             || res.placement.len() != n
             || res.scroll.len() != n
+            || self.scroll.len() != n
             || res.seat.len() != n
             || self.tables.rects.len() != n
             || self.tables.is_placed.len() != n
@@ -2627,8 +2767,7 @@ impl LayoutCache {
             || res.variant != self.variant
             || !same_locale
             || res.safe != self.safe
-            || res.seat != self.seat
-            || res.repeat_rows != self.repeat_rows;
+            || (is_next_resolve && (changes.has_moved_seat || changes.has_changed_rows));
         if full {
             self.full(page, res, changes, viewport, text);
         } else {
@@ -2653,7 +2792,7 @@ impl LayoutCache {
         let mut lay = Lay::new(page, res, text, tables);
         lay.place_root(viewport);
         lay.show_all(&mut self.pans, &mut self.parts, &mut self.rects);
-        self.stats = LayoutStats { full: true, measured: lay.measured.get(), roots: 1, placed: n as u32, moved: 0 };
+        self.stats = LayoutStats { full: true, measured: lay.measured.get(), roots: 1, placed: n as u32, moved: 0, compared: n as u32 };
         count_run(true, n as u32, lay.measured.get());
         self.tables = lay.into_tables();
         self.remember(res, changes, viewport, text);
@@ -2668,13 +2807,32 @@ impl LayoutCache {
         self.variant = res.variant;
         self.locale.clone_from(&res.locale);
         self.safe = res.safe;
-        self.seat.clone_from(&res.seat);
-        crate::runtime::copy_repeat_rows(&mut self.repeat_rows, &res.repeat_rows);
         self.scroll.clone_from(&res.scroll);
         self.hiding.clone_from(&res.hiding);
         self.presence.clone_from(&res.presence);
         self.auto.clone_from(&res.auto);
         self.look.take(res);
+    }
+
+    /// What the next run compares against, after a run that placed only
+    /// a part: the entries the frame changed, and no table as a whole.
+    ///
+    /// Needed so a frame that moves one box does not copy a page's
+    /// tables: `remember` writes about 120 bytes a node.
+    ///
+    /// The viewport, the measure, the theme, the language and the
+    /// insets are the ones kept: `run` takes the full road when one
+    /// differs.
+    fn remember_part(&mut self, res: &Resolved, changes: &ResolveChanges, panned: &[NodeId]) {
+        self.seen_serial = changes.serial;
+        for p in panned {
+            self.scroll[p.index()] = res.scroll[p.index()];
+        }
+        debug_assert!(self.scroll.iter().zip(&res.scroll).all(|(kept, now)| kept.bits_apart(now) == 0), "a scroll offset changed on a node the resolve did not name");
+        self.hiding.clone_from(&res.hiding);
+        self.presence.clone_from(&res.presence);
+        self.auto.clone_from(&res.auto);
+        self.look.follow(res, changes);
     }
 
     fn patch(&mut self, page: &Page, res: &Resolved, changes: &ResolveChanges, viewport: Rect, text: &dyn TextMeasure) {
@@ -2686,7 +2844,7 @@ impl LayoutCache {
         changed.clear();
         let mut retexted: Vec<NodeId> = std::mem::take(&mut self.retexted);
         retexted.clear();
-        self.look.diff(res, true, &mut changed, None, Some(&mut retexted));
+        let compared: u32 = self.look.diff(res, &changes.moved, true, &mut changed, None, Some(&mut retexted));
         sym_diff_nodes(&self.hiding, &res.hiding, &mut changed);
         diff_pairs(&self.presence, &res.presence, &mut changed);
         diff_pairs(&self.auto, &res.auto, &mut changed);
@@ -2697,7 +2855,7 @@ impl LayoutCache {
         // the last run showed by.
         let mut panned: Vec<NodeId> = std::mem::take(&mut self.panned);
         panned.clear();
-        panned.extend((0..n).filter(|i| self.scroll[*i] != res.scroll[*i]).map(NodeId::from_index));
+        panned.extend(changes.scrolled.iter().copied().filter(|p| p.index() < n && self.scroll[p.index()].bits_apart(&res.scroll[p.index()]) != 0));
         changed.retain(|c| c.index() < n);
         changed.sort();
         changed.dedup();
@@ -2705,10 +2863,12 @@ impl LayoutCache {
         retexted.sort();
         retexted.dedup();
         if changed.is_empty() && retexted.is_empty() && panned.is_empty() {
-            // Nothing layout reads moved: the tables equal the copies,
-            // so there is nothing to copy either.
-            self.stats = LayoutStats { full: false, measured: 0, roots: 0, placed: 0, moved: 0 };
-            self.seen_serial = changes.serial;
+            // Nothing layout reads moved. The copy of the look still
+            // follows: a word the layout does not read may have changed,
+            // and the next compare trusts the copy at every node the
+            // next resolve leaves alone.
+            self.stats = LayoutStats { full: false, measured: 0, roots: 0, placed: 0, moved: 0, compared };
+            self.remember_part(res, changes, &panned);
             self.changed = changed;
             self.retexted = retexted;
             self.panned = panned;
@@ -2866,15 +3026,15 @@ impl LayoutCache {
         for p in &panned {
             moved += lay.show_under(*p, NO_NODE, false, &mut self.pans, &mut self.parts, &mut self.rects);
         }
-        self.stats = LayoutStats { full: false, measured: lay.measured.get(), roots: restarts.len() as u32, placed, moved };
+        self.stats = LayoutStats { full: false, measured: lay.measured.get(), roots: restarts.len() as u32, placed, moved, compared };
         count_run(false, placed, lay.measured.get());
         self.tables = lay.into_tables();
+        self.remember_part(res, changes, &panned);
         self.changed = changed;
         self.retexted = retexted;
         self.panned = panned;
         self.dirty = dirty;
         self.restarts = restarts;
-        self.remember(res, changes, viewport, text);
     }
 }
 
