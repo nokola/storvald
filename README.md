@@ -9,26 +9,26 @@ What gogo and TurboDot cost in the measured program (`perf/` on `main`), counted
 
 ## Last run
 
-2026-11-24T23:41:23Z, commit [015ecfd](https://github.com/nokola/storvald/commit/015ecfd4f7c78d9b9113470b3530df79d7fe1221), rustc 1.100.0, machine `github-ubuntu26`. 23 runs so far.
+2026-11-24T23:59:59Z, commit [ecd045b](https://github.com/nokola/storvald/commit/ecd045b6136273d7a0800f4134546ab1c0fadcb1), rustc 1.100.0, machine `github-ubuntu26`. 24 runs so far.
 
 | Scenario | What is counted | Instructions | Against run before | Allocations | Nodes placed | Nodes measured |
 |---|---|---:|---:|---:|---:|---:|
-| `compile_controls_page` | gogo compiles the controls page's file | 3,148,155 | +0.2 % | 3,517 | 0 | 0 |
-| `start_program` | program is made and runs its first frame | 1,174,946 | +0.0 % | 348 | 6 | 8 |
-| `open_controls_page` | tap that opens the controls page: page is made | 121,263 | +0.2 % | 67 | 0 | 0 |
-| `first_frame_of_controls_page` | first frame of the controls page: its first layout | 4,899,854 | +0.0 % | 1,670 | 115 | 229 |
-| `open_list_page` | tap that opens the list page: page and its 100 rows are made | 1,820,874 | +0.5 % | 2,561 | 0 | 0 |
-| `first_frame_of_list_page` | first frame of the list page: its first layout | 21,544,326 | +0.0 % | 6,057 | 413 | 910 |
-| `open_list_page_again` | same tap, at page's second open | 1,829,994 | +0.5 % | 2,556 | 0 | 0 |
-| `first_frame_of_list_page_again` | first frame of the list page at its second open | 8,237,832 | +0.0 % | 608 | 413 | 910 |
-| `draw_list_of_list_page` | draw list of the list page, walked whole | 2,702,448 | +0.0 % | 7 | 0 | 0 |
-| `still_frame` | frame of the controls page while nothing changes | 3,163 | +0.0 % | 0 | 0 | 0 |
-| `mouse_move` | mouse moves onto another row of the controls page, and the frame after | 193,583 | +0.1 % | 0 | 0 | 0 |
-| `scroll_step` | finger pans the list one step, and the frame after | 3,456,424 | +0.0 % | 0 | 0 | 0 |
-| `slider_drag_step` | finger drags a slider one step, and the frame after | 144,262 | +0.1 % | 0 | 0 | 0 |
-| `text_change` | code writes a new text to one label, and the frame after | 162,667 | +0.1 % | 3 | 0 | 2 |
-| `slide_frame` | frame while the controls page slides in | 3,804 | +0.0 % | 0 | 0 | 0 |
-| `leave_and_come_back` | controls page leaves and first page comes back, to the end of both anims | 254,917 | +0.2 % | 1 | 0 | 0 |
+| `compile_controls_page` | gogo compiles the controls page's file | 3,147,515 | -0.0 % | 3,517 | 0 | 0 |
+| `start_program` | program is made and runs its first frame | 1,174,958 | +0.0 % | 348 | 6 | 8 |
+| `open_controls_page` | tap that opens the controls page: page is made | 121,208 | -0.0 % | 67 | 0 | 0 |
+| `first_frame_of_controls_page` | first frame of the controls page: its first layout | 4,900,422 | +0.0 % | 1,670 | 115 | 229 |
+| `open_list_page` | tap that opens the list page: page and its 100 rows are made | 1,818,643 | -0.1 % | 2,561 | 0 | 0 |
+| `first_frame_of_list_page` | first frame of the list page: its first layout | 21,546,003 | +0.0 % | 6,057 | 413 | 910 |
+| `open_list_page_again` | same tap, at page's second open | 1,827,727 | -0.1 % | 2,556 | 0 | 0 |
+| `first_frame_of_list_page_again` | first frame of the list page at its second open | 8,237,403 | -0.0 % | 608 | 413 | 910 |
+| `draw_list_of_list_page` | draw list of the list page, walked whole | 2,702,447 | -0.0 % | 7 | 0 | 0 |
+| `still_frame` | frame of the controls page while nothing changes | 3,164 | +0.0 % | 0 | 0 | 0 |
+| `mouse_move` | mouse moves onto another row of the controls page, and the frame after | 193,570 | -0.0 % | 0 | 0 | 0 |
+| `scroll_step` | finger pans the list one step, and the frame after | 3,456,416 | -0.0 % | 0 | 0 | 0 |
+| `slider_drag_step` | finger drags a slider one step, and the frame after | 144,285 | +0.0 % | 0 | 0 | 0 |
+| `text_change` | code writes a new text to one label, and the frame after | 162,670 | +0.0 % | 3 | 0 | 2 |
+| `slide_frame` | frame while the controls page slides in | 3,805 | +0.0 % | 0 | 0 | 0 |
+| `leave_and_come_back` | controls page leaves and first page comes back, to the end of both anims | 254,930 | +0.0 % | 1 | 0 | 0 |
 
 ## Numbers that moved
 

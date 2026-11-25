@@ -1,4 +1,4 @@
-# `first_frame_of_controls_page` at commit 015ecfd4f7c78d9b9113470b3530df79d7fe1221: instructions by function, 4899854 in all.
+# `first_frame_of_controls_page` at commit ecd045b6136273d7a0800f4134546ab1c0fadcb1: instructions by function, 4900422 in all.
 # A function's own code only: what it calls is counted at the called function.
 403474 <gogo_ui::page::Page>::kind_default::{closure#0}
 315542 <gogo_ui::page::Page>::prop_by_id
@@ -12,7 +12,7 @@
 88434 harfrust::hb::ot_layout::apply_forward
 79445 <harfrust::hb::ot::lookup::LookupInfo>::apply
 76650 harfrust::hb::ot_layout::apply_layout_table::<harfrust::hb::ot::GsubTable>
-76275 gogo_ui::draw::walk'2
+76310 gogo_ui::draw::walk'2
 72508 <gogo_ui::runtime::Resolved>::written_from
 72242 <cosmic_text::font::fallback::FontFallbackIter as core::iter::traits::iterator::Iterator>::next
 70752 _int_malloc
@@ -65,8 +65,8 @@
 16376 <harfrust::hb::glyph_metrics::GlyphMetrics>::populate_advance_widths
 16366 <core::iter::adapters::map::Map<core::str::iter::CharIndices, unicode_linebreak::linebreaks::{closure#0}> as core::iter::traits::iterator::Iterator>::try_fold::<(), &mut <core::iter::adapters::scan::Scan<_, _, _> as core::iter::traits::iterator::Iterator>::try_fold::scan<(usize, u8), (u8, bool), (usize, bool, bool), (), core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>, unicode_linebreak::linebreaks::{closure#1}, core::iter::traits::iterator::Iterator::find_map::check<(usize, bool, bool), (usize, unicode_linebreak::BreakOpportunity), &mut unicode_linebreak::linebreaks::{closure#2}>::{closure#0}>::{closure#0}, core::ops::control_flow::ControlFlow<core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>>>
 16188 <harfrust::hb::buffer::hb_buffer_t>::guess_segment_properties
+15929 <gogo_text::TextEngine>::measure
 15778 harfrust::hb::ot::lookup::pair_pos1_cached
-15776 <gogo_text::TextEngine>::measure
 15480 <alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global>
 15221 <gogo_ui::runtime::Resolved>::gone_by_id
 14916 <cosmic_text::font::system::FontSystem>::get_font
@@ -94,7 +94,7 @@
 9683 <harfrust::hb::buffer::hb_buffer_t>::sync
 9424 <cosmic_text::buffer_line::BufferLine>::layout
 9422 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::dealloc
-9190 __memcmp_avx2_movbe
+9191 __memcmp_avx2_movbe
 9095 <gogo_ui::layout::Lay>::content_min
 9052 <cosmic_text::buffer_line::BufferLine>::shape
 8996 realloc
@@ -106,8 +106,8 @@
 8497 <gogo_ui::layout::VisibleChildren as core::iter::traits::iterator::Iterator>::next
 8432 <alloc::collections::btree::map::IntoIter<rangemap::range_wrapper::RangeStartWrapper<usize>, cosmic_text::attrs::AttrsOwned>>::dying_next
 8125 _int_realloc
+7936 gogo_ui::font_style::split_style
 7840 <fontdb::Database>::face
-7688 gogo_ui::font_style::split_style
 7636 harfrust::hb::ot::lookup::ligature_subst1
 7596 <gogo_ui::layout::Lay>::stack_min
 7440 <cosmic_text::buffer::LayoutRunIter as core::iter::traits::iterator::Iterator>::next
@@ -133,10 +133,10 @@
 5312 <read_fonts::table_ref::TableRef<read_fonts::tables::aat::Lookup8Marker> as read_fonts::read::FontRead>::read
 5312 <read_fonts::table_ref::TableRef<read_fonts::tables::gdef::LigGlyphMarker> as read_fonts::read::FontRead>::read
 5276 gogo_ui::draw::push_shown
+5087 <hashbrown::map::HashMap<u64, (f32, f32), std::hash::random::RandomState>>::insert
 5060 <hashbrown::raw::RawTable<(u64, (f32, f32))>>::reserve_rehash::<hashbrown::map::make_hasher<u64, (f32, f32), std::hash::random::RandomState>::{closure#0}>
 5052 <core::iter::adapters::chain::Chain<core::iter::adapters::map::Map<core::str::iter::CharIndices, unicode_linebreak::linebreaks::{closure#0}>, core::iter::sources::once::Once<(usize, u8)>> as core::iter::traits::iterator::Iterator>::try_fold::<(), <core::iter::adapters::scan::Scan<_, _, _> as core::iter::traits::iterator::Iterator>::try_fold::scan<(usize, u8), (u8, bool), (usize, bool, bool), (), core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>, unicode_linebreak::linebreaks::{closure#1}, core::iter::traits::iterator::Iterator::find_map::check<(usize, bool, bool), (usize, unicode_linebreak::BreakOpportunity), &mut unicode_linebreak::linebreaks::{closure#2}>::{closure#0}>::{closure#0}, core::ops::control_flow::ControlFlow<core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>>>
 4978 <read_fonts::table_ref::TableRef<read_fonts::tables::gsub::LigatureMarker> as read_fonts::read::FontRead>::read
-4956 <hashbrown::map::HashMap<u64, (f32, f32), std::hash::random::RandomState>>::insert
 4712 <alloc::vec::Vec<cosmic_text::shape::ShapeSpan> as core::ops::drop::Drop>::drop
 4678 _int_free_maybe_trim
 4638 __rustc::__rust_alloc
@@ -258,7 +258,7 @@
 165 <gogo_ui::layout::Lay>::place_children
 163 <gogo_ui::layout::LayoutCache>::remember
 154 <turbodot::pages::PageUi>::relayout
-144 0x0000000004d2e680
+144 0x0000000004d2f680
 144 core::ptr::drop_glue::<gogo_ui::runtime::Resolved>
 125 <gogo_ui::anim::Player>::apply_at
 123 <turbodot::program::Program<storvald_perf::AppState>>::frame_pages

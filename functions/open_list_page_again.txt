@@ -1,13 +1,13 @@
-# `open_list_page_again` at commit 015ecfd4f7c78d9b9113470b3530df79d7fe1221: instructions by function, 1829994 in all.
+# `open_list_page_again` at commit ecd045b6136273d7a0800f4134546ab1c0fadcb1: instructions by function, 1827727 in all.
 # A function's own code only: what it calls is counted at the called function.
 253528 _int_malloc
 158808 <gogo_ui::runtime::Watchers>::extend
 128530 __memcpy_avx_unaligned_erms
 116221 <gogo_ui::runtime::Runtime>::set_prop_by_id
 106320 <gogo_ui::runtime::Runtime>::set_items::{closure#1}
-76527 __memcmp_avx2_movbe
-75974 <gogo_ui::page::Page>::clone_subtree
+79160 __memcmp_avx2_movbe
 75150 <gogo_ui::runtime::Runtime>::grow_pool
+73474 <gogo_ui::page::Page>::clone_subtree
 62828 _int_free_merge_chunk
 49961 malloc
 42217 free
@@ -58,7 +58,6 @@
 2400 <alloc::vec::Vec<(gogo_ui::page::NodeId, u8)> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<(gogo_ui::page::NodeId, u8), core::iter::adapters::map::Map<core::iter::adapters::filter::Filter<core::slice::iter::Iter<(gogo_ui::page::NodeId, u8)>, <gogo_ui::page::Page>::clone_subtree::{closure#3}>, <gogo_ui::page::Page>::clone_subtree::{closure#4}>>>::from_iter
 2400 <alloc::vec::Vec<gogo_ui::page::AutoDriver> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<gogo_ui::page::AutoDriver, core::iter::adapters::map::Map<core::iter::adapters::filter::Filter<core::slice::iter::Iter<gogo_ui::page::AutoDriver>, <gogo_ui::page::Page>::clone_subtree::{closure#9}>, <gogo_ui::page::Page>::clone_subtree::{closure#10}>>>::from_iter
 2400 <alloc::vec::Vec<gogo_ui::page::Behavior> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<gogo_ui::page::Behavior, core::iter::adapters::map::Map<core::iter::adapters::filter::Filter<core::slice::iter::Iter<gogo_ui::page::Behavior>, <gogo_ui::page::Page>::clone_subtree::{closure#7}>, <gogo_ui::page::Page>::clone_subtree::{closure#8}>>>::from_iter
-2400 <alloc::vec::Vec<gogo_ui::page::NodeId> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<gogo_ui::page::NodeId, core::iter::adapters::map::Map<core::iter::adapters::filter::Filter<core::slice::iter::Iter<gogo_ui::page::NodeId>, <gogo_ui::page::Page>::clone_subtree::{closure#5}>, <gogo_ui::page::Page>::clone_subtree::{closure#6}>>>::from_iter
 2400 <alloc::vec::Vec<gogo_ui::page::PropTransition> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<gogo_ui::page::PropTransition, core::iter::adapters::map::Map<core::iter::adapters::filter::Filter<core::slice::iter::Iter<gogo_ui::page::PropTransition>, <gogo_ui::page::Page>::clone_subtree::{closure#15}>, <gogo_ui::page::Page>::clone_subtree::{closure#16}>>>::from_iter
 2400 <alloc::vec::Vec<gogo_ui::page::Transition> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<gogo_ui::page::Transition, core::iter::adapters::map::Map<core::iter::adapters::filter::Filter<core::slice::iter::Iter<gogo_ui::page::Transition>, <gogo_ui::page::Page>::clone_subtree::{closure#13}>, <gogo_ui::page::Page>::clone_subtree::{closure#14}>>>::from_iter
 2400 <alloc::vec::Vec<gogo_ui::page::ValueFollow> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<gogo_ui::page::ValueFollow, core::iter::adapters::map::Map<core::iter::adapters::filter::Filter<core::slice::iter::Iter<gogo_ui::page::ValueFollow>, <gogo_ui::page::Page>::clone_subtree::{closure#11}>, <gogo_ui::page::Page>::clone_subtree::{closure#12}>>>::from_iter
@@ -97,7 +96,7 @@
 165 <core::iter::adapters::map::Map<core::ops::range::Range<usize>, <gogo_ui::page::NodeId>::from_index> as core::iter::traits::iterator::Iterator>::try_fold::<(), core::iter::traits::iterator::Iterator::find::check<gogo_ui::page::NodeId, &mut <gogo_ui::runtime::Runtime>::new::{closure#5}>::{closure#0}, core::ops::control_flow::ControlFlow<gogo_ui::page::NodeId>>
 163 <gogo_ui::runtime::Runtime>::play_action
 161 <turbodot::pages::PageStack>::pointer_to
-158 0x0000000004d2e680
+158 0x0000000004d2f680
 144 <alloc::raw_vec::RawVec<gogo_ui::lexer::Token>>::grow_one
 133 <gogo_ui::runtime::Runtime>::pool_of
 132 <turbodot::program::Program<storvald_perf::AppState>>::make

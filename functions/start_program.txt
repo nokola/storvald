@@ -1,4 +1,4 @@
-# `start_program` at commit 015ecfd4f7c78d9b9113470b3530df79d7fe1221: instructions by function, 1174946 in all.
+# `start_program` at commit ecd045b6136273d7a0800f4134546ab1c0fadcb1: instructions by function, 1174958 in all.
 # A function's own code only: what it calls is counted at the called function.
 368529 __memcpy_avx_unaligned_erms
 117720 __memset_avx2_unaligned_erms
@@ -55,7 +55,7 @@
 3449 <harfrust::hb::charmap::Charmap>::map_impl
 3436 <cosmic_text::shape::ShapeSpan>::build
 3386 <core::iter::adapters::map::Map<core::str::iter::CharIndices, unicode_linebreak::linebreaks::{closure#0}> as core::iter::traits::iterator::Iterator>::try_fold::<(), &mut <core::iter::adapters::scan::Scan<_, _, _> as core::iter::traits::iterator::Iterator>::try_fold::scan<(usize, u8), (u8, bool), (usize, bool, bool), (), core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>, unicode_linebreak::linebreaks::{closure#1}, core::iter::traits::iterator::Iterator::find_map::check<(usize, bool, bool), (usize, unicode_linebreak::BreakOpportunity), &mut unicode_linebreak::linebreaks::{closure#2}>::{closure#0}>::{closure#0}, core::ops::control_flow::ControlFlow<core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>>>
-3346 gogo_ui::draw::walk'2
+3342 gogo_ui::draw::walk'2
 3139 realloc
 3069 gogo_ui::runtime::resolve_into
 3000 <harfrust::hb::buffer::GlyphInfo>::init_unicode_props
@@ -169,10 +169,10 @@
 532 <read_fonts::table_ref::TableRef<read_fonts::tables::gsub::GsubMarker>>::lookup_list
 520 <read_fonts::table_ref::TableRef<read_fonts::tables::gsub::LigatureSubstFormat1Marker>>::coverage
 516 <harfrust::hb::buffer::hb_buffer_t>::_set_glyph_flags
+512 gogo_ui::font_style::split_style
 506 <read_fonts::table_ref::TableRef<read_fonts::tables::layout::FeatureListMarker>>::get
 504 fmaf
 502 core::slice::sort::shared::smallsort::insertion_sort_shift_left::<harfrust::hb::ot_map::feature_map_t, <harfrust::hb::ot_map::feature_map_t as core::cmp::PartialOrd>::lt>
-496 gogo_ui::font_style::split_style
 492 <gogo_ui::layout::Lay>::seat
 491 gogo_ui::runtime::ladder_motion_and_seat
 490 <std::sys::sync::once::futex::Once>::call
@@ -415,7 +415,7 @@
 32 <read_fonts::table_ref::TableRef<read_fonts::tables::cmap::CmapMarker> as read_fonts::read::FontRead>::read
 31 <harfrust::hb::buffer::UnicodeBuffer as core::default::Default>::default
 31 core::ptr::drop_glue::<gogo_ui::tree::PlacedTree>
-30 0x0000000004d2e680
+30 0x0000000004d2f680
 30 <core::iter::adapters::map::Map<std::collections::hash::map::IntoIter<[u8; 4], alloc::collections::btree::set::BTreeSet<fontdb::ID>>, <cosmic_text::font::system::FontSystem>::new_with_locale_and_db_and_fallback<cosmic_text::font::fallback::platform::PlatformFallback>::{closure#3}> as core::iter::traits::iterator::Iterator>::fold::<(), core::iter::traits::iterator::Iterator::for_each::call<([u8; 4], alloc::vec::Vec<fontdb::ID>), <hashbrown::map::HashMap<[u8; 4], alloc::vec::Vec<fontdb::ID>, core::hash::BuildHasherDefault<rustc_hash::FxHasher>> as core::iter::traits::collect::Extend<([u8; 4], alloc::vec::Vec<fontdb::ID>)>>::extend<core::iter::adapters::map::Map<std::collections::hash::map::IntoIter<[u8; 4], alloc::collections::btree::set::BTreeSet<fontdb::ID>>, <cosmic_text::font::system::FontSystem>::new_with_locale_and_db_and_fallback<cosmic_text::font::fallback::platform::PlatformFallback>::{closure#3}>>::{closure#0}>::{closure#0}>
 30 <ttf_parser::RawFace>::parse
 30 munmap_chunk
@@ -507,7 +507,7 @@
 3 <cosmic_text::font::fallback::platform::PlatformFallback as cosmic_text::font::fallback::Fallback>::forbidden_fallback
 3 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::left
 3 getrandom
-2 0x0000000004d2e6f0
+2 0x0000000004d2f6f0
 2 <gogo_ui::runtime::Runtime>::play_entrances
 2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::built
 2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame

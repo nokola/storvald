@@ -1,8 +1,8 @@
-# `mouse_move` at commit 015ecfd4f7c78d9b9113470b3530df79d7fe1221: instructions by function, 193583 in all.
+# `mouse_move` at commit ecd045b6136273d7a0800f4134546ab1c0fadcb1: instructions by function, 193570 in all.
 # A function's own code only: what it calls is counted at the called function.
 35704 <gogo_ui::layout::LookCopy>::diff
 28888 __memcpy_avx_unaligned_erms
-16849 gogo_ui::draw::walk'2
+16850 gogo_ui::draw::walk'2
 16298 gogo_ui::runtime::resolve_into
 15445 <gogo_ui::draw::DrawCache>::patch
 14458 <gogo_ui::page::Page>::kind_default::{closure#0}
@@ -28,7 +28,7 @@
 408 gogo_ui::runtime::find_rule
 405 <gogo_ui::input::Input>::apply_hover
 392 gogo_ui::runtime::kind_visual_default
-341 __memcmp_avx2_movbe
+327 __memcmp_avx2_movbe
 302 <alloc::vec::Vec<(gogo_ui::page::NodeId, gogo_ui::anim::Channel, f32)>>::retain::<gogo_ui::runtime::resolve_into::{closure#0}>
 288 <gogo_ui::runtime::Resolved>::color_by_id
 272 gogo_ui::draw::own_opacity

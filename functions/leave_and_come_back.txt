@@ -1,4 +1,4 @@
-# `leave_and_come_back` at commit 015ecfd4f7c78d9b9113470b3530df79d7fe1221: instructions by function, 254917 in all.
+# `leave_and_come_back` at commit ecd045b6136273d7a0800f4134546ab1c0fadcb1: instructions by function, 254930 in all.
 # A function's own code only: what it calls is counted at the called function.
 73376 <gogo_ui::layout::LookCopy>::diff
 28808 __memcpy_avx_unaligned_erms
@@ -8,7 +8,7 @@
 9105 gogo_ui::runtime::resolve_into
 7999 free
 6478 <gogo_ui::runtime::Runtime>::tick
-5702 __memcmp_avx2_movbe
+5715 __memcmp_avx2_movbe
 5015 <gogo_ui::layout::LayoutCache>::patch
 4909 <gogo_ui::runtime::Runtime>::is_hook_playing_by_id
 3560 <turbodot::program::Program<storvald_perf::AppState>>::frame

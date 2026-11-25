@@ -1,10 +1,10 @@
-# `first_frame_of_list_page_again` at commit 015ecfd4f7c78d9b9113470b3530df79d7fe1221: instructions by function, 8237832 in all.
+# `first_frame_of_list_page_again` at commit ecd045b6136273d7a0800f4134546ab1c0fadcb1: instructions by function, 8237403 in all.
 # A function's own code only: what it calls is counted at the called function.
 1547302 <gogo_ui::page::Page>::kind_default::{closure#0}
 1280313 <gogo_ui::runtime::Resolved>::override_of_by_id
 1054218 <gogo_ui::page::Page>::prop_by_id
 874796 <gogo_ui::runtime::Resolved>::prop_by_id
-663252 gogo_ui::draw::walk'2
+663251 gogo_ui::draw::walk'2
 272468 <gogo_ui::runtime::Resolved>::written_from
 260234 <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as core::hash::Hasher>::write
 234088 __memcpy_avx_unaligned_erms
@@ -31,7 +31,7 @@
 34744 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&u64>
 33694 gogo_ui::runtime::ladder_motion_and_seat
 28858 <gogo_ui::layout::VisibleChildren as core::iter::traits::iterator::Iterator>::next
-28038 <gogo_text::TextEngine>::measure
+27610 <gogo_text::TextEngine>::measure
 25888 <gogo_ui::layout::Lay>::seat
 24770 <gogo_ui::tree::Subtree as core::iter::traits::iterator::Iterator>::next
 24635 gogo_ui::runtime::resolve_into::{closure#44}
@@ -112,7 +112,7 @@
 168 <alloc::raw_vec::RawVec<gogo_ui::page::When>>::grow_one
 166 <turbodot::pages::PageUi>::frame
 165 <gogo_ui::layout::Lay>::place_children
-160 0x0000000004d2e680
+160 0x0000000004d2f680
 155 <gogo_ui::runtime::Runtime>::compose_motion
 154 <turbodot::pages::PageUi>::relayout
 148 gogo_ui::runtime::compose_anim::{closure#0}

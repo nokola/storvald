@@ -1,6 +1,6 @@
-# `scroll_step` at commit 015ecfd4f7c78d9b9113470b3530df79d7fe1221: instructions by function, 3456424 in all.
+# `scroll_step` at commit ecd045b6136273d7a0800f4134546ab1c0fadcb1: instructions by function, 3456416 in all.
 # A function's own code only: what it calls is counted at the called function.
-663250 gogo_ui::draw::walk'2
+663249 gogo_ui::draw::walk'2
 636741 <gogo_ui::page::Page>::kind_default::{closure#0}
 529684 <gogo_ui::runtime::Resolved>::override_of_by_id
 413841 <gogo_ui::page::Page>::prop_by_id
@@ -38,7 +38,7 @@
 2629 <gogo_ui::runtime::Resolved>::font_size
 2611 <gogo_ui::layout::LayoutCache>::run
 2569 <gogo_ui::draw::DrawCache>::run
-2112 __memcmp_avx2_movbe
+2105 __memcmp_avx2_movbe
 1606 gogo_ui::draw::walk
 1256 <(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>) as core::slice::cmp::SlicePartialEq<(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::page::NodeId>)>>::equal_same_length
 513 <gogo_ui::input::Input>::touch

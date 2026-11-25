@@ -1,4 +1,4 @@
-# `open_controls_page` at commit 015ecfd4f7c78d9b9113470b3530df79d7fe1221: instructions by function, 121263 in all.
+# `open_controls_page` at commit ecd045b6136273d7a0800f4134546ab1c0fadcb1: instructions by function, 121208 in all.
 # A function's own code only: what it calls is counted at the called function.
 26826 __memcpy_avx_unaligned_erms
 11818 <gogo_ui::tree::PlacedTree>::build
@@ -24,7 +24,7 @@
 924 gogo_ui::input::event_action
 868 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::alloc
 841 gogo_ui::runtime::settle_seats
-772 __memcmp_avx2_movbe
+717 __memcmp_avx2_movbe
 713 <gogo_ui::input::Input>::touch
 612 <alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global>
 599 <gogo_ui::anim::Player>::new
@@ -123,9 +123,9 @@
 6 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::kind
 4 <alloc::vec::Vec<gogo_ui::anim::Tween>>::retain::<<gogo_ui::runtime::Runtime>::play_id::{closure#8}>
 3 <<turbodot::program::Program<storvald_perf::AppState>>::open::{closure#5} as core::ops::function::FnOnce<(&mut dyn turbodot::page::PageObject<storvald_perf::AppState>, &mut turbodot::page::Host<storvald_perf::AppState>)>>::call_once
-2 0x0000000004d2e430
-2 0x0000000004d2e4c0
-2 0x0000000004d2e680
+2 0x0000000004d2f430
+2 0x0000000004d2f4c0
+2 0x0000000004d2f680
 2 <gogo_ui::runtime::Runtime>::play_entrances
 2 <turbodot::page::Plain<storvald_perf::pages::ControlsPage, storvald_perf::ui::controls_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::built
 2 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::left

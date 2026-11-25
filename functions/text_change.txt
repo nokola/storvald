@@ -1,8 +1,8 @@
-# `text_change` at commit 015ecfd4f7c78d9b9113470b3530df79d7fe1221: instructions by function, 162667 in all.
+# `text_change` at commit ecd045b6136273d7a0800f4134546ab1c0fadcb1: instructions by function, 162670 in all.
 # A function's own code only: what it calls is counted at the called function.
 40708 __memcpy_avx_unaligned_erms
 35796 <gogo_ui::layout::LookCopy>::diff
-15613 gogo_ui::draw::walk'2
+15615 gogo_ui::draw::walk'2
 15247 <gogo_ui::draw::DrawCache>::patch
 8150 <gogo_ui::page::Page>::kind_default::{closure#0}
 6468 <gogo_ui::runtime::Resolved>::override_of_by_id
@@ -23,7 +23,7 @@
 570 gogo_ui::runtime::deref
 379 <gogo_ui::runtime::Resolved>::inherited
 314 gogo_text::cache_key
-307 __memcmp_avx2_movbe
+308 __memcmp_avx2_movbe
 283 <gogo_ui::layout::Lay>::size_at_flag
 270 <gogo_ui::draw::DrawCache>::emit
 258 <gogo_ui::runtime::Runtime>::tick
