@@ -1,6 +1,6 @@
-# `start_program` at commit 38ccb856e36a4426111a6a674dc986d15677af86: instructions by function, 1173084 in all.
+# `start_program` at commit 04d73820d21b5359de763aefbc5b47e6bfe5669b: instructions by function, 1173103 in all.
 # A function's own code only: what it calls is counted at the called function.
-368477 __memcpy_avx_unaligned_erms
+368487 __memcpy_avx_unaligned_erms
 117720 __memset_avx2_unaligned_erms
 32164 _int_malloc
 25534 harfrust::hb::ot_shape::shape_internal
@@ -100,8 +100,8 @@
 1547 <read_fonts::table_ref::TableRef<read_fonts::tables::layout::CoverageFormat2Marker>>::range_records
 1506 <harfrust::hb::ot_shape::hb_ot_shape_planner_t>::compile
 1444 <read_fonts::table_ref::TableRef<read_fonts::tables::gsub::LigatureSubstFormat1Marker>>::ligature_sets
-1425 __memcmp_avx2_movbe
 1403 <harfrust::hb::buffer::hb_buffer_t>::sync
+1383 __memcmp_avx2_movbe
 1360 <cosmic_text::buffer::Buffer>::shape_until_scroll
 1352 <read_fonts::table_ref::TableRef<read_fonts::tables::cmap::Cmap4Marker>>::lookup_glyph_id
 1332 <smol_str::Repr>::new
@@ -124,15 +124,15 @@
 918 <gogo_ui::layout::Lay>::stack_min
 906 _int_free_maybe_trim
 902 <gogo_ui::layout::Lay>::size_at_flag
-893 <gogo_ui::tree::PlacedTree>::build
+895 <gogo_ui::tree::PlacedTree>::build
 888 <gogo_text::TextEngine>::face
 888 <unicode_segmentation::grapheme::GraphemeCursor>::grapheme_category
 887 turbodot::pictures::image_table
+871 <gogo_ui::page::Page>::from_static
 861 __rustc::__rust_alloc
 860 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&u64>
 842 <harfrust::hb::ot_shape::hb_ot_shape_planner_t>::collect_features
 840 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::dealloc
-822 <gogo_ui::page::Page>::from_static
 816 <alloc::string::String>::from_utf16
 801 <read_fonts::tables::layout::ClassDef as read_fonts::read::FontRead>::read
 786 <gogo_ui::runtime::Runtime>::set_screen
@@ -414,7 +414,7 @@
 32 <read_fonts::table_ref::TableRef<read_fonts::tables::cmap::CmapMarker> as read_fonts::read::FontRead>::read
 31 <harfrust::hb::buffer::UnicodeBuffer as core::default::Default>::default
 31 core::ptr::drop_glue::<gogo_ui::tree::PlacedTree>
-30 0x0000000004d1c680
+30 0x0000000004d1f680
 30 <core::iter::adapters::map::Map<std::collections::hash::map::IntoIter<[u8; 4], alloc::collections::btree::set::BTreeSet<fontdb::ID>>, <cosmic_text::font::system::FontSystem>::new_with_locale_and_db_and_fallback<cosmic_text::font::fallback::platform::PlatformFallback>::{closure#3}> as core::iter::traits::iterator::Iterator>::fold::<(), core::iter::traits::iterator::Iterator::for_each::call<([u8; 4], alloc::vec::Vec<fontdb::ID>), <hashbrown::map::HashMap<[u8; 4], alloc::vec::Vec<fontdb::ID>, core::hash::BuildHasherDefault<rustc_hash::FxHasher>> as core::iter::traits::collect::Extend<([u8; 4], alloc::vec::Vec<fontdb::ID>)>>::extend<core::iter::adapters::map::Map<std::collections::hash::map::IntoIter<[u8; 4], alloc::collections::btree::set::BTreeSet<fontdb::ID>>, <cosmic_text::font::system::FontSystem>::new_with_locale_and_db_and_fallback<cosmic_text::font::fallback::platform::PlatformFallback>::{closure#3}>>::{closure#0}>::{closure#0}>
 30 <ttf_parser::RawFace>::parse
 30 munmap_chunk
@@ -506,7 +506,7 @@
 3 <cosmic_text::font::fallback::platform::PlatformFallback as cosmic_text::font::fallback::Fallback>::forbidden_fallback
 3 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::left
 3 getrandom
-2 0x0000000004d1c6f0
+2 0x0000000004d1f6f0
 2 <gogo_ui::runtime::Runtime>::play_entrances
 2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::built
 2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame

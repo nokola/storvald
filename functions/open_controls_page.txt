@@ -1,7 +1,7 @@
-# `open_controls_page` at commit 38ccb856e36a4426111a6a674dc986d15677af86: instructions by function, 121083 in all.
+# `open_controls_page` at commit 04d73820d21b5359de763aefbc5b47e6bfe5669b: instructions by function, 121171 in all.
 # A function's own code only: what it calls is counted at the called function.
-26923 __memcpy_avx_unaligned_erms
-11818 <gogo_ui::tree::PlacedTree>::build
+27019 __memcpy_avx_unaligned_erms
+11820 <gogo_ui::tree::PlacedTree>::build
 8560 gogo_ui::runtime::ladder_node
 7840 <core::iter::adapters::map::Map<core::ops::range::Range<usize>, gogo_ui::runtime::static_nodes::{closure#0}> as core::iter::traits::iterator::Iterator>::fold::<(), core::iter::traits::iterator::Iterator::for_each::call<bool, <alloc::vec::Vec<bool>>::extend_trusted<core::iter::adapters::map::Map<core::ops::range::Range<usize>, gogo_ui::runtime::static_nodes::{closure#0}>>::{closure#0}>::{closure#0}>
 7485 gogo_ui::runtime::resolve
@@ -20,13 +20,13 @@
 1287 <core::iter::adapters::map::Map<core::ops::range::Range<usize>, <gogo_ui::page::NodeId>::from_index> as core::iter::traits::iterator::Iterator>::try_fold::<(), core::iter::traits::iterator::Iterator::find::check<gogo_ui::page::NodeId, &mut <gogo_ui::runtime::Runtime>::new::{closure#5}>::{closure#0}, core::ops::control_flow::ControlFlow<gogo_ui::page::NodeId>>
 1283 malloc
 1263 <gogo_ui::runtime::Runtime>::set_screen
-1196 <gogo_ui::page::Page>::from_static
+1245 <gogo_ui::page::Page>::from_static
 924 gogo_ui::input::event_action
 868 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::alloc
-773 __memcmp_avx2_movbe
 724 <gogo_ui::input::Input>::touch
+716 __memcmp_avx2_movbe
 612 <alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global>
-601 <gogo_ui::anim::Player>::new
+599 <gogo_ui::anim::Player>::new
 590 gogo_ui::draw::hit_laid_at
 568 free
 468 gogo_ui::draw::hit
@@ -122,9 +122,9 @@
 6 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::kind
 4 <alloc::vec::Vec<gogo_ui::anim::Tween>>::retain::<<gogo_ui::runtime::Runtime>::play_id::{closure#8}>
 3 <<turbodot::program::Program<storvald_perf::AppState>>::open::{closure#5} as core::ops::function::FnOnce<(&mut dyn turbodot::page::PageObject<storvald_perf::AppState>, &mut turbodot::page::Host<storvald_perf::AppState>)>>::call_once
-2 0x0000000004d1c430
-2 0x0000000004d1c4c0
-2 0x0000000004d1c680
+2 0x0000000004d1f430
+2 0x0000000004d1f4c0
+2 0x0000000004d1f680
 2 <gogo_ui::runtime::Runtime>::play_entrances
 2 <turbodot::page::Plain<storvald_perf::pages::ControlsPage, storvald_perf::ui::controls_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::built
 2 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::left

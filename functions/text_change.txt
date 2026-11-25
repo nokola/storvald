@@ -1,4 +1,4 @@
-# `text_change` at commit 38ccb856e36a4426111a6a674dc986d15677af86: instructions by function, 68764 in all.
+# `text_change` at commit 04d73820d21b5359de763aefbc5b47e6bfe5669b: instructions by function, 68761 in all.
 # A function's own code only: what it calls is counted at the called function.
 14178 gogo_ui::draw::walk'2
 8150 <gogo_ui::page::Page>::kind_default::{closure#0}
@@ -6,7 +6,7 @@
 5585 <gogo_ui::page::Page>::prop_by_id
 5535 <gogo_ui::tree::Children as core::iter::traits::iterator::Iterator>::next
 5267 <gogo_ui::runtime::Resolved>::prop_by_id
-2987 __memcpy_avx_unaligned_erms
+2985 __memcpy_avx_unaligned_erms
 2057 gogo_ui::runtime::resolve_into
 1758 gogo_ui::layout::follow_table::<gogo_ui::layout::Rect>
 1668 <gogo_ui::runtime::Runtime>::set_screen
@@ -22,7 +22,7 @@
 438 gogo_ui::runtime::settle_seats
 379 <gogo_ui::runtime::Resolved>::inherited
 360 _int_malloc
-337 __memcmp_avx2_movbe
+336 __memcmp_avx2_movbe
 314 gogo_text::cache_key
 283 <gogo_ui::layout::Lay>::size_at_flag
 258 <gogo_ui::runtime::Runtime>::tick
