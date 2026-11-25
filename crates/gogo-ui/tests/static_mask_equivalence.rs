@@ -285,9 +285,11 @@ impl Roads {
         let rects_off: Vec<Rect> = layout(&self.page_off, off, vp, &FixedAdvance);
         let _shown_off: Vec<Rect> = self.rt_off.glide(rects_off);
         // Retained-off road: the caches switched off must equal the plain functions.
+        // Against `layout`, not the fresh frame's rects: a frame also moves
+        // each shown Popup to its place, which no layout does.
         let mut fresh_full: KeptFrame = KeptFrame::fresh(&self.page_full, full.clone(), vp, &FixedAdvance);
         let rects_full_cache: Vec<Rect> = self.rt_full.layout_retained(&self.page_full, vp, &FixedAdvance).to_vec();
-        self.same_rects(what, "the switched-off retained layout", &rects_full_cache, "`layout`", fresh_full.rects());
+        self.same_rects(what, "the switched-off retained layout", &rects_full_cache, "`layout`", &layout(&self.page_full, full, vp, &FixedAdvance));
         assert!(self.rt_full.debug_layout_stats().full, "{}: after step {} `{what}` the switched-off retained layout did not take the full road", self.name, self.steps);
         fresh_full.glide(&mut self.rt_full);
         let draws_full: Vec<Draw> = draw(&self.page_full, fresh_full.frame());
@@ -299,7 +301,7 @@ impl Roads {
         // Retained road: the caches on.
         let mut fresh_ret: KeptFrame = KeptFrame::fresh(&self.page_ret, ret.clone(), vp, &FixedAdvance);
         let rects_ret: Vec<Rect> = self.rt_ret.layout_retained(&self.page_ret, vp, &FixedAdvance).to_vec();
-        self.same_rects(what, "the retained layout", &rects_ret, "`layout`", fresh_ret.rects());
+        self.same_rects(what, "the retained layout", &rects_ret, "`layout`", &layout(&self.page_ret, ret, vp, &FixedAdvance));
         fresh_ret.glide(&mut self.rt_ret);
         let draws_ref: Vec<Draw> = draw(&self.page_ret, fresh_ret.frame());
         self.rt_ret.draw_retained(&self.page_ret, fresh_ret.rects(), &mut self.draws_ret);
