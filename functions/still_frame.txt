@@ -1,7 +1,7 @@
-# `still_frame` at commit 04d73820d21b5359de763aefbc5b47e6bfe5669b: instructions by function, 3163 in all.
+# `still_frame` at commit 2e6144f143345584c7a1feddf2c0468edf3fe383: instructions by function, 3162 in all.
 # A function's own code only: what it calls is counted at the called function.
 1656 <gogo_ui::runtime::Runtime>::set_screen
-285 __memcmp_avx2_movbe
+284 __memcmp_avx2_movbe
 258 <gogo_ui::runtime::Runtime>::tick
 184 <turbodot::pages::PageUi>::frame
 146 <turbodot::program::Program<storvald_perf::AppState>>::frame

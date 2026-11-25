@@ -1,4 +1,4 @@
-# `text_change` at commit 04d73820d21b5359de763aefbc5b47e6bfe5669b: instructions by function, 68761 in all.
+# `text_change` at commit 2e6144f143345584c7a1feddf2c0468edf3fe383: instructions by function, 68760 in all.
 # A function's own code only: what it calls is counted at the called function.
 14178 gogo_ui::draw::walk'2
 8150 <gogo_ui::page::Page>::kind_default::{closure#0}
@@ -22,7 +22,7 @@
 438 gogo_ui::runtime::settle_seats
 379 <gogo_ui::runtime::Resolved>::inherited
 360 _int_malloc
-336 __memcmp_avx2_movbe
+335 __memcmp_avx2_movbe
 314 gogo_text::cache_key
 283 <gogo_ui::layout::Lay>::size_at_flag
 258 <gogo_ui::runtime::Runtime>::tick

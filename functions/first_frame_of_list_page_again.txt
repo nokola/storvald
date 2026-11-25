@@ -1,4 +1,4 @@
-# `first_frame_of_list_page_again` at commit 04d73820d21b5359de763aefbc5b47e6bfe5669b: instructions by function, 8246212 in all.
+# `first_frame_of_list_page_again` at commit 2e6144f143345584c7a1feddf2c0468edf3fe383: instructions by function, 8246522 in all.
 # A function's own code only: what it calls is counted at the called function.
 1547302 <gogo_ui::page::Page>::kind_default::{closure#0}
 1280313 <gogo_ui::runtime::Resolved>::override_of_by_id
@@ -31,7 +31,7 @@
 34744 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&u64>
 33694 gogo_ui::runtime::ladder_motion_and_seat
 28858 <gogo_ui::layout::VisibleChildren as core::iter::traits::iterator::Iterator>::next
-27532 <gogo_text::TextEngine>::measure
+27844 <gogo_text::TextEngine>::measure
 25888 <gogo_ui::layout::Lay>::seat
 24770 <gogo_ui::tree::Subtree as core::iter::traits::iterator::Iterator>::next
 24635 gogo_ui::runtime::resolve_into::{closure#46}
@@ -76,7 +76,7 @@
 2760 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::realloc
 2629 <gogo_ui::runtime::Resolved>::font_size
 2448 _int_free_maybe_trim
-2210 __memcmp_avx2_movbe
+2208 __memcmp_avx2_movbe
 1734 _int_free_chunk
 1605 gogo_ui::draw::walk
 1604 <gogo_ui::draw::DrawCache>::emit
