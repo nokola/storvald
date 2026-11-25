@@ -3190,8 +3190,15 @@ ui/menu.gogo:3: error G2001: `anim=` is not a gogo word — timing belongs on a 
 - The build prints one line per problem: the file, the line, `error` or
   `warning`, the code, and the message, which usually names the fix. A
   page with an error fails the build; warnings do not.
+- The file is the one the line is in: a problem in a file the page
+  brings in with `uses` (a widget, a theme) is printed with that file's
+  name and its own line, `ui/widgets/card.gogo:3: error ...`, in the
+  build of every page that uses it.
 - In code a diagnostic is a `gogo_ui::Diagnostic` (`severity`, `code`,
-  `line`, `message`); printed, it reads `error G2001 line 3: ...`.
+  `line`, `message`, `file`); printed, it reads `error G2001 line 3: ...`.
+  `file` is empty for a line of the file that was compiled, and the
+  `uses` path for a line of a file it brought in; printed, that one
+  reads `error G2001 widgets/card.gogo line 3: ...`.
 - The **code** is a stable search key: `docs/gogo-errors.md` holds one
   entry per code, saying what the message means and how to fix it. A code
   is never renumbered and never reused.

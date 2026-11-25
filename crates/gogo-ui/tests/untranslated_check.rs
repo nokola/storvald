@@ -17,7 +17,8 @@ fn codes(c: &Compiled) -> Vec<String> {
 }
 
 fn g8002(c: &Compiled) -> Vec<String> {
-    c.diags.iter().filter(|d| d.code == "G8002").map(|d| d.message.clone()).collect()
+    // The file the line is in, then the words.
+    c.diags.iter().filter(|d| d.code == "G8002").map(|d| format!("{} {}", d.file, d.message)).collect()
 }
 
 #[test]

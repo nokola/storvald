@@ -250,7 +250,9 @@ pub fn build_pages(dir: &Path, out: &Path, options: BuildOptions<'_>) -> Result<
         }
         modules.push(module.clone());
         for d in &compiled.diags {
-            let line = format!("{}:{}: {} {}: {}\n", path.display(), d.line, if d.severity == Severity::Error { "error" } else { "warning" }, d.code, d.message);
+            // A line of a `uses` file is named with that file.
+            let in_file: std::path::PathBuf = if d.file.is_empty() { path.to_path_buf() } else { dir.join(&d.file) };
+            let line = format!("{}:{}: {} {}: {}\n", in_file.display(), d.line, if d.severity == Severity::Error { "error" } else { "warning" }, d.code, d.message);
             if d.severity == Severity::Error {
                 errors.push_str(&line);
             } else {

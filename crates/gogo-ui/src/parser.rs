@@ -286,7 +286,7 @@ impl<'a> Parser<'a> {
                             self.error("G5001", "`for=` comes first — the reader knows the host before the parameters; reorder: `widget Name for=…, $param=…`".to_string());
                         }
                         let Some(value) = self.value() else { break };
-                        node.props.push(AstProp { key: word, value, line: self.line() });
+                        node.props.push(AstProp { key: word, value, line: self.line(), origin: crate::ast::ORIGIN_UNSET });
                     } else if FLAGS.contains(&word.as_str()) {
                         // A reserved flag is its own delimiter, so no comma
                         // before the next member (`Button signals text=$x`) —
@@ -325,7 +325,7 @@ impl<'a> Parser<'a> {
                             self.error("G0018", format!("duplicate parameter `${name}`"));
                         }
                         let Some(value) = self.value() else { break };
-                        node.params.push(AstProp { key: name, value, line: self.line() });
+                        node.params.push(AstProp { key: name, value, line: self.line(), origin: crate::ast::ORIGIN_UNSET });
                     } else {
                         node.args.push(AstValue::Ref { name, opacity, pos });
                     }

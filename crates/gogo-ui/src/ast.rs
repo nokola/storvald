@@ -48,14 +48,26 @@ impl AstValue {
     }
 }
 
+/// In `AstNode::origin` and `AstProp::origin`: not said. The compiler
+/// reads such a line as one of the file it is working in.
+pub const ORIGIN_UNSET: u16 = u16::MAX;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct AstProp {
     pub key: String,
     pub value: AstValue,
     pub line: u32,
+    /// Which file `line` is in: 0 = the file that is compiled, k = the
+    /// k-th `uses` file the compile read (`Compiled::uses[k - 1]`),
+    /// `ORIGIN_UNSET` = not said.
+    ///
+    /// Needed because a node's properties come from several files (its
+    /// own line, a style, the line that uses a widget) and a diagnostic
+    /// must name the file its line is in.
+    pub origin: u16,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AstNode {
     pub type_word: String,
     pub name: Option<String>,
@@ -71,6 +83,32 @@ pub struct AstNode {
     pub clauses: Vec<(String, AstValue)>,
     pub children: Vec<AstItem>,
     pub line: u32,
+    /// Which file `line` is in (`AstProp::origin`).
+    pub origin: u16,
+}
+
+/// Written by hand so a node the compiler makes up starts with no file
+/// said (`ORIGIN_UNSET`), not as a line of the file that is compiled.
+impl Default for AstNode {
+    fn default() -> AstNode {
+        AstNode { type_word: String::new(), name: None, styles: Vec::new(), flags: Vec::new(), args: Vec::new(), props: Vec::new(), params: Vec::new(), arrows: Vec::new(), clauses: Vec::new(), children: Vec::new(), line: 0, origin: ORIGIN_UNSET }
+    }
+}
+
+impl AstNode {
+    /// Says which file this node, its properties and everything written
+    /// under it are in.
+    fn stamp_origin(&mut self, origin: u16) {
+        self.origin = origin;
+        for p in self.props.iter_mut().chain(self.params.iter_mut()) {
+            p.origin = origin;
+        }
+        for item in &mut self.children {
+            if let AstItem::Node(child) = item {
+                child.stamp_origin(origin);
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -84,4 +122,16 @@ pub enum AstItem {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Document {
     pub items: Vec<AstItem>,
+}
+
+impl Document {
+    /// Says which file every node and property of this document is in
+    /// (`AstProp::origin`).
+    pub fn stamp_origin(&mut self, origin: u16) {
+        for item in &mut self.items {
+            if let AstItem::Node(node) = item {
+                node.stamp_origin(origin);
+            }
+        }
+    }
 }

@@ -326,7 +326,9 @@ impl std::fmt::Display for Refused {
                     if i > 0 {
                         writeln!(f)?;
                     }
-                    write!(f, "{}:{} {} {}", self.file, d.line, d.code, d.message)?;
+                    // A line of a `uses` file is named with that file.
+                    let file: &str = if d.file.is_empty() { &self.file } else { &d.file };
+                    write!(f, "{}:{} {} {}", file, d.line, d.code, d.message)?;
                 }
                 Ok(())
             }

@@ -14,15 +14,28 @@ pub struct Diagnostic {
     pub code: String,
     pub line: u32,
     pub message: String,
+    /// The `uses` file `line` is in, as the path the loader was asked
+    /// for (`Compiled::uses`); empty = the file that was compiled.
+    ///
+    /// Needed because a page's compile reads its `uses` files too: a
+    /// line number alone sent the reader to that line of the page, for
+    /// an error in a widget's or a theme's file.
+    pub file: String,
 }
 
 impl Diagnostic {
     pub fn error(code: &str, line: u32, message: impl Into<String>) -> Diagnostic {
-        Diagnostic { severity: Severity::Error, code: code.to_string(), line, message: message.into() }
+        Diagnostic { severity: Severity::Error, code: code.to_string(), line, message: message.into(), file: String::new() }
     }
 
     pub fn warning(code: &str, line: u32, message: impl Into<String>) -> Diagnostic {
-        Diagnostic { severity: Severity::Warning, code: code.to_string(), line, message: message.into() }
+        Diagnostic { severity: Severity::Warning, code: code.to_string(), line, message: message.into(), file: String::new() }
+    }
+
+    /// This diagnostic, for a line of the `uses` file `file`.
+    pub fn in_file(mut self, file: &str) -> Diagnostic {
+        self.file = file.to_string();
+        self
     }
 }
 
@@ -32,7 +45,11 @@ impl std::fmt::Display for Diagnostic {
             Severity::Error => "error",
             Severity::Warning => "warning",
         };
-        write!(f, "{sev} {} line {}: {}", self.code, self.line, self.message)
+        if self.file.is_empty() {
+            write!(f, "{sev} {} line {}: {}", self.code, self.line, self.message)
+        } else {
+            write!(f, "{sev} {} {} line {}: {}", self.code, self.file, self.line, self.message)
+        }
     }
 }
 

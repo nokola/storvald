@@ -757,7 +757,8 @@ checked at load that they existed. The Rust crate has no such methods.)
 ## Error contract (diagnostics, D68)
 
 Every compiler error is a **diagnostic**: a severity (error or warning),
-a stable code, the line, and a message (`gogo_ui::Diagnostic`). When a
+a stable code, the line, the file that line is in when it is a `uses`
+file, and a message (`gogo_ui::Diagnostic`). When a
 closed set is known (node types, style names, property names, theme
 values, parameters, states) the message carries a did-you-mean
 suggestion; with no close candidate it lists the closest available

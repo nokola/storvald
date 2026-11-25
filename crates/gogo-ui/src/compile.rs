@@ -213,6 +213,9 @@ struct TmpNode {
     /// property, the control root's path, the rounding step) — resolved
     /// to `Page::value_follows` once the arena ids exist.
     follows: Vec<(PropKey, String, f32)>,
+    /// The file this node's line is in (`Compiler::origin` as it stood
+    /// when the node was compiled), kept per node in `node_origins`.
+    origin: u16,
 }
 
 /// The slot names in a control body whose `automatic=` is a radial kind
@@ -721,6 +724,21 @@ pub struct Compiler<'a> {
     /// resolves against the INCLUDING file's directory, so the loader
     /// always sees one path shape — from the top file's own directory.
     use_dirs: Vec<String>,
+    /// The file the line being compiled is in: 0 = the file that is
+    /// compiled, k = the k-th `uses` file read (`uses_read[k - 1]`).
+    /// Every diagnostic takes its file from here (`error`).
+    ///
+    /// Needed because a widget's body, a style and a `when` block are
+    /// compiled where they are used, long after their file was read:
+    /// the node, the `when` or the property being compiled says which
+    /// file it is from (`AstNode::origin`), and this follows it.
+    origin: u16,
+    /// The nodes of the page written in a `uses` file, each with that
+    /// file (`origin`), lowest node first: for the checks that run once
+    /// the tree stands (`error_at`). A node not listed is a line of the
+    /// file that is compiled, so a page that uses no widget keeps
+    /// nothing here.
+    node_origins: Vec<(NodeId, u16)>,
     /// `<instance>/<body-root name>` -> `<instance>` (GPAR95): the root
     /// keeps its body name as an address after the instance name replaces
     /// it, so `a/root.opacity` in an anim or response still binds.
@@ -735,7 +753,8 @@ pub struct Compiler<'a> {
     /// lines, block line, default). `default` = a hostless widget's own
     /// `when screen.*` pose (D14): it ranks as line 0 and never clashes, so
     /// a page's pose on the same instance wins.
-    deferred_whens: Vec<(State, Vec<AstItem>, u32, bool)>,
+    /// The last part of each: the file the block is in (`AstProp::origin`).
+    deferred_whens: Vec<(State, Vec<AstItem>, u32, bool, u16)>,
     /// Top-level property rules (`transition commandBar.opacity
     /// duration=0.4`), compiled at finish — they name nodes.
     deferred_prop_transitions: Vec<AstNode>,
@@ -794,7 +813,7 @@ pub struct Compiler<'a> {
     /// step 2): an arrangement word is the view's to declare, and the
     /// view may not have built when the style is read. (style, target,
     /// word, line).
-    pending_style_states: Vec<(String, String, String, u32)>,
+    pending_style_states: Vec<(String, String, String, u32, u16)>,
     /// A plain style's custom state landing on a control type that
     /// declares it (style, word, type, style line) — `finish` draws the
     /// D2 advisory when exactly one type is in the set.
@@ -933,7 +952,8 @@ pub(crate) struct BuiltNumbers<'a> {
 /// page at rest.
 pub(crate) fn compile_keeping_numbers<'a>(source: &str, loader: Loader<'a>, options: CompileOptions<'a>, built: Option<BuiltNumbers<'_>>) -> Compiled {
     let mut diags = Vec::new();
-    let doc = parse(source, &mut diags);
+    let mut doc = parse(source, &mut diags);
+    doc.stamp_origin(0);
     let mut c = Compiler {
         page: Page::default(),
         diags,
@@ -955,6 +975,8 @@ pub(crate) fn compile_keeping_numbers<'a>(source: &str, loader: Loader<'a>, opti
         custom_state_stack: Vec::new(),
         root_aliases: HashMap::new(),
         use_dirs: Vec::new(),
+        origin: 0,
+        node_origins: Vec::new(),
         node_whens: Vec::new(),
         local_keys: Keys::default(),
         local_images: Images::default(),
@@ -1005,7 +1027,7 @@ pub(crate) fn compile_keeping_numbers<'a>(source: &str, loader: Loader<'a>, opti
     // block (GPAR111 — mode tokens flip on pages that never mention dark).
     c.page.intern("dark");
     // The main file's own name is already on every diagnostic it gets.
-    c.untranslated_check(&doc, "");
+    c.untranslated_check(&doc);
     c.document(&doc, true);
     c.finish();
     // The slices this compile knows, so a standalone page draws them; a
@@ -1115,11 +1137,58 @@ fn default_palette() -> HashMap<String, Color_Straight_Srgb_4xU8_RGBA> {
 
 impl<'a> Compiler<'a> {
     fn error(&mut self, code: &str, line: u32, message: impl Into<String>) {
-        self.diags.push(Diagnostic::error(code, line, message));
+        let file: String = self.origin_file();
+        self.diags.push(Diagnostic { file, ..Diagnostic::error(code, line, message) });
     }
 
     fn warning(&mut self, code: &str, line: u32, message: impl Into<String>) {
-        self.diags.push(Diagnostic::warning(code, line, message));
+        let file: String = self.origin_file();
+        self.diags.push(Diagnostic { file, ..Diagnostic::warning(code, line, message) });
+    }
+
+    /// An error about `node`, a node of the page: named with the file
+    /// that node was written in.
+    fn error_at(&mut self, node: usize, code: &str, line: u32, message: impl Into<String>) {
+        let of_node: u16 = self.node_origin(node);
+        let outer: u16 = std::mem::replace(&mut self.origin, of_node);
+        self.error(code, line, message);
+        self.origin = outer;
+    }
+
+    /// An error about a line of the file `origin` stands for
+    /// (`AstNode::origin`), raised while another file's line is compiled.
+    fn error_in(&mut self, origin: u16, code: &str, line: u32, message: impl Into<String>) {
+        let outer: u16 = self.enter_origin(origin);
+        self.error(code, line, message);
+        self.origin = outer;
+    }
+
+    /// `error_at`, for a warning.
+    fn warning_at(&mut self, node: usize, code: &str, line: u32, message: impl Into<String>) {
+        let of_node: u16 = self.node_origin(node);
+        let outer: u16 = std::mem::replace(&mut self.origin, of_node);
+        self.warning(code, line, message);
+        self.origin = outer;
+    }
+
+    /// The path of the file `origin` stands for; empty for the file that
+    /// is compiled.
+    fn origin_file(&self) -> String {
+        match self.origin {
+            0 => String::new(),
+            k => self.uses_read.get(k as usize - 1).cloned().unwrap_or_default(),
+        }
+    }
+
+    /// Makes `origin` the file being compiled, unless it says none
+    /// (`ORIGIN_UNSET`: a line the compiler made up stays with the file
+    /// around it). Returns the file before, to put back.
+    fn enter_origin(&mut self, origin: u16) -> u16 {
+        let outer: u16 = self.origin;
+        if origin != crate::ast::ORIGIN_UNSET {
+            self.origin = origin;
+        }
+        outer
     }
 
     fn intern(&mut self, s: &str) -> StrId {
@@ -1762,7 +1831,7 @@ impl<'a> Compiler<'a> {
                                 // silent no-op reads as a working pose.
                                 self.error("G0054", n.line, "this `when` holds no responses — a top-level block poses nodes (`node.prop = value`)");
                             }
-                            self.deferred_whens.push((state, items, n.line, false));
+                            self.deferred_whens.push((state, items, n.line, false, self.origin));
                         }
                     }
                     _ => {}
@@ -1816,20 +1885,24 @@ impl<'a> Compiler<'a> {
             return;
         }
         self.uses_read.push(full.clone());
+        let origin: u16 = self.uses_read.len() as u16;
         let Some(text) = (self.loader)(&full) else {
             let looked = if full == path { String::new() } else { format!(" (looked for `{full}`, from the including file's directory)") };
             self.error("G0024", n.line, format!("`uses \"{path}\"`: file not found{looked}"));
             return;
         };
         let mut diags = Vec::new();
-        let doc = parse(&text, &mut diags);
+        let mut doc = parse(&text, &mut diags);
+        doc.stamp_origin(origin);
         for d in diags {
-            self.diags.push(Diagnostic { message: format!("{full}: {}", d.message), ..d });
+            self.diags.push(d.in_file(&full));
         }
-        self.untranslated_check(&doc, &full);
+        let outer: u16 = std::mem::replace(&mut self.origin, origin);
+        self.untranslated_check(&doc);
         self.use_dirs.push(full.rsplit_once('/').map(|(d, _)| d.to_string()).unwrap_or_default());
         self.document(&doc, false);
         self.use_dirs.pop();
+        self.origin = outer;
     }
 
     /// `allow untranslated`: this file's text stays English on purpose,
@@ -1852,7 +1925,7 @@ impl<'a> Compiler<'a> {
     /// file, an instance line's `caption="…"` the page's). Skipped: asset
     /// paths and any other address with a scheme, `areas=` rows, `atlas`/`arrangement`/`uses` lines, and text
     /// with no letter in it ("100%", "1/1", "16:9").
-    fn untranslated_check(&mut self, doc: &Document, file: &str) {
+    fn untranslated_check(&mut self, doc: &Document) {
         if !self.options.require_keys {
             return;
         }
@@ -1864,10 +1937,9 @@ impl<'a> Compiler<'a> {
         for item in &doc.items {
             untranslated_in_item(item, &mut found);
         }
-        let prefix = if file.is_empty() { String::new() } else { format!("{file}: ") };
         for (line, text) in found {
             let shown: String = if text.chars().count() > 40 { format!("{}…", text.chars().take(40).collect::<String>()) } else { text };
-            self.error("G8002", line, format!("{prefix}\"{shown}\" has no translation key — write \"…\"/key, \"…\"/_ for text that stays English, or `allow untranslated` at the top of the file"));
+            self.error("G8002", line, format!("\"{shown}\" has no translation key — write \"…\"/key, \"…\"/_ for text that stays English, or `allow untranslated` at the top of the file"));
         }
     }
 
@@ -2270,7 +2342,7 @@ impl<'a> Compiler<'a> {
         if let Some(t) = &def.for_target {
             for w in &def.whens {
                 for word in when_words(w) {
-                    self.pending_style_states.push((name.to_string(), t.clone(), word.to_string(), w.line));
+                    self.pending_style_states.push((name.to_string(), t.clone(), word.to_string(), w.line, w.origin));
                 }
             }
         }
@@ -2377,7 +2449,7 @@ impl<'a> Compiler<'a> {
                 value = AstValue::Size { w: Some(*v), h: Some(*v) };
             }
         }
-        Some((out_slot, AstProp { key: out_key, value, line: p.line }))
+        Some((out_slot, AstProp { key: out_key, value, line: p.line, origin: p.origin }))
     }
 
     /// Rewrites a `when` block's `slot.<name>.<prop>` responses onto
@@ -2390,7 +2462,7 @@ impl<'a> Compiler<'a> {
     fn rewrite_slot_when(&mut self, w: &mut AstNode, target: Option<&SlotTarget>) {
         let rewrite = |me: &mut Self, key: String, value: AstValue, line: u32| -> Option<(String, AstValue)> {
             let t = target?;
-            let (slot, ap) = me.slot_path(&AstProp { key, value, line }, t, true)?;
+            let (slot, ap) = me.slot_path(&AstProp { key, value, line, origin: crate::ast::ORIGIN_UNSET }, t, true)?;
             let key = if slot.is_empty() { ap.key } else { format!("{slot}.{}", ap.key) };
             Some((key, ap.value))
         };
@@ -2399,7 +2471,7 @@ impl<'a> Compiler<'a> {
             if !p.key.starts_with("slot.") {
                 kept.push(p);
             } else if let Some((key, value)) = rewrite(self, p.key.clone(), p.value.clone(), p.line) {
-                kept.push(AstProp { key, value, line: p.line });
+                kept.push(AstProp { key, value, line: p.line, origin: p.origin });
             }
         }
         w.props = kept;
@@ -2845,9 +2917,9 @@ impl<'a> Compiler<'a> {
         for r in 0..nrows {
             let mut row = AstNode { type_word: "row".to_string(), line: n.line, ..Default::default() };
             match row_specs[r] {
-                Len::Exact(v) => row.props.push(AstProp { key: "height".to_string(), value: AstValue::Num { value: v, unit: String::new() }, line: n.line }),
-                Len::Fill(w) if w == 1.0 => row.props.push(AstProp { key: "height".to_string(), value: AstValue::Ident { word: "fill".to_string(), opacity: None, pos: None }, line: n.line }),
-                Len::Fill(w) => row.props.push(AstProp { key: "height".to_string(), value: AstValue::Call { name: "fill".to_string(), args: vec![AstValue::Num { value: w, unit: String::new() }] }, line: n.line }),
+                Len::Exact(v) => row.props.push(AstProp { key: "height".to_string(), value: AstValue::Num { value: v, unit: String::new() }, line: n.line, origin: n.origin }),
+                Len::Fill(w) if w == 1.0 => row.props.push(AstProp { key: "height".to_string(), value: AstValue::Ident { word: "fill".to_string(), opacity: None, pos: None }, line: n.line, origin: n.origin }),
+                Len::Fill(w) => row.props.push(AstProp { key: "height".to_string(), value: AstValue::Call { name: "fill".to_string(), args: vec![AstValue::Num { value: w, unit: String::new() }] }, line: n.line, origin: n.origin }),
                 _ => {}
             }
             let mut c = 0usize;
@@ -2858,10 +2930,10 @@ impl<'a> Compiler<'a> {
                         let cspan = a.c1 - a.c0 + 1;
                         let rspan = a.r1 - a.r0 + 1;
                         if cspan > 1 {
-                            cell.props.push(AstProp { key: "col_span".to_string(), value: AstValue::Num { value: cspan as f32, unit: String::new() }, line: cell.line });
+                            cell.props.push(AstProp { key: "col_span".to_string(), value: AstValue::Num { value: cspan as f32, unit: String::new() }, line: cell.line, origin: cell.origin });
                         }
                         if rspan > 1 {
-                            cell.props.push(AstProp { key: "row_span".to_string(), value: AstValue::Num { value: rspan as f32, unit: String::new() }, line: cell.line });
+                            cell.props.push(AstProp { key: "row_span".to_string(), value: AstValue::Num { value: rspan as f32, unit: String::new() }, line: cell.line, origin: cell.origin });
                         }
                         row.children.push(AstItem::Node(cell));
                     } else {
@@ -3205,6 +3277,12 @@ impl<'a> Compiler<'a> {
     }
 
     fn anim(&mut self, n: &AstNode) {
+        let outer: u16 = self.enter_origin(n.origin);
+        self.anim_inner(n);
+        self.origin = outer;
+    }
+
+    fn anim_inner(&mut self, n: &AstNode) {
         let Some(name) = n.name.clone() else {
             self.error("G0029", n.line, "`anim` needs a name");
             return;
@@ -3252,6 +3330,12 @@ impl<'a> Compiler<'a> {
     /// `compiled`/`stack` are shared across the whole decl table so a
     /// `play` can pull a later decl in early exactly once.
     fn compile_anim_decl(&mut self, i: usize, decls: &[(String, AstNode)], compiled: &mut Vec<bool>, stack: &mut Vec<String>) {
+        let outer: u16 = self.enter_origin(decls[i].1.origin);
+        self.compile_anim_decl_inner(i, decls, compiled, stack);
+        self.origin = outer;
+    }
+
+    fn compile_anim_decl_inner(&mut self, i: usize, decls: &[(String, AstNode)], compiled: &mut Vec<bool>, stack: &mut Vec<String>) {
         if compiled[i] {
             return;
         }
@@ -4032,6 +4116,13 @@ impl<'a> Compiler<'a> {
     }
 
     fn transition(&mut self, n: &AstNode, node: NodeId) -> Transition {
+        let outer: u16 = self.enter_origin(n.origin);
+        let t: Transition = self.transition_inner(n, node);
+        self.origin = outer;
+        t
+    }
+
+    fn transition_inner(&mut self, n: &AstNode, node: NodeId) -> Transition {
         let mut t = Transition { node, from: None, to: None, duration: 0.0, easing: NO_STR, anim: NO_STR, line: n.line };
         if is_property_transition(n) {
             self.error("G3007", n.line, "a property transition sits at the file's top level, naming its node — `transition commandBar.opacity duration=0.4` (inside a block, `transition` times state changes)");
@@ -4601,6 +4692,13 @@ impl<'a> Compiler<'a> {
     }
 
     fn prop_checked(&mut self, p: &AstProp, kind: Option<Kind>) -> Option<Prop> {
+        let outer: u16 = self.enter_origin(p.origin);
+        let prop: Option<Prop> = self.prop_checked_inner(p, kind);
+        self.origin = outer;
+        prop
+    }
+
+    fn prop_checked_inner(&mut self, p: &AstProp, kind: Option<Kind>) -> Option<Prop> {
         // GP40 step 4: `stop_<n>_color`/`_offset` are the LIVE half of a
         // Gradient's stops (a `when` response or a code write) — the
         // declared look has ONE spelling, `stops=`.
@@ -4979,7 +5077,21 @@ impl<'a> Compiler<'a> {
 
     /// Compiles `n` (a child of `parent_kind`, or the root) into a temporary
     /// tree; `flatten` lays it into the arena.
+    /// One node of the file into a node of the page, with everything
+    /// under it (`node_inner`), compiled as a line of the file it is in.
+    ///
+    /// A widget body's root (`instance` given) builds as a line of the
+    /// file that USES the widget: the line that uses it writes
+    /// properties onto that root too, and each property names its own
+    /// file (`prop_checked`).
     fn node(&mut self, n: &AstNode, parent_kind: Option<Kind>, instance: Option<&AstNode>) -> TmpNode {
+        let outer: u16 = self.enter_origin(instance.map_or(n.origin, |i| i.origin));
+        let t: TmpNode = self.node_inner(n, parent_kind, instance);
+        self.origin = outer;
+        t
+    }
+
+    fn node_inner(&mut self, n: &AstNode, parent_kind: Option<Kind>, instance: Option<&AstNode>) -> TmpNode {
         // Widget instance: expand the body with the instance's args in scope.
         if let Some(def) = self.widgets.get(&n.type_word).cloned() {
             // Refused before any expansion: `A -> B -> A` would recurse
@@ -4989,7 +5101,7 @@ impl<'a> Compiler<'a> {
             if self.widget_stack.iter().any(|w| w == &n.type_word) {
                 let path = self.widget_stack.join(" -> ");
                 self.error("G5003", n.line, format!("widget cycle: {path} -> {} — a widget cannot contain itself", n.type_word));
-                return TmpNode { node: Node::fresh(Kind::Layers, n.line), props: Vec::new(), handlers: Vec::new(), whens: Vec::new(), transitions: Vec::new(), children: Vec::new(), custom_states: Vec::new(), key_claim: 0, wearing: Vec::new(), driver: None, follows: Vec::new() };
+                return TmpNode { node: Node::fresh(Kind::Layers, n.line), props: Vec::new(), handlers: Vec::new(), whens: Vec::new(), transitions: Vec::new(), children: Vec::new(), custom_states: Vec::new(), key_claim: 0, wearing: Vec::new(), driver: None, follows: Vec::new(), origin: self.origin };
             }
             // A `for=` widget fills its host's body and nothing else —
             // anywhere else its `when` lines would answer the wrong node.
@@ -5208,7 +5320,7 @@ impl<'a> Compiler<'a> {
                             other => items.push(other.clone()),
                         }
                     }
-                    self.deferred_whens.push((state, items, w.line, true));
+                    self.deferred_whens.push((state, items, w.line, true, w.origin));
                 }
             } else {
                 // A `for=` widget's scope responses answer the hosting control.
@@ -5392,7 +5504,7 @@ impl<'a> Compiler<'a> {
             self.names.insert(name.clone());
             node.name = self.intern(name);
         }
-        let mut tmp = TmpNode { node, props: Vec::new(), handlers: Vec::new(), whens: Vec::new(), transitions: Vec::new(), children: Vec::new(), custom_states: Vec::new(), key_claim: 0, wearing: n.styles.iter().cloned().chain(instance.iter().flat_map(|i| i.styles.iter().cloned())).collect(), driver: None, follows: Vec::new() };
+        let mut tmp = TmpNode { node, props: Vec::new(), handlers: Vec::new(), whens: Vec::new(), transitions: Vec::new(), children: Vec::new(), custom_states: Vec::new(), key_claim: 0, wearing: n.styles.iter().cloned().chain(instance.iter().flat_map(|i| i.styles.iter().cloned())).collect(), driver: None, follows: Vec::new(), origin: self.origin };
 
         if kind == Kind::Gap {
             self.gap(&mut tmp.node, n, parent_kind);
@@ -5524,14 +5636,14 @@ impl<'a> Compiler<'a> {
                                                 if avail.is_empty() {
                                                     avail.push("none".to_string());
                                                 }
-                                                self.error("G0036", w.line, format!("'{word}' isn't available on `{type_word}` — its contract raises {} (worn via style `{s}`)", avail.join(", ")));
+                                                self.error_in(w.origin, "G0036", w.line, format!("'{word}' isn't available on `{type_word}` — its contract raises {} (worn via style `{s}`)", avail.join(", ")));
                                             } else if declared && !control_word {
                                                 self.d2_lands.push((s.clone(), word.clone(), type_word.clone(), def.line));
                                             }
                                         }
                                         None => {
                                             if !control_word && !view_word {
-                                                self.error("G0036", w.line, format!("'{word}' isn't available on `{type_word}` — a built-in raises `held`, `hovered`, `focused`, `focus_within`, `selected`, `disabled` (worn via style `{s}`)"));
+                                                self.error_in(w.origin, "G0036", w.line, format!("'{word}' isn't available on `{type_word}` — a built-in raises `held`, `hovered`, `focused`, `focus_within`, `selected`, `disabled` (worn via style `{s}`)"));
                                             }
                                         }
                                     }
@@ -5638,7 +5750,7 @@ impl<'a> Compiler<'a> {
         // Positional size arg: `Button 44x44`.
         for a in n.args.iter().chain(instance.iter().flat_map(|i| i.args.iter())) {
             if let AstValue::Size { .. } = a {
-                all_props.push(AstProp { key: "size".to_string(), value: a.clone(), line: n.line });
+                all_props.push(AstProp { key: "size".to_string(), value: a.clone(), line: n.line, origin: n.origin });
             } else if kind != Kind::Gap && kind != Kind::Repeat {
                 let msg = match a {
                     AstValue::Ident { word, .. } if word == "true" || word == "false" => format!("`{word}` is a value, not a name — a property is `key=value` (`selected={word}`)"),
@@ -6605,11 +6717,30 @@ impl<'a> Compiler<'a> {
     /// Lays a temporary tree into the arena: a node, then ALL its direct
     /// children (contiguous), then each child's own children — so
     /// `children` is a range and `subtree_end` bounds the descendants.
+    /// Keeps the file `node` was written in (`node_origins`). Nodes come
+    /// here in the order they are made, lowest first.
+    fn note_origin(&mut self, node: NodeId, origin: u16) {
+        if origin != 0 {
+            self.node_origins.push((node, origin));
+        }
+    }
+
+    /// The file `node`, a node of the page by its number, was written
+    /// in (`origin`).
+    fn node_origin(&self, node: usize) -> u16 {
+        match self.node_origins.binary_search_by_key(&node, |(n, _)| n.index()) {
+            Ok(at) => self.node_origins[at].1,
+            Err(_) => 0,
+        }
+    }
+
     fn flatten(&mut self, root: TmpNode) {
         if root.node.kind == Kind::Popup {
             self.error("G7019", root.node.line, "a Popup is written inside the node it opens beside (a Button, a Check) — as the file's root it has no such node");
         }
+        let origin: u16 = root.origin;
         let id = self.push_slot(root.node, root.props, root.handlers, root.whens, root.transitions, root.custom_states, root.key_claim, root.wearing, root.driver, root.follows, NO_NODE);
+        self.note_origin(id, origin);
         self.place_children(id, root.children);
     }
 
@@ -6681,7 +6812,9 @@ impl<'a> Compiler<'a> {
         let count = children.len() as u32;
         let mut slots: Vec<(NodeId, Vec<TmpNode>)> = Vec::new();
         for child in children {
+            let origin: u16 = child.origin;
             let cid = self.push_slot(child.node, child.props, child.handlers, child.whens, child.transitions, child.custom_states, child.key_claim, child.wearing, child.driver, child.follows, id);
+            self.note_origin(cid, origin);
             slots.push((cid, child.children));
         }
         self.page.nodes[id].children = (first, count);
@@ -6744,6 +6877,13 @@ impl<'a> Compiler<'a> {
     }
 
     fn handler(&mut self, event: &str, p: &AstProp) -> Option<OnHandler> {
+        let outer: u16 = self.enter_origin(p.origin);
+        let handler: Option<OnHandler> = self.handler_inner(event, p);
+        self.origin = outer;
+        handler
+    }
+
+    fn handler_inner(&mut self, event: &str, p: &AstProp) -> Option<OnHandler> {
         if !EVENTS.contains(&event) {
             let hint = match event {
                 "pressed" | "activated" => "activate",
@@ -6882,13 +7022,20 @@ impl<'a> Compiler<'a> {
     }
 
     fn when(&mut self, w: &AstNode, kind: Kind) -> Option<WhenTmp> {
+        let outer: u16 = self.enter_origin(w.origin);
+        let tw: Option<WhenTmp> = self.when_inner(w, kind);
+        self.origin = outer;
+        tw
+    }
+
+    fn when_inner(&mut self, w: &AstNode, kind: Kind) -> Option<WhenTmp> {
         let state = self.state_word(w, false)?;
         let mut props = Vec::new();
         let mut descendants = Vec::new();
         let mut lines: Vec<AstProp> = w.props.clone();
         for item in &w.children {
             match item {
-                AstItem::Assign { key, dollar: false, value, line } => lines.push(AstProp { key: key.clone(), value: value.clone(), line: *line }),
+                AstItem::Assign { key, dollar: false, value, line } => lines.push(AstProp { key: key.clone(), value: value.clone(), line: *line, origin: w.origin }),
                 AstItem::Assign { key, line, .. } => self.error("G0054", *line, format!("`${key}` — a when block sets properties, not theme values")),
                 AstItem::Node(c) => self.error("G0054", c.line, format!("a when block sets properties, not `{}` nodes", c.type_word)),
             }
@@ -6927,7 +7074,7 @@ impl<'a> Compiler<'a> {
                 continue;
             }
             if let Some((node_name, prop_name)) = split_target(&p.key) {
-                let ap = AstProp { key: prop_name.to_string(), value: p.value.clone(), line: p.line };
+                let ap = AstProp { key: prop_name.to_string(), value: p.value.clone(), line: p.line, origin: p.origin };
                 if let Some(prop) = {
                     self.in_when += 1;
                     let r = self.prop_unchecked(&ap);
@@ -7144,7 +7291,7 @@ impl<'a> Compiler<'a> {
                 if matches!(self.page.prop(at, PropKey::Rotate), Some(Value::VNum(angle)) if angle != 0.0) {
                     let line: u32 = self.page.nodes[surface].line;
                     let whose: String = if at == surface { "on it".to_string() } else { format!("on `{}`, a node above it", kind_name(self.page.nodes[at].kind)) };
-                    self.error("G7017", line, format!("a `draw=gpu` Surface cannot be turned, and `rotate=` is written {whose} — the program's own draw calls run in a viewport, which is an upright rectangle; turn what you draw in your own code, or draw into a texture and show it with `draw=picture`"));
+                    self.error_at(index, "G7017", line, format!("a `draw=gpu` Surface cannot be turned, and `rotate=` is written {whose} — the program's own draw calls run in a viewport, which is an upright rectangle; turn what you draw in your own code, or draw into a texture and show it with `draw=picture`"));
                     break;
                 }
                 at = self.page.nodes[at].parent;
@@ -7171,7 +7318,9 @@ impl<'a> Compiler<'a> {
         // GP40 step 2: `for=` style states against their contract (the
         // wear-time twin for plain styles lives in the styles loop) —
         // run first so a bad style errors even when nothing wears it.
-        for (sname, target, word, line) in std::mem::take(&mut self.pending_style_states) {
+        for (sname, target, word, line, origin) in std::mem::take(&mut self.pending_style_states) {
+            // The `when` is a line of the style's file.
+            let outer: u16 = self.enter_origin(origin);
             let view_word = word.starts_with("screen.") || self.page.arrangements.iter().any(|a| self.page.str(*a) == word);
             let control_word = CONTROL_STATE_WORDS.contains(&word.as_str());
             match self.widgets.get(&target) {
@@ -7192,6 +7341,7 @@ impl<'a> Compiler<'a> {
                     }
                 }
             }
+            self.origin = outer;
         }
         // The D2 advisory (customization spec): a plain style whose
         // custom state lands on exactly ONE control type would read
@@ -7262,7 +7412,7 @@ impl<'a> Compiler<'a> {
                 }
                 if self.page.prop(NodeId::from_index(i), PropKey::Interactive) != Some(Value::VBool(true)) {
                     let line = node.line;
-                    self.error("G0073", line, format!("`on:{word}` needs `interactive=true` on the same node — passive boxes are transparent to input, always; the wire alone claims nothing"));
+                    self.error_at(i, "G0073", line, format!("`on:{word}` needs `interactive=true` on the same node — passive boxes are transparent to input, always; the wire alone claims nothing"));
                 }
             }
         }
@@ -7273,7 +7423,7 @@ impl<'a> Compiler<'a> {
             let n = &self.page.nodes[i];
             if n.kind == Kind::Radio && n.choice == NO_CHOICE {
                 let line = n.line;
-                self.error("G0069", line, "exclusivity needs a choice scope — Radio lives inside `choice { }` (`choice size value=medium { Radio small text=\"Small\"; … }`); an independent toggle is `Check`");
+                self.error_at(i, "G0069", line, "exclusivity needs a choice scope — Radio lives inside `choice { }` (`choice size value=medium { Radio small text=\"Small\"; … }`); an independent toggle is `Check`");
             }
         }
         // Anims: flat tracks with start times. A `play` step inlines
@@ -7291,7 +7441,8 @@ impl<'a> Compiler<'a> {
         let deferred = std::mem::take(&mut self.deferred_whens);
         let mut seat_claims: Vec<(NodeId, StrId, State, u32)> = Vec::new();
         let mut screen_writes: Vec<(NodeId, PropKey, State, u32)> = Vec::new();
-        for (state, items, block_line, default_pose) in deferred {
+        for (state, items, block_line, default_pose, origin) in deferred {
+            self.origin = origin;
             // A widget's default pose ranks under every page line: line 0
             // marks it for the order the whens are stored in, below.
             let line: u32 = if default_pose { 0 } else { block_line };
@@ -7318,7 +7469,7 @@ impl<'a> Compiler<'a> {
                     continue;
                 };
                 let kind = self.page.nodes[id].kind;
-                let ap = AstProp { key: prop_name.to_string(), value: value.clone(), line: *l };
+                let ap = AstProp { key: prop_name.to_string(), value: value.clone(), line: *l, origin: crate::ast::ORIGIN_UNSET };
                 if let Some(prop) = {
                     self.in_when += 1;
                     let r = self.prop(&ap, kind);
@@ -7342,6 +7493,7 @@ impl<'a> Compiler<'a> {
                 }
             }
         }
+        self.origin = 0;
         // A `width=fill` wrap label under a content-sized chain wraps
         // at a sliver — the row's leftover for it is the label's own raw
         // minimum, about one word (G1004's leftover flavor, GPAR77):
@@ -7383,7 +7535,7 @@ impl<'a> Compiler<'a> {
             }
             if sliver {
                 let name = if nd.name == NO_STR { "the label".to_string() } else { format!("`{}`", self.page.str(nd.name)) };
-                self.warning("G1004", nd.line, format!("`wrap=true` on {name} wraps at a sliver — it fills the leftover of its row, but the chain above sizes to content, so that leftover is the label's own raw minimum (about one word); bind the chain (`width=fill` down to the label) or cap it (`max_width=fill`)"));
+                self.warning_at(i, "G1004", nd.line, format!("`wrap=true` on {name} wraps at a sliver — it fills the leftover of its row, but the chain above sizes to content, so that leftover is the label's own raw minimum (about one word); bind the chain (`width=fill` down to the label) or cap it (`max_width=fill`)"));
             }
         }
         // One screen vocabulary per posed target (G3005, the shipped
@@ -7517,7 +7669,7 @@ impl<'a> Compiler<'a> {
                         _ => continue,
                     };
                     if n > count {
-                        self.error("G2005", w.line, format!("this gradient declares {count} stops — stop {n} names nothing"));
+                        self.error_at(id, "G2005", w.line, format!("this gradient declares {count} stops — stop {n} names nothing"));
                     }
                 }
             }
@@ -7562,7 +7714,7 @@ impl<'a> Compiler<'a> {
             let hug_w = matches!(pp.width, Len::Hug(_) | Len::Unset) && pp.min_width <= 0.0;
             let hug_h = matches!(pp.height, Len::Hug(_) | Len::Unset) && pp.min_height <= 0.0;
             if matches!(np.width, Len::Fill(_)) && hug_w && !siblings_size[0] || matches!(np.height, Len::Fill(_)) && hug_h && !siblings_size[1] {
-                self.error("G0078", self.page.nodes[i].line, "an overlay `fill` axis under a hug parent with no non-overlay child — nothing determines the size; give the parent a size or the overlay an exact one");
+                self.error_at(i, "G0078", self.page.nodes[i].line, "an overlay `fill` axis under a hug parent with no non-overlay child — nothing determines the size; give the parent a size or the overlay an exact one");
             }
         }
         // The host's own `when` replaces a `for=` widget's response for
@@ -7590,7 +7742,7 @@ impl<'a> Compiler<'a> {
                         continue;
                     }
                     if let Some(p) = wa.props.iter().find(|p| wb.props.iter().any(|q| q.key == p.key)) {
-                        self.error("G0054", wb.line, format!("two `when {}` blocks both set `{:?}` (lines {} and {}) — one writer per condition and property", state_word(&self.page, wa.state), p.key, wa.line, wb.line));
+                        self.error_at(i, "G0054", wb.line, format!("two `when {}` blocks both set `{:?}` (lines {} and {}) — one writer per condition and property", state_word(&self.page, wa.state), p.key, wa.line, wb.line));
                     }
                 }
             }
@@ -7642,7 +7794,7 @@ impl<'a> Compiler<'a> {
             let parent: Option<Kind> = self.placing_parent_kind(i);
             if parent.is_some_and(places_its_children) {
                 let (line, pname): (u32, &str) = (node.line, parent_name(parent));
-                self.error("G1014", line, format!("a {pname} places its children itself, so a margin on one moves nothing — space them with `spacing=` on the {pname} or a `gap` line, or give the {pname} `padding=`"));
+                self.error_at(i, "G1014", line, format!("a {pname} places its children itself, so a margin on one moves nothing — space them with `spacing=` on the {pname} or a `gap` line, or give the {pname} `padding=`"));
             }
         }
         // A posed margin on a stack child (GPAR94, the addon's pose rule
@@ -7665,7 +7817,7 @@ impl<'a> Compiler<'a> {
                 let w = self.page.whens[wi as usize];
                 for pi in w.props.0..w.props.0 + w.props.1 {
                     if matches!(self.page.props[pi as usize].key, PropKey::MarginLeft | PropKey::MarginTop | PropKey::MarginRight | PropKey::MarginBottom) {
-                        self.error("G1014", w.line, "a posed margin on a stack child — the parent seats its children; space them with `spacing=`/`gap`");
+                        self.error_at(i, "G1014", w.line, "a posed margin on a stack child — the parent seats its children; space them with `spacing=`/`gap`");
                     }
                 }
             }
@@ -7726,7 +7878,7 @@ impl<'a> Compiler<'a> {
                     in_list
                 };
                 if !ok {
-                    self.error("G9013", line, "`ListItem` is a List row's root — it belongs at the root of the `repeat` inside a `List`; anywhere else, a `Panel` is the box you want");
+                    self.error_at(i, "G9013", line, "`ListItem` is a List row's root — it belongs at the root of the `repeat` inside a `List`; anywhere else, a `Panel` is the box you want");
                 }
                 continue;
             }
@@ -7740,7 +7892,7 @@ impl<'a> Compiler<'a> {
                 match self.page.nodes[c].kind {
                     Kind::Empty => empties += 1,
                     Kind::Repeat => repeats.push(c),
-                    Kind::Slot => self.error("G9013", self.page.nodes[c].line, "a List has no slots — its rows come from the `repeat`, its statics sit in the body"),
+                    Kind::Slot => self.error_at(c.index(), "G9013", self.page.nodes[c].line, "a List has no slots — its rows come from the `repeat`, its statics sit in the body"),
                     // the `layout` panel: rows one level down
                     Kind::Row | Kind::Flow | Kind::Tiles | Kind::Column => {
                         for g in self.page.children(c) {
@@ -7753,21 +7905,21 @@ impl<'a> Compiler<'a> {
                 }
             }
             match empties {
-                0 => self.error("G9016", line, "a List declares its zero-items view: one `empty { }` in the List body (bare is fine — `empty { }`)"),
+                0 => self.error_at(i, "G9016", line, "a List declares its zero-items view: one `empty { }` in the List body (bare is fine — `empty { }`)"),
                 1 => {}
-                _ => self.error("G9016", line, "one `empty { }` per List — the zero-items view is a single seat"),
+                _ => self.error_at(i, "G9016", line, "one `empty { }` per List — the zero-items view is a single seat"),
             }
             match repeats.len() {
-                0 => self.error("G9010", line, "a List holds exactly one `repeat` — none here; statics alone are a `Column`'s job"),
+                0 => self.error_at(i, "G9010", line, "a List holds exactly one `repeat` — none here; statics alone are a `Column`'s job"),
                 1 => {}
-                _ => self.error("G9010", line, "a List holds exactly one `repeat` — its selection and rows are one roster"),
+                _ => self.error_at(i, "G9010", line, "a List holds exactly one `repeat` — its selection and rows are one roster"),
             }
             for r in &repeats {
                 let mut roots = 0u32;
                 let mut root: Option<NodeId> = None;
                 for c in self.page.children(*r).collect::<Vec<NodeId>>() {
                     match self.page.nodes[c].kind {
-                        Kind::Empty => self.error("G9016", self.page.nodes[c].line, "in a List the zero-items view lives at the LIST level — move `empty { }` beside the repeat, not inside it"),
+                        Kind::Empty => self.error_at(c.index(), "G9016", self.page.nodes[c].line, "in a List the zero-items view lives at the LIST level — move `empty { }` beside the repeat, not inside it"),
                         _ => {
                             roots += 1;
                             root = Some(c);
@@ -7775,10 +7927,10 @@ impl<'a> Compiler<'a> {
                     }
                 }
                 if roots > 1 {
-                    self.error("G9011", self.page.nodes[*r].line, "a List row has ONE root — wrap the parts in a single `ListItem { … }`");
+                    self.error_at(r.index(), "G9011", self.page.nodes[*r].line, "a List row has ONE root — wrap the parts in a single `ListItem { … }`");
                 } else if let Some(root) = root {
                     if self.page.nodes[root].kind != Kind::ListItem {
-                        self.error("G9011", self.page.nodes[root].line, "a List row's root is a `ListItem` — the one tap-and-select surface per row; wrap this in one (`ListItem { … }`)");
+                        self.error_at(root.index(), "G9011", self.page.nodes[root].line, "a List row's root is a `ListItem` — the one tap-and-select surface per row; wrap this in one (`ListItem { … }`)");
                     } else {
                         // G9014 (advisory): the List flips SELECTED on the
                         // ROW root — a `when selected` below it never fires.
@@ -7797,7 +7949,7 @@ impl<'a> Compiler<'a> {
                                 if watched == root || self.page.nodes[watched].kind.is_press_surface() {
                                     continue;
                                 }
-                                self.warning("G9014", self.page.nodes[d.index()].line, "`when selected` below the row's root never fires — the List checks the ListItem; style the root (or watch it: the row's own state)");
+                                self.warning_at(d.index(), "G9014", self.page.nodes[d.index()].line, "`when selected` below the row's root never fires — the List checks the ListItem; style the root (or watch it: the row's own state)");
                                 break;
                             }
                         }
@@ -7818,11 +7970,11 @@ impl<'a> Compiler<'a> {
                         break;
                     }
                     if an.kind == Kind::Scroll {
-                        self.warning("G9015", line, "a viewport List inside a Scroll gets its minimum — near zero — and starves; give the List a `height=` (or `height=hug` if the page should scroll as one)");
+                        self.warning_at(i, "G9015", line, "a viewport List inside a Scroll gets its minimum — near zero — and starves; give the List a `height=` (or `height=hug` if the page should scroll as one)");
                         break;
                     }
                     if an.kind.is_stack() && (an.placement.valign != Align::AlignUnset || matches!(an.placement.height, Len::Hug(_))) {
-                        self.warning("G9015", line, "an anchored or hug ancestor asks this List for its minimum — near zero — and starves it; write `height=` on the List (or `height=hug` for a content-sized menu)");
+                        self.warning_at(i, "G9015", line, "an anchored or hug ancestor asks this List for its minimum — near zero — and starves it; write `height=` on the List (or `height=hug` for a content-sized menu)");
                         break;
                     }
                     if an.parent == NO_NODE {
@@ -8072,6 +8224,7 @@ impl<'a> Compiler<'a> {
     fn prop_transitions(&mut self) {
         let rules = std::mem::take(&mut self.deferred_prop_transitions);
         for n in &rules {
+            self.origin = n.origin;
             let mut duration: Option<f32> = None;
             let mut easing: StrId = NO_STR;
             for p in &n.props {
@@ -8146,6 +8299,7 @@ impl<'a> Compiler<'a> {
                 }
             }
         }
+        self.origin = 0;
         // A state-change rule times every property its flip's `when`
         // responses move; a property rule on one of them is a second
         // timing for the same change.
