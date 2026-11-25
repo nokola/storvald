@@ -1,4 +1,4 @@
-# `scroll_step` at commit ac2d143232d109810faed65ae46094536437b7b1: instructions by function, 3347274 in all.
+# `scroll_step` at commit 38ccb856e36a4426111a6a674dc986d15677af86: instructions by function, 3347567 in all.
 # A function's own code only: what it calls is counted at the called function.
 662840 gogo_ui::draw::walk'2
 636741 <gogo_ui::page::Page>::kind_default::{closure#0}
@@ -7,13 +7,13 @@
 383587 <gogo_ui::runtime::Resolved>::prop_by_id
 97152 <gogo_ui::runtime::Resolved>::written_from
 77768 <gogo_ui::layout::LookCopy>::diff
-63541 __memcpy_avx_unaligned_erms
+63479 __memcpy_avx_unaligned_erms
 52910 gogo_ui::runtime::deref
-42127 gogo_ui::runtime::resolve_into
+42482 gogo_ui::runtime::resolve_into
 39626 gogo_ui::draw::clips
 28850 <gogo_ui::runtime::Resolved>::inherited
 28575 <gogo_ui::layout::Lay>::show_under
-25326 gogo_ui::runtime::resolve_into::{closure#44}
+25326 gogo_ui::runtime::resolve_into::{closure#46}
 23079 <gogo_ui::tree::Children as core::iter::traits::iterator::Iterator>::next
 19181 <gogo_ui::tree::Subtree as core::iter::traits::iterator::Iterator>::next
 18612 <gogo_ui::draw::DrawCache>::patch
@@ -40,14 +40,14 @@
 3305 gogo_ui::layout::follow_table::<[f32; 2]>
 3216 <gogo_ui::runtime::Resolved>::ident_by_id
 2629 <gogo_ui::runtime::Resolved>::font_size
-2189 __memcmp_avx2_movbe
+2188 __memcmp_avx2_movbe
 1608 <(gogo_ui::page::NodeId, gogo_ui::page::Prop) as core::slice::cmp::SlicePartialEq<(gogo_ui::page::NodeId, gogo_ui::page::Prop)>>::equal_same_length
 1605 gogo_ui::draw::walk
 1413 gogo_ui::runtime::settle_seats
 1412 core::slice::sort::unstable::ipnsort::<gogo_ui::page::NodeId, <gogo_ui::page::NodeId as core::cmp::PartialOrd>::lt>
 1080 core::slice::sort::shared::pivot::median3_rec::<gogo_ui::page::StrId, <gogo_ui::page::StrId as core::cmp::PartialOrd>::lt>'2
 650 core::slice::sort::shared::pivot::median3_rec::<gogo_ui::page::StrId, <gogo_ui::page::StrId as core::cmp::PartialOrd>::lt>
-513 <gogo_ui::input::Input>::touch
+507 <gogo_ui::input::Input>::touch
 438 <gogo_ui::layout::LayoutCache>::patch
 258 <gogo_ui::runtime::Runtime>::tick
 216 <gogo_ui::draw::DrawCache>::emit
@@ -78,10 +78,10 @@
 61 <gogo_ui::layout::LookCopy>::take
 60 <turbodot::pages::PageStack>::pointer_to
 58 <turbodot::program::Program<storvald_perf::AppState>>::pointer
+53 <gogo_ui::runtime::Runtime>::glide_in_place
 52 <alloc::vec::Vec<gogo_ui::page::NodeId>>::extend_desugared::<core::iter::adapters::filter::Filter<core::iter::adapters::copied::Copied<core::slice::iter::Iter<gogo_ui::page::NodeId>>, <gogo_ui::layout::LayoutCache>::patch::{closure#0}>>
 52 <turbodot::pages::PageUi>::root_pose
 50 <turbodot::program::Program<storvald_perf::AppState>>::place_code_pictures
-46 <gogo_ui::runtime::Runtime>::glide_in_place
 44 <gogo_ui::frame::KeptFrame>::frame_retained
 42 gogo_ui::layout::diff_pairs::<bool>
 40 <alloc::vec::Vec<gogo_ui::anim::Player> as core::ops::drop::Drop>::drop

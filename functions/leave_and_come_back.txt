@@ -1,36 +1,36 @@
-# `leave_and_come_back` at commit ac2d143232d109810faed65ae46094536437b7b1: instructions by function, 117702 in all.
+# `leave_and_come_back` at commit 38ccb856e36a4426111a6a674dc986d15677af86: instructions by function, 118464 in all.
 # A function's own code only: what it calls is counted at the called function.
 22314 <gogo_ui::runtime::Runtime>::set_screen
-10574 _int_free_merge_chunk
-7790 free
+10808 _int_free_merge_chunk
+7799 free
 6478 <gogo_ui::runtime::Runtime>::tick
-5738 __memcmp_avx2_movbe
+5897 __memcmp_avx2_movbe
 4909 <gogo_ui::runtime::Runtime>::is_hook_playing_by_id
-4410 gogo_ui::runtime::resolve_into
+4504 gogo_ui::runtime::resolve_into
 3673 gogo_ui::layout::follow_table::<gogo_ui::layout::Rect>
 3560 <turbodot::program::Program<storvald_perf::AppState>>::frame
+3298 _int_free_maybe_trim
 3284 <gogo_ui::anim::Player>::apply_at
-3226 _int_free_maybe_trim
 2432 <turbodot::pages::PageUi>::frame
 2330 __memcpy_avx_unaligned_erms
-2278 _int_free_chunk
+2329 _int_free_chunk
 2033 gogo_ui::layout::follow_table::<[f32; 2]>
+1861 unlink_chunk.isra.0
 1855 <gogo_ui::runtime::Runtime>::root_pose
 1779 <turbodot::program::Program<storvald_perf::AppState>>::frame_pages
-1767 unlink_chunk.isra.0
 1682 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::dealloc
 1652 <gogo_ui::input::Input>::tick
 1322 core::ptr::drop_glue::<gogo_ui::layout::Tables>
-1189 <gogo_ui::anim::Player>::new
+1199 <gogo_ui::anim::Player>::new
 1006 <turbodot::pages::PageUi>::relayout
 1001 <gogo_ui::anim::Easing>::apply
 968 gogo_ui::runtime::settle_seats
 936 __rustc::__rust_dealloc
 897 <gogo_ui::draw::DrawCache>::patch
 884 gogo_ui::anim::ease_in
-858 core::ptr::drop_glue::<gogo_ui::runtime::Retained>
+861 core::ptr::drop_glue::<gogo_ui::runtime::Retained>
 744 <turbodot::program::Program<storvald_perf::AppState>>::place_code_pictures
-708 core::ptr::drop_glue::<gogo_ui::page::Page>
+714 core::ptr::drop_glue::<gogo_ui::page::Page>
 640 <gogo_ui::runtime::Runtime>::play_id
 617 <alloc::vec::Vec<gogo_ui::anim::Player> as core::ops::drop::Drop>::drop
 560 <turbodot::pages::PageUi>::root_pose
@@ -50,17 +50,17 @@
 330 <turbodot::pages::PageStack>::get
 324 <gogo_ui::layout::LookCopy>::follow
 297 <gogo_ui::page::Page>::kind_default::{closure#0}
+295 core::ptr::drop_glue::<gogo_ui::runtime::Runtime>
 294 gogo_ui::runtime::compose_anim
-286 core::ptr::drop_glue::<gogo_ui::runtime::Runtime>
 238 <gogo_ui::anim::Easing>::parse
 222 <gogo_ui::draw::DrawCache>::run
 213 core::ptr::drop_glue::<gogo_ui::tree::PlacedTree>
 201 <gogo_ui::runtime::Runtime>::compose_motion
+189 <gogo_ui::runtime::Runtime>::glide_in_place
 189 gogo_ui::layout::diff_pairs::<f32>
 188 <gogo_ui::anim::Channel>::parse
 180 <turbodot::program::Program<storvald_perf::AppState>>::call_with_placed
 170 <alloc::vec::Vec<(gogo_ui::page::NodeId, gogo_ui::page::PropKey, bool)> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<(gogo_ui::page::NodeId, gogo_ui::page::PropKey, bool), core::iter::adapters::filter_map::FilterMap<core::iter::adapters::filter::Filter<core::slice::iter::Iter<gogo_ui::page::AnimTrack>, <gogo_ui::runtime::Runtime>::play_id::{closure#1}>, <gogo_ui::runtime::Runtime>::play_id::{closure#2}>>>::from_iter
-168 <gogo_ui::runtime::Runtime>::glide_in_place
 156 <gogo_ui::layout::LayoutCache>::remember_part
 156 <turbodot::program::Program<storvald_perf::AppState>>::back_once
 154 <turbodot::program::Program<storvald_perf::AppState>>::order_drawn_pages

@@ -9,26 +9,26 @@ What gogo and TurboDot cost in the measured program (`perf/` on `main`), counted
 
 ## Last run
 
-2026-11-25T02:39:44Z, commit [ac2d143](https://github.com/nokola/storvald/commit/ac2d143232d109810faed65ae46094536437b7b1), rustc 1.100.0, machine `github-ubuntu26`. 26 runs so far.
+2026-11-25T04:57:50Z, commit [38ccb85](https://github.com/nokola/storvald/commit/38ccb856e36a4426111a6a674dc986d15677af86), rustc 1.100.0, machine `github-ubuntu26`. 27 runs so far.
 
 | Scenario | What is counted | Instructions | Against run before | Allocations | Nodes placed | Nodes measured |
 |---|---|---:|---:|---:|---:|---:|
-| `compile_controls_page` | gogo compiles the controls page's file | 3,152,327 | +0.2 % | 3,517 | 0 | 0 |
-| `start_program` | program is made and runs its first frame | 1,172,746 | -0.2 % | 343 | 6 | 8 |
-| `open_controls_page` | tap that opens the controls page: page is made | 120,775 | -0.4 % | 67 | 0 | 0 |
-| `first_frame_of_controls_page` | first frame of the controls page: its first layout | 4,895,410 | -0.1 % | 1,664 | 115 | 229 |
-| `open_list_page` | tap that opens the list page: page and its 100 rows are made | 1,811,104 | -0.4 % | 2,561 | 0 | 0 |
-| `first_frame_of_list_page` | first frame of the list page: its first layout | 21,524,348 | -0.1 % | 6,047 | 413 | 910 |
-| `open_list_page_again` | same tap, at page's second open | 1,821,614 | -0.3 % | 2,556 | 0 | 0 |
-| `first_frame_of_list_page_again` | first frame of the list page at its second open | 8,233,402 | -0.0 % | 599 | 413 | 910 |
-| `draw_list_of_list_page` | draw list of the list page, walked whole | 2,702,037 | -0.0 % | 7 | 0 | 0 |
-| `still_frame` | frame of the controls page while nothing changes | 3,160 | -0.1 % | 0 | 0 | 0 |
-| `mouse_move` | mouse moves onto another row of the controls page, and the frame after | 112,639 | -41.8 % | 0 | 0 | 0 |
-| `scroll_step` | finger pans the list one step, and the frame after | 3,347,274 | -3.2 % | 0 | 0 | 0 |
-| `slider_drag_step` | finger drags a slider one step, and the frame after | 62,673 | -56.6 % | 0 | 0 | 0 |
-| `text_change` | code writes a new text to one label, and the frame after | 68,731 | -57.7 % | 3 | 0 | 2 |
-| `slide_frame` | frame while the controls page slides in | 3,801 | -0.1 % | 0 | 0 | 0 |
-| `leave_and_come_back` | controls page leaves and first page comes back, to the end of both anims | 117,702 | -53.8 % | 0 | 0 | 0 |
+| `compile_controls_page` | gogo compiles the controls page's file | 3,164,384 | +0.4 % | 3,517 | 0 | 0 |
+| `start_program` | program is made and runs its first frame | 1,173,084 | +0.0 % | 343 | 6 | 8 |
+| `open_controls_page` | tap that opens the controls page: page is made | 121,083 | +0.3 % | 67 | 0 | 0 |
+| `first_frame_of_controls_page` | first frame of the controls page: its first layout | 4,897,360 | +0.0 % | 1,664 | 115 | 229 |
+| `open_list_page` | tap that opens the list page: page and its 100 rows are made | 1,813,840 | +0.2 % | 2,561 | 0 | 0 |
+| `first_frame_of_list_page` | first frame of the list page: its first layout | 21,522,657 | -0.0 % | 6,047 | 413 | 910 |
+| `open_list_page_again` | same tap, at page's second open | 1,826,415 | +0.3 % | 2,556 | 0 | 0 |
+| `first_frame_of_list_page_again` | first frame of the list page at its second open | 8,246,919 | +0.2 % | 599 | 413 | 910 |
+| `draw_list_of_list_page` | draw list of the list page, walked whole | 2,702,037 | +0.0 % | 7 | 0 | 0 |
+| `still_frame` | frame of the controls page while nothing changes | 3,164 | +0.1 % | 0 | 0 | 0 |
+| `mouse_move` | mouse moves onto another row of the controls page, and the frame after | 113,522 | +0.8 % | 0 | 0 | 0 |
+| `scroll_step` | finger pans the list one step, and the frame after | 3,347,567 | +0.0 % | 0 | 0 | 0 |
+| `slider_drag_step` | finger drags a slider one step, and the frame after | 62,702 | +0.0 % | 0 | 0 | 0 |
+| `text_change` | code writes a new text to one label, and the frame after | 68,764 | +0.0 % | 3 | 0 | 2 |
+| `slide_frame` | frame while the controls page slides in | 3,819 | +0.5 % | 0 | 0 | 0 |
+| `leave_and_come_back` | controls page leaves and first page comes back, to the end of both anims | 118,464 | +0.6 % | 0 | 0 | 0 |
 
 ## Numbers that moved
 
@@ -36,6 +36,12 @@ A number that differs from the run before: an instruction count by more than 0.2
 
 | Run | Commit | Scenario | Metric | Before | After | Change | Also changed |
 |---|---|---|---|---:|---:|---:|---|
+| 2026-11-25T04:57:50Z | [38ccb85](https://github.com/nokola/storvald/commit/38ccb856e36a4426111a6a674dc986d15677af86) | `leave_and_come_back` | instructions | 117,702 | 118,464 | +0.6 % |  |
+| 2026-11-25T04:57:50Z | [38ccb85](https://github.com/nokola/storvald/commit/38ccb856e36a4426111a6a674dc986d15677af86) | `slide_frame` | instructions | 3,801 | 3,819 | +0.5 % |  |
+| 2026-11-25T04:57:50Z | [38ccb85](https://github.com/nokola/storvald/commit/38ccb856e36a4426111a6a674dc986d15677af86) | `mouse_move` | instructions | 112,639 | 113,522 | +0.8 % |  |
+| 2026-11-25T04:57:50Z | [38ccb85](https://github.com/nokola/storvald/commit/38ccb856e36a4426111a6a674dc986d15677af86) | `open_list_page_again` | instructions | 1,821,614 | 1,826,415 | +0.3 % |  |
+| 2026-11-25T04:57:50Z | [38ccb85](https://github.com/nokola/storvald/commit/38ccb856e36a4426111a6a674dc986d15677af86) | `open_controls_page` | instructions | 120,775 | 121,083 | +0.3 % |  |
+| 2026-11-25T04:57:50Z | [38ccb85](https://github.com/nokola/storvald/commit/38ccb856e36a4426111a6a674dc986d15677af86) | `compile_controls_page` | instructions | 3,152,327 | 3,164,384 | +0.4 % |  |
 | 2026-11-25T02:39:44Z | [ac2d143](https://github.com/nokola/storvald/commit/ac2d143232d109810faed65ae46094536437b7b1) | `leave_and_come_back` | instructions | 254,930 | 117,702 | -53.8 % |  |
 | 2026-11-25T02:39:44Z | [ac2d143](https://github.com/nokola/storvald/commit/ac2d143232d109810faed65ae46094536437b7b1) | `leave_and_come_back` | allocations | 1 | 0 | -100.0 % |  |
 | 2026-11-25T02:39:44Z | [ac2d143](https://github.com/nokola/storvald/commit/ac2d143232d109810faed65ae46094536437b7b1) | `text_change` | instructions | 162,670 | 68,731 | -57.7 % |  |
@@ -90,9 +96,3 @@ A number that differs from the run before: an instruction count by more than 0.2
 | 2026-11-24T18:02:40Z | [29b46a5](https://github.com/nokola/storvald/commit/29b46a58732d1e8f489032fbd62f429a7823117f) | `compile_controls_page` | instructions | 3,144,478 | 3,151,450 | +0.2 % |  |
 | 2026-11-24T14:07:45Z | [d646974](https://github.com/nokola/storvald/commit/d64697456f2a2bb2e5e5c3670d928a136914f952) | `leave_and_come_back` | instructions | 253,159 | 254,321 | +0.5 % |  |
 | 2026-11-24T14:07:45Z | [d646974](https://github.com/nokola/storvald/commit/d64697456f2a2bb2e5e5c3670d928a136914f952) | `slide_frame` | instructions | 3,784 | 3,801 | +0.4 % |  |
-| 2026-11-24T14:07:45Z | [d646974](https://github.com/nokola/storvald/commit/d64697456f2a2bb2e5e5c3670d928a136914f952) | `mouse_move` | instructions | 192,657 | 193,183 | +0.3 % |  |
-| 2026-11-24T14:07:45Z | [d646974](https://github.com/nokola/storvald/commit/d64697456f2a2bb2e5e5c3670d928a136914f952) | `still_frame` | instructions | 3,130 | 3,154 | +0.8 % |  |
-| 2026-11-24T14:07:45Z | [d646974](https://github.com/nokola/storvald/commit/d64697456f2a2bb2e5e5c3670d928a136914f952) | `open_list_page_again` | instructions | 1,827,375 | 1,819,738 | -0.4 % |  |
-| 2026-11-24T14:07:45Z | [d646974](https://github.com/nokola/storvald/commit/d64697456f2a2bb2e5e5c3670d928a136914f952) | `open_list_page` | instructions | 1,815,305 | 1,809,406 | -0.3 % |  |
-| 2026-11-24T14:07:45Z | [d646974](https://github.com/nokola/storvald/commit/d64697456f2a2bb2e5e5c3670d928a136914f952) | `open_controls_page` | instructions | 120,216 | 121,036 | +0.7 % |  |
-| 2026-11-24T14:07:45Z | [d646974](https://github.com/nokola/storvald/commit/d64697456f2a2bb2e5e5c3670d928a136914f952) | `compile_controls_page` | allocations | 3,518 | 3,517 | -0.0 % |  |

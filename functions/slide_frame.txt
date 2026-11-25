@@ -1,7 +1,7 @@
-# `slide_frame` at commit ac2d143232d109810faed65ae46094536437b7b1: instructions by function, 3801 in all.
+# `slide_frame` at commit 38ccb856e36a4426111a6a674dc986d15677af86: instructions by function, 3819 in all.
 # A function's own code only: what it calls is counted at the called function.
 1656 <gogo_ui::runtime::Runtime>::set_screen
-367 __memcmp_avx2_movbe
+385 __memcmp_avx2_movbe
 342 <gogo_ui::runtime::Runtime>::tick
 234 <turbodot::program::Program<storvald_perf::AppState>>::frame
 178 <turbodot::pages::PageUi>::frame

@@ -1,7 +1,7 @@
-# `mouse_move` at commit ac2d143232d109810faed65ae46094536437b7b1: instructions by function, 112639 in all.
+# `mouse_move` at commit 38ccb856e36a4426111a6a674dc986d15677af86: instructions by function, 113522 in all.
 # A function's own code only: what it calls is counted at the called function.
+16093 gogo_ui::runtime::resolve_into
 15435 gogo_ui::draw::walk'2
-15228 gogo_ui::runtime::resolve_into
 14458 <gogo_ui::page::Page>::kind_default::{closure#0}
 10206 <gogo_ui::runtime::Resolved>::prop_by_id
 9180 <gogo_ui::page::Page>::prop_by_id
@@ -9,7 +9,7 @@
 7008 gogo_ui::draw::hit
 5535 <gogo_ui::tree::Children as core::iter::traits::iterator::Iterator>::next
 4420 gogo_ui::draw::hit_laid_at
-2904 __memcpy_avx_unaligned_erms
+2906 __memcpy_avx_unaligned_erms
 1758 gogo_ui::layout::follow_table::<gogo_ui::layout::Rect>
 1665 gogo_ui::draw::clips
 1656 <gogo_ui::runtime::Runtime>::set_screen
@@ -22,10 +22,10 @@
 590 gogo_ui::draw::walk
 438 <gogo_ui::runtime::Runtime>::end_state_anims
 438 gogo_ui::runtime::settle_seats
-408 gogo_ui::runtime::find_rule
-405 <gogo_ui::input::Input>::apply_hover
+402 <gogo_ui::input::Input>::apply_hover
+402 gogo_ui::runtime::find_rule
 392 gogo_ui::runtime::kind_visual_default
-337 __memcmp_avx2_movbe
+356 __memcmp_avx2_movbe
 302 <alloc::vec::Vec<(gogo_ui::page::NodeId, gogo_ui::anim::Channel, f32)>>::retain::<gogo_ui::runtime::resolve_into::{closure#0}>
 288 <gogo_ui::runtime::Resolved>::color_by_id
 272 gogo_ui::draw::own_opacity
@@ -55,8 +55,8 @@
 91 <turbodot::pages::PageStack>::hover
 83 gogo_ui::runtime::compose_anim
 80 <gogo_ui::runtime::Resolved>::slider_value
-75 <gogo_ui::input::Input>::hover_sample
 74 <gogo_ui::draw::DrawCache>::run
+74 <gogo_ui::input::Input>::hover_sample
 74 gogo_ui::runtime::compose_anim::{closure#0}
 72 core::ptr::drop_glue::<gogo_ui::runtime::Resolved>
 66 <gogo_ui::runtime::Runtime>::compose_motion
@@ -64,6 +64,7 @@
 63 <turbodot::program::Program<storvald_perf::AppState>>::page_that_takes
 63 gogo_ui::layout::diff_pairs::<f32>
 57 __memset_avx2_unaligned_erms
+53 <gogo_ui::runtime::Runtime>::glide_in_place
 52 <gogo_ui::layout::LayoutCache>::remember_part
 52 <turbodot::pages::PageUi>::root_pose
 50 <turbodot::program::Program<storvald_perf::AppState>>::hover_sample
@@ -71,7 +72,6 @@
 50 gogo_ui::draw::walk::{closure#2}
 49 <turbodot::pages::PageUi>::covers
 48 <alloc::vec::Vec<(turbodot::pages::PageId, gogo_ui::input::Event)>>::extend_desugared::<core::iter::adapters::map::Map<gogo_ui::input::EventListIntoIter, <turbodot::pages::PageStack>::hover::{closure#0}>>
-46 <gogo_ui::runtime::Runtime>::glide_in_place
 44 <gogo_ui::frame::KeptFrame>::frame_retained
 42 gogo_ui::layout::diff_pairs::<bool>
 40 <alloc::vec::Vec<gogo_ui::anim::Player> as core::ops::drop::Drop>::drop

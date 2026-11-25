@@ -1,4 +1,4 @@
-# `text_change` at commit ac2d143232d109810faed65ae46094536437b7b1: instructions by function, 68731 in all.
+# `text_change` at commit 38ccb856e36a4426111a6a674dc986d15677af86: instructions by function, 68764 in all.
 # A function's own code only: what it calls is counted at the called function.
 14178 gogo_ui::draw::walk'2
 8150 <gogo_ui::page::Page>::kind_default::{closure#0}
@@ -7,7 +7,7 @@
 5535 <gogo_ui::tree::Children as core::iter::traits::iterator::Iterator>::next
 5267 <gogo_ui::runtime::Resolved>::prop_by_id
 2987 __memcpy_avx_unaligned_erms
-2029 gogo_ui::runtime::resolve_into
+2057 gogo_ui::runtime::resolve_into
 1758 gogo_ui::layout::follow_table::<gogo_ui::layout::Rect>
 1668 <gogo_ui::runtime::Runtime>::set_screen
 1315 <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as core::hash::Hasher>::write
@@ -22,7 +22,7 @@
 438 gogo_ui::runtime::settle_seats
 379 <gogo_ui::runtime::Resolved>::inherited
 360 _int_malloc
-339 __memcmp_avx2_movbe
+337 __memcmp_avx2_movbe
 314 gogo_text::cache_key
 283 <gogo_ui::layout::Lay>::size_at_flag
 258 <gogo_ui::runtime::Runtime>::tick
@@ -40,7 +40,7 @@
 146 <turbodot::program::Program<storvald_perf::AppState>>::frame
 140 roundf
 136 <gogo_text::TextEngine>::measure
-126 gogo_ui::runtime::resolve_into::{closure#44}
+126 gogo_ui::runtime::resolve_into::{closure#46}
 125 <gogo_ui::layout::LayoutCache>::run
 123 <turbodot::program::Program<storvald_perf::AppState>>::frame_pages
 121 <gogo_text::EpxMeasure as gogo_ui::layout::TextMeasure>::identity
@@ -64,12 +64,12 @@
 63 gogo_ui::layout::diff_pairs::<f32>
 60 <gogo_ui::runtime::Runtime>::set_prop_by_id
 58 <gogo_ui::runtime::Resolved>::push_override
+53 <gogo_ui::runtime::Runtime>::glide_in_place
 52 <gogo_ui::layout::LayoutCache>::remember_part
 52 <turbodot::pages::PageUi>::root_pose
 50 <turbodot::program::Program<storvald_perf::AppState>>::place_code_pictures
 50 gogo_ui::draw::walk::{closure#2}
 48 <alloc::raw_vec::RawVec<char>>::grow_one
-46 <gogo_ui::runtime::Runtime>::glide_in_place
 44 <gogo_ui::frame::KeptFrame>::frame_retained
 42 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::alloc
 42 gogo_ui::draw::text_align
