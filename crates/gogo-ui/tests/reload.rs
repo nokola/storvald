@@ -541,3 +541,63 @@ fn the_builds_number_of_a_widgets_arrangement_names_the_same_one_after_a_reload(
     swap(&mut page, &mut runtime, fresh).unwrap();
     assert_eq!((page.control_arrangement(a, "on"), page.control_arrangement(a, "wide")), (None, Some(ArrangementId::new(1))));
 }
+
+/// What a build writes for the widget `Lamp` below: the enum of its
+/// anims, and the tie between the enum and the names of one instance.
+#[derive(Clone, Copy)]
+#[repr(u32)]
+enum LampAnim {
+    Dim = 0,
+    Glow = 1,
+}
+
+impl gogo_ui::ControlAnimName for LampAnim {
+    fn place(self) -> u32 {
+        self as u32
+    }
+}
+
+#[derive(Clone, Copy)]
+struct LampNames {
+    root: NodeId,
+}
+
+impl gogo_ui::HasAnims for LampNames {
+    type Anim = LampAnim;
+
+    fn root(&self) -> NodeId {
+        self.root
+    }
+}
+
+/// A widget's anim keeps the place the build gave it among the widget's
+/// anims when a save declares another anim ahead of it.
+///
+/// Needed because the program's code holds that place (`LampAnim::Dim`
+/// is 0) and is not built again by a reload: without it, after such a
+/// save `Runtime::play_in(page, &NAMES.a, LampAnim::Dim, ..)` plays the
+/// new anim, until the next build.
+#[test]
+fn the_builds_number_of_a_widgets_anim_names_the_same_one_after_a_reload() {
+    let source = "widget Lamp {\n    anim dim { bulb.opacity from=1, to=0, duration=0.1 }\n    Panel box width=20, height=20 { Rectangle bulb width=20, height=20, color=#FFFFFFFF }\n}\nView page { Row both halign=left, valign=top { Lamp a; Lamp b } }\n";
+    let kit = build(&[("page.gogo", source)], &[], &[]);
+    let mut page: Page = kit.page("page.gogo");
+    let mut runtime = Runtime::new(&page);
+    let (a, b): (LampNames, LampNames) = (LampNames { root: page.find("a").unwrap() }, LampNames { root: page.find("b").unwrap() });
+    assert_eq!(page.anim_in(&a, LampAnim::Dim), Some(page.intern_lookup("a/dim")), "the build's `LampAnim::Dim` holds 0");
+
+    kit.edit("page.gogo", "    anim dim {", "    anim glow { bulb.opacity from=0, to=1, duration=0.1 }\n    anim dim {");
+    let fresh: Page = kit.recompile("page.gogo").unwrap();
+    swap(&mut page, &mut runtime, fresh).unwrap();
+    assert_eq!((page.anim_in(&a, LampAnim::Dim), page.anim_in(&a, LampAnim::Glow)), (Some(page.intern_lookup("a/dim")), Some(page.intern_lookup("a/glow"))), "the number in the build's `LampAnim::Dim` names another anim after the reload");
+    assert_eq!(page.anim_in(&b, LampAnim::Dim), Some(page.intern_lookup("b/dim")), "and so for the second instance");
+
+    // The file drops the built anim: its place stays, with no name, so
+    // the new one never takes the number the code holds.
+    kit.edit("page.gogo", "    anim dim { bulb.opacity from=1, to=0, duration=0.1 }\n", "");
+    let fresh: Page = kit.recompile("page.gogo").unwrap();
+    swap(&mut page, &mut runtime, fresh).unwrap();
+    assert_eq!((page.anim_in(&a, LampAnim::Dim), page.anim_in(&a, LampAnim::Glow)), (None, Some(page.intern_lookup("a/glow"))));
+    runtime.play_in(&page, &a, LampAnim::Dim, gogo_ui::Finish::Nothing);
+    assert!(!runtime.is_playing_in(&page, &a, LampAnim::Glow), "a play of the dropped anim plays nothing");
+}

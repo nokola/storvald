@@ -40,4 +40,6 @@ anim nudge {
 Button saveButton text="Save", on:activate=play(nudge)
 ```
 
+An `anim` beside the body of a `widget` or `control` is copied for every instance: `play(x)` in the body plays the copy of the instance the node is in, and code plays one instance's copy with `Runtime::play_in(page, &NAMES.<instance>, <Widget>Anim::<Name>, …)`.
+
 The anim header carries playback (`repeat=forever`, `speed=`) and honestly-named defaults: `duration_each=` is EVERY step's default duration (the word says per-step — a `then`-chain can't make it lie), `easing=` and `autoreverse=true` distribute the same way, and a line's own words always win, through any depth of `group`s. The Main Menu example (the `_example-mainmenu` card) is the staggered entrance as a complete screen.

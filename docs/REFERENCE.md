@@ -2798,6 +2798,42 @@ A build generates an `enum Anim` per page, and the calls are then
 true)` and `rt.is_playing(Anim::Appear)`: a misspelled anim does not
 compile.
 
+**An anim of a widget** — an `anim` written beside the body of a
+`widget` or `control` is copied for every instance, and `play(x)` in the
+body plays the copy of the instance the node is in:
+
+```kdl
+widget Lamp {
+    anim dim { bulb.opacity from=1, to=0, duration=0.3 }
+    Button box width=40, height=40, background=#00000000,
+        on:activate=play(dim) {
+        Rectangle bulb width=40, height=40, color=#FFFFFFFF
+    }
+}
+View page {
+    Row lamps spacing=8 { Lamp hallLamp; Lamp deskLamp }
+}
+```
+
+A tap on `hallLamp` dims its bulb and leaves the bulb of `deskLamp` as
+it was. From code, a build writes one `enum` per widget that declares
+anims, and the calls name the instance (nothing checks this example: the
+names are the ones a build writes):
+
+```rust partial
+rt.play_in(&page, &NAMES.hall_lamp, LampAnim::Dim, Finish::Nothing);
+if rt.is_playing_in(&page, &NAMES.desk_lamp, LampAnim::Dim) {
+    rt.stop_in(&page, &NAMES.desk_lamp, LampAnim::Dim, true);
+}
+```
+
+`LampAnim` belongs to `LampNames`: handing it to another widget's
+instance, or to `rt.play` (the page's own anims), does not compile.
+`page.anim_in(&NAMES.hall_lamp, LampAnim::Dim)` is the name
+`rt.take_finished` hands out for that copy. On a page compiled while the
+program runs, the copy is found by its name:
+`page.intern_lookup("hallLamp/dim")`.
+
 **What `stop` puts back** — every property the anim wrote returns to what
 the file says without the anim: the declared value; the `when` value
 holding at the time; or a FINISHED anim's end pose the play started from
@@ -3096,6 +3132,7 @@ glide freezes mid-flight until the next input.
 | Call | Purpose |
 |------|---------|
 | `rt.play` / `stop` / `is_playing` / `take_finished` (and the `_id` forms) | Animations (see Animations, Playing). |
+| `rt.play_in` / `stop_in` / `is_playing_in`, `page.anim_in` | An anim of one widget instance (`<Widget>Anim`); each instance plays its own copy. |
 | `rt.go` / `toggle` / `go_instant` / `arrangement_is` / `arrangement_settled` | Arrangements — flip the standing pose (`Arrangement::Base` = the declarations). |
 | `rt.go_in` / `toggle_in` / `go_in_instant` / `arrangement_in` (and the `_id` forms) | The arrangement of one widget instance (`<Widget>Arrangement::Base` = none on). |
 | `rt.set_screen(&page, orientation, class)` | Names the screen's orientation and size class; every `when screen.*` re-poses at once. |

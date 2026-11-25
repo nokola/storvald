@@ -6,6 +6,8 @@
 //! type here is `Copy` + `Debug`, and `Debug` output IS the emitted Rust
 //! literal (see `emit.rs`) — keep variant names unique across enums.
 
+use crate::runtime::{ControlAnimName, HasAnims};
+
 /// Declares an id over `u32` as its own type: `Copy`, ordered, hashable,
 /// and an index into any `Vec<T>` / `[T]` (`page.nodes[node]`,
 /// `rects[node]`, `page.strings[text]`).
@@ -1775,6 +1777,23 @@ pub struct ControlArrangements {
     pub count: u32,
 }
 
+/// One instance of a `widget` or `control` that declares anims (`anim`
+/// blocks beside its body): the instance's root and where its own copies
+/// of those anims sit in `Page::control_anim_names`.
+///
+/// Needed so code plays the anim of one instance by a typed name
+/// (`Runtime::play_in`): each instance has its own copy of the widget's
+/// anim, under its own name (`restoreSwitch/toastFade`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ControlAnims {
+    /// The instance's root node.
+    pub root: NodeId,
+    /// Where the instance's first anim is.
+    pub first: u32,
+    /// How many anims the widget declares.
+    pub count: u32,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ThemeEntry {
     pub name: StrId,
@@ -2072,6 +2091,10 @@ pub struct StaticPage {
     pub control_arrangement_names: &'static [StrId],
     /// See `Page::control_arrangements`.
     pub control_arrangements: &'static [ControlArrangements],
+    /// See `Page::control_anim_names`.
+    pub control_anim_names: &'static [StrId],
+    /// See `Page::control_anims`.
+    pub control_anims: &'static [ControlAnims],
     pub transitions: &'static [Transition],
     pub prop_transitions: &'static [PropTransition],
     pub anims: &'static [AnimTrack],
@@ -2128,6 +2151,19 @@ pub struct Page {
     /// Empty on a page with no such widget, which then pays nothing for
     /// the feature: no table at start, no compare in a frame.
     pub control_arrangements: Vec<ControlArrangements>,
+    /// The anims of the page's widget and control instances: one run per
+    /// instance, in the order the widget's body declares them. A place
+    /// holds the name of that instance's copy (`restoreSwitch/toastFade`),
+    /// which `Runtime::play_id` takes.
+    ///
+    /// `NO_STR` in a place: after a hot reload, an anim the build knew
+    /// and the file no longer declares.
+    pub control_anim_names: Vec<StrId>,
+    /// Every instance whose widget declares anims, lowest root first;
+    /// the rows a `repeat` cloned since come after, in the same order.
+    ///
+    /// Empty on a page with no such widget.
+    pub control_anims: Vec<ControlAnims>,
     pub transitions: Vec<Transition>,
     pub prop_transitions: Vec<PropTransition>,
     pub anims: Vec<AnimTrack>,
@@ -2261,6 +2297,8 @@ impl Page {
             arrangements: s.arrangements.to_vec(),
             control_arrangement_names: s.control_arrangement_names.to_vec(),
             control_arrangements: s.control_arrangements.to_vec(),
+            control_anim_names: s.control_anim_names.to_vec(),
+            control_anims: s.control_anims.to_vec(),
             transitions: s.transitions.to_vec(),
             prop_transitions: s.prop_transitions.to_vec(),
             anims: s.anims.to_vec(),
@@ -2402,6 +2440,32 @@ impl Page {
         let entry: ControlArrangements = self.control_arrangements_of(root)?;
         let names: &[StrId] = &self.control_arrangement_names[entry.first as usize..(entry.first + entry.count) as usize];
         names.iter().position(|n| self.str(*n) == name).map(ArrangementId::from_index)
+    }
+
+    /// The anims entry of the control instance rooted at `root`; `None`
+    /// when `root` is no instance of a widget that declares some.
+    pub fn control_anims_of(&self, root: impl NodeName) -> Option<ControlAnims> {
+        let root: NodeId = root.node();
+        self.control_anims.binary_search_by_key(&root, |c| c.root).ok().map(|at| self.control_anims[at])
+    }
+
+    /// The name of one instance's own copy of an anim its widget declares,
+    /// as `Runtime::play_id` takes it and `Runtime::take_finished` returns
+    /// it.
+    ///
+    /// Needed so code that waits for an anim of one instance to end can
+    /// tell it from the same anim of another instance.
+    ///
+    /// Returns `None` when the instance has no such anim: after a hot
+    /// reload, one the file no longer declares.
+    pub fn anim_in<C: HasAnims>(&self, control: &C, anim: C::Anim) -> Option<StrId> {
+        let entry: ControlAnims = self.control_anims_of(control.root())?;
+        let place: u32 = anim.place();
+        if place >= entry.count {
+            return None;
+        }
+        let name: StrId = self.control_anim_names[(entry.first + place) as usize];
+        if name == NO_STR { None } else { Some(name) }
     }
 
     pub fn str(&self, id: StrId) -> &str {

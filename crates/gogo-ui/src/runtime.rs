@@ -166,6 +166,30 @@ pub trait HasArrangements {
     fn root(&self) -> NodeId;
 }
 
+/// A typed anim of one widget (`enum <Widget>Anim` of the build):
+/// `Runtime::play_in` takes one.
+///
+/// Needed apart from `AnimName` because a widget's anim is not one anim:
+/// each instance has its own copy, so the name alone says which anim of
+/// the widget and the instance says which copy.
+pub trait ControlAnimName: Copy {
+    /// The anim's place among the ones the widget declares.
+    fn place(self) -> u32;
+}
+
+/// The names of one instance of a widget that declares anims
+/// (`<Widget>Names` of the build).
+///
+/// Needed so `Runtime::play_in(page, &NAMES.restore_switch, …)` takes the
+/// anims of that widget and no other widget's.
+pub trait HasAnims {
+    /// The widget's `enum <Widget>Anim`.
+    type Anim: ControlAnimName;
+
+    /// The instance's root node.
+    fn root(&self) -> NodeId;
+}
+
 /// The arrangement one control instance is in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ControlPose {
@@ -1364,6 +1388,35 @@ impl Runtime {
         self.dirty = true;
     }
 
+    /// Plays one control instance's own copy of an anim its widget
+    /// declares (`rt.play_in(page, &NAMES.restore_switch,
+    /// CompactSwitchAnim::ToastFade, Finish::Nothing)`).
+    ///
+    /// Needed because a widget's anim is copied per instance: two
+    /// switches on a page each fade their own toast, and `play` takes the
+    /// page's own anims.
+    ///
+    /// Nothing plays when the instance has no such anim (`Page::anim_in`).
+    pub fn play_in<C: HasAnims>(&mut self, page: &Page, control: &C, anim: C::Anim, finish: Finish) {
+        if let Some(name) = page.anim_in(control, anim) {
+            self.play_id(page, name, finish);
+        }
+    }
+
+    /// `stop` for one control instance's own copy of an anim its widget
+    /// declares.
+    pub fn stop_in<C: HasAnims>(&mut self, page: &Page, control: &C, anim: C::Anim, restore: bool) {
+        if let Some(name) = page.anim_in(control, anim) {
+            self.stop_id(name, restore);
+        }
+    }
+
+    /// Is one control instance's own copy of an anim its widget declares
+    /// mid-play?
+    pub fn is_playing_in<C: HasAnims>(&self, page: &Page, control: &C, anim: C::Anim) -> bool {
+        page.anim_in(control, anim).is_some_and(|name| self.is_playing_id(name))
+    }
+
     fn play_action(&mut self, page: &Page, node: NodeId, event: &str, finish: Finish) -> bool {
         let n = &page.nodes[node];
         let id = page.intern_lookup(event);
@@ -2183,6 +2236,29 @@ impl Runtime {
                 page.anims.push(t);
             }
             page.anim_heads.push(AnimHead { anim: id, ..h });
+        }
+        // A cloned instance of a widget that declares anims names the
+        // copies made above. Needed so `play_in` with a row's names moves
+        // that row: without its entry the row has no anim to play.
+        //
+        // The length check is needed so a page with no such widget pays
+        // one compare per cloned row.
+        if !page.control_anims.is_empty() {
+            let of_template: Vec<ControlAnims> = page.control_anims.iter().filter(|c| c.root >= info.template && cloned.contains(c.root.offset(delta))).copied().collect();
+            for entry in of_template {
+                let first: u32 = page.control_anim_names.len() as u32;
+                for at in entry.first..entry.first + entry.count {
+                    let of_template_row: StrId = page.control_anim_names[at as usize];
+                    let of_slot: StrId = if of_template_row == NO_STR {
+                        NO_STR
+                    } else {
+                        let renamed: String = format!("{to}{}", &page.str(of_template_row)[from.len()..]);
+                        page.intern(&renamed)
+                    };
+                    page.control_anim_names.push(of_slot);
+                }
+                page.control_anims.push(ControlAnims { root: entry.root.offset(delta), first, count: entry.count });
+            }
         }
         self.grow(page);
         self.pools[pi].slots.push(root);

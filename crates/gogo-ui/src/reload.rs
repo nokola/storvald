@@ -187,8 +187,8 @@ fn compile_against(source: &str, source_name: &str, loader: Loader<'_>, baked: &
     let options = CompileOptions { behaviors: baked.behaviors, keys: Some(&keys), images: Some(&images), require_keys: baked.require_keys, source_name, refuse_new_keys_and_pictures: true, ..CompileOptions::default() };
     // Built page of this file: its strings and arrangements keep their
     // numbers, which program's code holds (`Anim`, `Theme`,
-    // `Arrangement`).
-    let built: Option<BuiltNumbers<'_>> = baked.pages.iter().find(|p| !p.file.is_empty() && p.file == source_name).map(|p| BuiltNumbers { strings: p.page.strings, arrangements: p.page.arrangements, nodes: p.page.nodes, control_arrangement_names: p.page.control_arrangement_names, control_arrangements: p.page.control_arrangements });
+    // `Arrangement`, `<Widget>Arrangement`, `<Widget>Anim`).
+    let built: Option<BuiltNumbers<'_>> = baked.pages.iter().find(|p| !p.file.is_empty() && p.file == source_name).map(|p| BuiltNumbers { strings: p.page.strings, arrangements: p.page.arrangements, nodes: p.page.nodes, control_arrangement_names: p.page.control_arrangement_names, control_arrangements: p.page.control_arrangements, control_anim_names: p.page.control_anim_names, control_anims: p.page.control_anims });
     let compiled = compile_keeping_numbers(source, loader, options, built);
     if has_errors(&compiled.diags) {
         return Err(compiled.diags.into_iter().filter(|d| d.severity == Severity::Error).collect());

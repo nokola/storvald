@@ -221,6 +221,11 @@ struct TmpNode {
     /// count) — recorded into `Page::control_arrangements` once the
     /// arena id exists. A count of 0 on every other node.
     arrangements: (u32, u32),
+    /// An instance root whose widget declares anims: where the names of
+    /// the instance's own copies sit in `Page::control_anim_names`, as
+    /// (first place, count) — recorded into `Page::control_anims` once
+    /// the arena id exists. A count of 0 on every other node.
+    anims: (u32, u32),
     /// The contract's `keys` claim (GP26) — recorded into
     /// `Page::key_claims` once the arena id exists.
     key_claim: u8,
@@ -752,6 +757,10 @@ pub struct Compiler<'a> {
     /// the place of its first name in `Page::control_arrangement_names`,
     /// and its names in the order they sit there.
     control_arrangement_runs: HashMap<String, (u32, Vec<String>)>,
+    /// Per widget that declares anims and is used on this page: its
+    /// anims' names in the order every instance lists its copies in
+    /// `Page::control_anim_names`.
+    control_anim_orders: HashMap<String, Vec<String>>,
     /// Directory stack of the include chain (GPAR35): a nested `uses`
     /// resolves against the INCLUDING file's directory, so the loader
     /// always sees one path shape — from the top file's own directory.
@@ -898,6 +907,12 @@ pub struct Compiler<'a> {
     /// program's `enum <Widget>Arrangement` holds still names the same
     /// arrangement. Empty for any other compile.
     built_control_arrangements: Vec<(StrId, Vec<StrId>)>,
+    /// Per widget of the built page that declares anims: the widget's
+    /// name and its anims' names in the build's order
+    /// (`compile_keeping_numbers`). Every instance lists its copies in
+    /// that order, so the place a program's `enum <Widget>Anim` holds
+    /// still names the same anim. Empty for any other compile.
+    built_control_anims: Vec<(StrId, Vec<String>)>,
 }
 
 /// A value as the file spells it, for a message.
@@ -968,8 +983,9 @@ pub fn compile_with<'a>(source: &str, loader: Loader<'a>, options: CompileOption
 /// Numbers a build wrote into a program's code for one page: each
 /// string's place in page's strings (`enum Anim`, `enum Theme`), each
 /// arrangement's place in page's arrangement list (`enum Arrangement`),
-/// and each widget arrangement's place among the ones its widget
-/// declares (`enum <Widget>Arrangement`).
+/// each widget arrangement's place among the ones its widget declares
+/// (`enum <Widget>Arrangement`), and each widget anim's place among the
+/// ones its widget declares (`enum <Widget>Anim`).
 #[derive(Clone, Copy)]
 pub(crate) struct BuiltNumbers<'a> {
     /// Built page's strings, in the build's order.
@@ -982,6 +998,10 @@ pub(crate) struct BuiltNumbers<'a> {
     pub control_arrangement_names: &'a [StrId],
     /// Built page's `Page::control_arrangements`.
     pub control_arrangements: &'a [ControlArrangements],
+    /// Built page's `Page::control_anim_names`.
+    pub control_anim_names: &'a [StrId],
+    /// Built page's `Page::control_anims`.
+    pub control_anims: &'a [ControlAnims],
 }
 
 /// `compile_with` for a page a running program already holds as built
@@ -1022,6 +1042,7 @@ pub(crate) fn compile_keeping_numbers<'a>(source: &str, loader: Loader<'a>, opti
         custom_state_stack: Vec::new(),
         arrangement_scopes: Vec::new(),
         control_arrangement_runs: HashMap::new(),
+        control_anim_orders: HashMap::new(),
         root_aliases: HashMap::new(),
         use_dirs: Vec::new(),
         origin: 0,
@@ -1062,6 +1083,7 @@ pub(crate) fn compile_keeping_numbers<'a>(source: &str, loader: Loader<'a>, opti
         pending_repeats: Vec::new(),
         built_arrangements: Vec::new(),
         built_control_arrangements: Vec::new(),
+        built_control_anims: Vec::new(),
     };
     if let Some(built) = built {
         // Built page's strings first, in the build's order: a string
@@ -1076,6 +1098,22 @@ pub(crate) fn compile_keeping_numbers<'a>(source: &str, loader: Loader<'a>, opti
             let widget: StrId = built.nodes[entry.root].widget;
             if !c.built_control_arrangements.iter().any(|(w, _)| *w == widget) {
                 c.built_control_arrangements.push((widget, built.control_arrangement_names[entry.first as usize..(entry.first + entry.count) as usize].to_vec()));
+            }
+        }
+        // Every instance of one widget lists its anims in one order: the
+        // first instance found says it. An instance's copy is named
+        // `<instance>/<anim>`; the widget's name for it is the last part.
+        for entry in built.control_anims {
+            let widget: StrId = built.nodes[entry.root].widget;
+            if !c.built_control_anims.iter().any(|(w, _)| *w == widget) {
+                let names: Vec<String> = built.control_anim_names[entry.first as usize..(entry.first + entry.count) as usize]
+                    .iter()
+                    .map(|copy| {
+                        let full: &str = built.strings[copy.index()];
+                        full.rsplit('/').next().unwrap_or(full).to_string()
+                    })
+                    .collect();
+                c.built_control_anims.push((widget, names));
             }
         }
     }
@@ -4253,6 +4291,52 @@ impl<'a> Compiler<'a> {
         (first, names)
     }
 
+    /// Writes the names of one instance's own copies of the anims its
+    /// widget declares into `Page::control_anim_names`, for the instance
+    /// whose body is being built.
+    ///
+    /// Needed so `Runtime::play_in` finds the copy an instance plays
+    /// with no name put together at run time.
+    ///
+    /// The order is the one `declared` has (the file's), except in a hot
+    /// reload: there an anim the build knew keeps the build's place, a
+    /// place whose anim the file no longer declares holds no name, and
+    /// new anims come after.
+    ///
+    /// Returns the run as (first place, count); a count of 0 for a widget
+    /// that declares no anim.
+    fn control_anim_run(&mut self, widget: &str, declared: &[AstNode]) -> (u32, u32) {
+        if declared.is_empty() {
+            return (0, 0);
+        }
+        let order: Vec<String> = match self.control_anim_orders.get(widget) {
+            Some(order) => order.clone(),
+            None => {
+                let widget_id: StrId = self.intern(widget);
+                let mut order: Vec<String> = Vec::new();
+                if let Some((_, built)) = self.built_control_anims.iter().find(|(w, _)| *w == widget_id) {
+                    for name in built {
+                        order.push(if declared.iter().any(|d| d.name.as_deref() == Some(name.as_str())) { name.clone() } else { String::new() });
+                    }
+                }
+                for name in declared.iter().filter_map(|d| d.name.as_ref()) {
+                    if !order.contains(name) {
+                        order.push(name.clone());
+                    }
+                }
+                self.control_anim_orders.insert(widget.to_string(), order.clone());
+                order
+            }
+        };
+        let instance: String = self.prefix.join("/");
+        let first: u32 = self.page.control_anim_names.len() as u32;
+        for name in &order {
+            let copy: StrId = if name.is_empty() { NO_STR } else { self.intern(&format!("{instance}/{name}")) };
+            self.page.control_anim_names.push(copy);
+        }
+        (first, order.len() as u32)
+    }
+
     /// `any` / `base` / a state / an arrangement name.
     fn endpoint(&mut self, word: &str, line: u32, node: NodeId) -> Option<Option<State>> {
         if word == "any" {
@@ -5277,7 +5361,7 @@ impl<'a> Compiler<'a> {
             if self.widget_stack.iter().any(|w| w == &n.type_word) {
                 let path = self.widget_stack.join(" -> ");
                 self.error("G5003", n.line, format!("widget cycle: {path} -> {} — a widget cannot contain itself", n.type_word));
-                return TmpNode { node: Node::fresh(Kind::Layers, n.line), props: Vec::new(), handlers: Vec::new(), whens: Vec::new(), transitions: Vec::new(), children: Vec::new(), custom_states: Vec::new(), arrangements: (0, 0), key_claim: 0, wearing: Vec::new(), driver: None, follows: Vec::new(), origin: self.origin };
+                return TmpNode { node: Node::fresh(Kind::Layers, n.line), props: Vec::new(), handlers: Vec::new(), whens: Vec::new(), transitions: Vec::new(), children: Vec::new(), custom_states: Vec::new(), arrangements: (0, 0), anims: (0, 0), key_claim: 0, wearing: Vec::new(), driver: None, follows: Vec::new(), origin: self.origin };
             }
             // A `for=` widget fills its host's body and nothing else —
             // anywhere else its `when` lines would answer the wrong node.
@@ -5394,6 +5478,7 @@ impl<'a> Compiler<'a> {
             for a in &def.anims {
                 self.anim(a);
             }
+            let animated: (u32, u32) = self.control_anim_run(&n.type_word, &def.anims);
             // `signals` inside the body: the instance's `on:` wiring binds
             // to that node, not the root (the Slider inside LabeledSlider).
             let on_props: Vec<AstProp> = n.props.iter().filter(|p| p.key.starts_with("on:")).cloned().collect();
@@ -5563,6 +5648,7 @@ impl<'a> Compiler<'a> {
             self.custom_state_stack.pop();
             self.arrangement_scopes.pop();
             t.arrangements = arranged;
+            t.anims = animated;
             if def.control && !def.states.is_empty() {
                 t.custom_states = def.states.iter().map(|w| self.intern(w)).collect();
             }
@@ -5717,7 +5803,7 @@ impl<'a> Compiler<'a> {
             self.names.insert(name.clone());
             node.name = self.intern(name);
         }
-        let mut tmp = TmpNode { node, props: Vec::new(), handlers: Vec::new(), whens: Vec::new(), transitions: Vec::new(), children: Vec::new(), custom_states: Vec::new(), arrangements: (0, 0), key_claim: 0, wearing: n.styles.iter().cloned().chain(instance.iter().flat_map(|i| i.styles.iter().cloned())).collect(), driver: None, follows: Vec::new(), origin: self.origin };
+        let mut tmp = TmpNode { node, props: Vec::new(), handlers: Vec::new(), whens: Vec::new(), transitions: Vec::new(), children: Vec::new(), custom_states: Vec::new(), arrangements: (0, 0), anims: (0, 0), key_claim: 0, wearing: n.styles.iter().cloned().chain(instance.iter().flat_map(|i| i.styles.iter().cloned())).collect(), driver: None, follows: Vec::new(), origin: self.origin };
 
         if kind == Kind::Gap {
             self.gap(&mut tmp.node, n, parent_kind);
@@ -6976,13 +7062,13 @@ impl<'a> Compiler<'a> {
             self.error("G7019", root.node.line, "a Popup is written inside the node it opens beside (a Button, a Check) — as the file's root it has no such node");
         }
         let origin: u16 = root.origin;
-        let id = self.push_slot(root.node, root.props, root.handlers, root.whens, root.transitions, root.custom_states, root.arrangements, root.key_claim, root.wearing, root.driver, root.follows, NO_NODE);
+        let id = self.push_slot(root.node, root.props, root.handlers, root.whens, root.transitions, root.custom_states, root.arrangements, root.anims, root.key_claim, root.wearing, root.driver, root.follows, NO_NODE);
         self.note_origin(id, origin);
         self.place_children(id, root.children);
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn push_slot(&mut self, mut node: Node, props: Vec<Prop>, handlers: Vec<OnHandler>, whens: Vec<WhenTmp>, transitions: Vec<Transition>, custom_states: Vec<StrId>, arrangements: (u32, u32), key_claim: u8, wearing: Vec<String>, driver: Option<(String, f32, f32, String)>, follows: Vec<(PropKey, String, f32)>, parent: NodeId) -> NodeId {
+    fn push_slot(&mut self, mut node: Node, props: Vec<Prop>, handlers: Vec<OnHandler>, whens: Vec<WhenTmp>, transitions: Vec<Transition>, custom_states: Vec<StrId>, arrangements: (u32, u32), anims: (u32, u32), key_claim: u8, wearing: Vec<String>, driver: Option<(String, f32, f32, String)>, follows: Vec<(PropKey, String, f32)>, parent: NodeId) -> NodeId {
         // Keyboard reach bakes here (GP26): the kinds that answer a tap
         // answer the keyboard — plus a control root whose contract said
         // so (above); `keyboard_target=off` is the deliberate opt-out
@@ -7003,6 +7089,10 @@ impl<'a> Compiler<'a> {
         // lowest root first, as `Page::control_arrangements_of` reads it.
         if arrangements.1 != 0 {
             self.page.control_arrangements.push(ControlArrangements { root: id, first: arrangements.0, count: arrangements.1 });
+        }
+        // Lowest root first too, as `Page::control_anims_of` reads it.
+        if anims.1 != 0 {
+            self.page.control_anims.push(ControlAnims { root: id, first: anims.0, count: anims.1 });
         }
         if key_claim != 0 {
             self.page.key_claims.push((id, key_claim));
@@ -7055,7 +7145,7 @@ impl<'a> Compiler<'a> {
         let mut slots: Vec<(NodeId, Vec<TmpNode>)> = Vec::new();
         for child in children {
             let origin: u16 = child.origin;
-            let cid = self.push_slot(child.node, child.props, child.handlers, child.whens, child.transitions, child.custom_states, child.arrangements, child.key_claim, child.wearing, child.driver, child.follows, id);
+            let cid = self.push_slot(child.node, child.props, child.handlers, child.whens, child.transitions, child.custom_states, child.arrangements, child.anims, child.key_claim, child.wearing, child.driver, child.follows, id);
             self.note_origin(cid, origin);
             slots.push((cid, child.children));
         }

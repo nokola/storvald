@@ -118,3 +118,34 @@ rt.go_in(&NAMES.restore_switch, CompactSwitchArrangement::Option1);
   the rule search, the tweens and the `anim=` of a rule take the road a
   state flip takes. The box glide lists the nodes of the instance and no
   other.
+
+## A widget's anims from code (decided 2026-11-24)
+
+The switch above also fades a toast, and its code plays that anim. An
+`anim` beside a widget's body is copied for every instance, under the
+instance's name (`restoreSwitch/toastFade`), so code had only a string to
+name a copy by: a misspelled one played nothing and said nothing.
+
+A build writes `enum <Widget>Anim` per widget that declares anims, tied
+to `<Widget>Names` as the arrangement enum is:
+
+```rust
+rt.play_in(&page, &NAMES.restore_switch, CompactSwitchAnim::ToastFade, Finish::Nothing);
+```
+
+- `Runtime::play_in`, `stop_in` and `is_playing_in` take the instance
+  and the anim. `Page::anim_in` gives the name of the copy, which
+  `take_finished` hands out.
+- The enum holds the anim's place among the ones the widget declares.
+  `Page::control_anim_names` holds, per instance, the names of its
+  copies in that order; `Page::control_anims` holds one entry per
+  instance (its root and where its names sit).
+- A row a `repeat` clones had copies of its own already; it now gets an
+  entry that names them.
+- A hot reload keeps the build's places: an anim the file drops leaves a
+  place with no name, and a play of it plays nothing.
+- A page with no such widget keeps no table.
+
+Why the names of the copies are not fields of `<Widget>Names`: the names
+of a `repeat` row are the template's names moved by the row's distance
+(`rebase`). A node id moves that way; the name of an anim does not.

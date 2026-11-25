@@ -44,7 +44,7 @@ pub use frame::{Frame, KeptFrame};
 pub use input::{Behavior, Buttons, CapturedMouse, Claim, Cx, Event, EventKind, EventList, EventListIntoIter, HoverPhase, Input, Key, KeyAction, MOUSE_ID, Mods, Phase, PointerSample, Tool, Touch};
 pub use layout::{FixedAdvance, LayoutBuffers, Rect, TextMeasure, layout, layout_into};
 pub use locale::{KeyName, Keys, Locale};
-pub use runtime::{AnimName, ArrangementName, ControlArrangementName, HandlerName, HasArrangements, Hook, ThemeName};
+pub use runtime::{AnimName, ArrangementName, ControlAnimName, ControlArrangementName, HandlerName, HasAnims, HasArrangements, Hook, ThemeName};
 pub use page::{ArrangementId, BASE, BEHAVIOR_SLOTS, ControlArrangements, BUILTIN_BEHAVIORS, BehaviorSpec, ImageKey, ImageSlice, Images, Kind, KeyId, KEYS_ARROWS, KEYS_ENTER, KEYS_HOME_END, KEYS_SPACE, NO_IMAGE, NO_KEY, NO_NODE, NO_STR, NodeId, NodeName, Orientation, Page, Payload, PropKey, Color_Straight_Srgb_4xU8_RGBA, ScreenClass, StaticPage, StrId, Value};
 pub use anim::{Easing, Finish, Motion};
 pub use runtime::{Resolved, Runtime, resolve, resolve_animated};

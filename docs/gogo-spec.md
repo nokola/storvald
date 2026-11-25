@@ -1401,6 +1401,14 @@ anim entrance duration_each=0.2 {              // each: wearers + stagger
   `Runtime::take_finished` for the anims that ended on their own. A build
   generates an `enum Anim` per page for these calls; the `_id` forms serve
   a page compiled while the program runs.
+- An `anim` beside the body of a `widget` or `control` is copied for
+  every instance, under the instance's name (`<instance>/<anim>`);
+  `play(<anim>)` in the body plays the copy of the instance the node is
+  in. A build generates an `enum <Widget>Anim` per widget that declares
+  anims: `Runtime::play_in`, `stop_in` and `is_playing_in` take the
+  instance (`&NAMES.<instance>`) and the anim, and `Page::anim_in` gives
+  the name `take_finished` hands out for that copy. A row of a `repeat`
+  has copies of its own. (decided 2026-11-24)
 - Declarative triggers: `on:show=play(appear)`, `on:hide=play(disappear)` —
   `on:hide` plays first and hides on finish (deferred hide), then restores the
   base look; showing during a hide cancels it. A control that is already

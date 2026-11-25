@@ -45,6 +45,8 @@ pub fn as_built(page: &Page, slices: &'static [ImageSlice]) -> &'static StaticPa
         arrangements: leak(&page.arrangements),
         control_arrangement_names: leak(&page.control_arrangement_names),
         control_arrangements: leak(&page.control_arrangements),
+        control_anim_names: leak(&page.control_anim_names),
+        control_anims: leak(&page.control_anims),
         transitions: leak(&page.transitions),
         prop_transitions: leak(&page.prop_transitions),
         anims: leak(&page.anims),

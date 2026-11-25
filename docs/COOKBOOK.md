@@ -2367,6 +2367,10 @@ sets one with `rt.go_in(&NAMES.<instance>, …)` (REFERENCE, "Arrangements
 inside a widget"). Written as the page's arrangements, the two would flip
 together.
 
+The switch's `anim` blocks move inside too. Each instance then has its
+own copy, and code plays one with `rt.play_in(&page, &NAMES.<instance>,
+<Widget>Anim::<Name>, …)` (REFERENCE, "Playing").
+
 ---
 
 ## How do I slide a box my code moves (a floating bar, a tab underline)?

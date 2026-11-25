@@ -162,8 +162,8 @@ fn emit_arrangements(page: &Page, out: &mut String) {
 /// file declares at page level, `#[repr(u32)]` = the name's string id)
 /// plus the `AnimName` impl — `Runtime::play(page, Anim::Appear, …)`
 /// cannot misspell, and nothing interns the name per frame. A widget's
-/// anims (`inst/anim`) belong to the widget's own `on:` wiring and are not
-/// listed. `Err` when two names spell one variant (`fadeIn` / `fade_in`).
+/// anims (`inst/anim`) have their own enum, `<Widget>Anim`
+/// (`widget_anims`), and are not listed. `Err` when two names spell one variant (`fadeIn` / `fade_in`).
 fn emit_anims(page: &Page, out: &mut String) -> Result<(), String> {
     let mut names: Vec<(String, StrId)> = Vec::new();
     for h in &page.anim_heads {
@@ -278,6 +278,46 @@ fn widget_arrangements(widget: &str, names: &[String]) -> Result<String, String>
     Ok(out)
 }
 
+/// The Rust enum name for the anims of widget `CompactSwitch`:
+/// `CompactSwitchAnim`.
+pub fn widget_anim_enum(widget: &str) -> String {
+    format!("{}Anim", pascal_case(widget))
+}
+
+/// A widget's anims as code: `enum <Widget>Anim` (one variant per `anim`
+/// beside the widget's body, `#[repr(u32)]` = its place among them), its
+/// `ControlAnimName` impl, and the `HasAnims` impl that ties the enum to
+/// `<Widget>Names`.
+///
+/// Needed so `Runtime::play_in(page, &NAMES.restore_switch,
+/// CompactSwitchAnim::ToastFade, …)` cannot name an anim the widget
+/// lacks, nor hand one widget's anim to another widget's instance: both
+/// are rustc errors.
+///
+/// Returns `Err` when two names spell one variant (`fadeIn` /
+/// `fade_in`).
+fn widget_anims(widget: &str, names: &[String]) -> Result<String, String> {
+    let enum_name: String = widget_anim_enum(widget);
+    let mut variants: Vec<String> = Vec::with_capacity(names.len());
+    for name in names {
+        let variant: String = key_variant(name);
+        if let Some(at) = variants.iter().position(|v| *v == variant) {
+            return Err(format!("widget `{widget}`: anims `{}` and `{name}` both become `{enum_name}::{variant}` — rename one\n", names[at]));
+        }
+        variants.push(variant);
+    }
+    let mut out = String::new();
+    out.push_str(&format!("/// The anims `{widget}` declares. Each instance plays its own copy (`Runtime::play_in`).\n"));
+    out.push_str(&format!("#[allow(clippy::enum_variant_names, non_camel_case_types, dead_code)]\n#[derive(Clone, Copy, Debug, PartialEq, Eq)]\n#[repr(u32)]\npub enum {enum_name} {{\n"));
+    for (at, variant) in variants.iter().enumerate() {
+        out.push_str(&format!("    {variant} = {at},\n"));
+    }
+    out.push_str("}\n\n");
+    out.push_str(&format!("impl gogo_ui::ControlAnimName for {enum_name} {{\n    fn place(self) -> u32 {{\n        self as u32\n    }}\n}}\n\n"));
+    out.push_str(&format!("impl gogo_ui::HasAnims for {} {{\n    type Anim = {enum_name};\n\n    fn root(&self) -> NodeId {{\n        self.root\n    }}\n}}\n\n", widget_struct(widget)));
+    Ok(out)
+}
+
 /// The `Names` entries of the nodes directly under `prefix` (`""` = the
 /// page level; `"inst"` = the body of widget instance `inst`): every named
 /// node whose name is `prefix/x` with no further `/`, snake_cased; a
@@ -371,7 +411,7 @@ fn local_name(page: &Page, id: NodeId) -> String {
 
 /// The widget structs a page's instances need: widget → field rows, every
 /// instance of one widget agreeing on the rows (they stamp one body).
-fn collect_widget_shapes(page: &Page, entries: &[(String, NameEntry)], shapes: &mut Vec<(String, Vec<WidgetRow>)>, arranged: &mut Vec<(String, Vec<String>)>, where_: &str) -> Result<(), String> {
+fn collect_widget_shapes(page: &Page, entries: &[(String, NameEntry)], shapes: &mut Vec<(String, Vec<WidgetRow>)>, arranged: &mut Vec<(String, Vec<String>)>, animated: &mut Vec<(String, Vec<String>)>, where_: &str) -> Result<(), String> {
     for (_, e) in entries {
         if let NameEntry::Instance { root, widget, body } = e {
             // The arrangements the widget declares, read from this
@@ -384,6 +424,25 @@ fn collect_widget_shapes(page: &Page, entries: &[(String, NameEntry)], shapes: &
                     }
                     Some(_) => {}
                     None => arranged.push((widget.clone(), names)),
+                }
+            }
+            // The anims the widget declares, read from this instance's
+            // own copies (`<instance>/<anim>`): every instance of one
+            // widget lists the same ones.
+            if let Some(entry) = page.control_anims_of(*root) {
+                let names: Vec<String> = page.control_anim_names[entry.first as usize..(entry.first + entry.count) as usize]
+                    .iter()
+                    .map(|copy| {
+                        let full: &str = page.str(*copy);
+                        full.rsplit('/').next().unwrap_or(full).to_string()
+                    })
+                    .collect();
+                match animated.iter().find(|(w, _)| w == widget) {
+                    Some((_, have)) if *have != names => {
+                        return Err(format!("widget `{widget}`: its instances do not declare the same anims (see {where_}) — `{}` cannot be one enum\n", widget_anim_enum(widget)));
+                    }
+                    Some(_) => {}
+                    None => animated.push((widget.clone(), names)),
                 }
             }
             let mut rows: Vec<WidgetRow> = vec![WidgetRow { field: "root".to_string(), ty: "NodeId".to_string(), local: String::new() }];
@@ -401,7 +460,7 @@ fn collect_widget_shapes(page: &Page, entries: &[(String, NameEntry)], shapes: &
                 Some(_) => {}
                 None => shapes.push((widget.clone(), rows)),
             }
-            collect_widget_shapes(page, body, shapes, arranged, where_)?;
+            collect_widget_shapes(page, body, shapes, arranged, animated, where_)?;
         }
     }
     Ok(())
@@ -416,14 +475,15 @@ fn collect_widget_shapes(page: &Page, entries: &[(String, NameEntry)], shapes: &
 pub fn emit_widget_names(pages: &[(&str, &Page)]) -> Result<String, String> {
     let mut shapes: Vec<(String, Vec<WidgetRow>)> = Vec::new();
     let mut arranged: Vec<(String, Vec<String>)> = Vec::new();
+    let mut animated: Vec<(String, Vec<String>)> = Vec::new();
     for (module, page) in pages {
         let entries = name_entries(page, "").map_err(|e| format!("{module}: {e}"))?;
-        collect_widget_shapes(page, &entries, &mut shapes, &mut arranged, module)?;
+        collect_widget_shapes(page, &entries, &mut shapes, &mut arranged, &mut animated, module)?;
         // A widget placed only inside a repeat's template still needs its
         // struct: the slots are typed through it (`<Repeat>Slot::at`).
         for (_, template) in repeat_templates(page) {
             let entries = name_entries(page, &template).map_err(|e| format!("{module}: {e}"))?;
-            collect_widget_shapes(page, &entries, &mut shapes, &mut arranged, module)?;
+            collect_widget_shapes(page, &entries, &mut shapes, &mut arranged, &mut animated, module)?;
         }
     }
     let mut out = String::new();
@@ -437,6 +497,9 @@ pub fn emit_widget_names(pages: &[(&str, &Page)]) -> Result<String, String> {
         out.push_str(&names_impl(&widget_struct(widget), rows, ""));
         if let Some((_, names)) = arranged.iter().find(|(w, _)| w == widget) {
             out.push_str(&widget_arrangements(widget, names)?);
+        }
+        if let Some((_, names)) = animated.iter().find(|(w, _)| w == widget) {
+            out.push_str(&widget_anims(widget, names)?);
         }
     }
     if !shapes.is_empty() {
@@ -521,6 +584,8 @@ pub fn emit_rust(page: &Page, module: &str) -> Result<String, String> {
     out.push_str(&format!("        arrangements: {},\n", slice(&page.arrangements)));
     out.push_str(&format!("        control_arrangement_names: {},\n", slice(&page.control_arrangement_names)));
     out.push_str(&format!("        control_arrangements: {},\n", slice(&page.control_arrangements)));
+    out.push_str(&format!("        control_anim_names: {},\n", slice(&page.control_anim_names)));
+    out.push_str(&format!("        control_anims: {},\n", slice(&page.control_anims)));
     out.push_str(&format!("        custom_states: {},\n", slice(&page.custom_states)));
     out.push_str(&format!("        key_claims: {},\n", slice(&page.key_claims)));
     out.push_str(&format!("        popups: {},\n", slice(&page.popups)));
