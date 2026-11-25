@@ -2,7 +2,8 @@
 //!
 //! Each finger has its own press. A node holds one finger at a time: a
 //! second finger on a held node does nothing, and a Scroll a finger pans
-//! is held by that finger. Focus and the text caret stay single. A mouse
+//! is held by that finger. A node with `on:pointer_multi=` takes every
+//! finger that lands on it. Focus and the text caret stay single. A mouse
 //! is one pointer with a set of buttons. `on:pointer=` hears a press
 //! with the whole sample; `on:hover=` hears a pointer that presses
 //! nothing; `on:wheel=` hears the wheel.
@@ -208,6 +209,81 @@ fn a_second_finger_on_a_held_pointer_box_does_nothing() {
     assert!(fx.finger(Phase::Up, 110.0, 100.0, 0.3, 2).is_empty());
     assert_eq!(kinds(&fx.finger(Phase::Move, 80.0, 90.0, 0.4, 1)), ["pointer:Move"]);
     assert_eq!(kinds(&fx.finger(Phase::Up, 80.0, 90.0, 0.5, 1)), ["pointer:Up"]);
+}
+
+/// The build's error codes for `src`.
+fn codes(src: &str) -> Vec<String> {
+    compile(src, &|_| None).diags.iter().map(|d| d.code.to_string()).collect()
+}
+
+/// A box with `on:pointer_multi=`, a Button inside it, and a Button
+/// beside it.
+const GROUND: &str = "View v { Layers l { Panel ground width=300, height=300, halign=left, valign=top, margin_left=20, margin_top=30, interactive=true, on:pointer_multi=fingers { Button inside width=80, height=40, halign=right, valign=bottom }; Button b width=100, height=40, halign=right, valign=bottom } }";
+
+/// A box with `on:pointer_multi=` takes every finger that lands on it:
+/// each has a press of its own, and its samples carry its id and its
+/// place in the box. One finger's lift leaves the other's press alone.
+#[test]
+fn every_finger_on_a_pointer_multi_box_has_a_press_of_its_own() {
+    let mut fx = Fx::new(GROUND);
+    let (phase, first) = pointer_of(&fx.finger(Phase::Down, 70.0, 90.0, 0.0, 1));
+    assert_eq!((phase, first.finger, first.x, first.y), (Phase::Down, 1, 50.0, 60.0));
+    let (phase, second) = pointer_of(&fx.finger(Phase::Down, 120.0, 130.0, 0.1, 2));
+    assert_eq!((phase, second.finger, second.x, second.y), (Phase::Down, 2, 100.0, 100.0), "the second finger has a press of its own");
+    let (phase, moved) = pointer_of(&fx.finger(Phase::Move, 130.0, 135.0, 0.2, 2));
+    assert_eq!((phase, moved.finger, moved.dx, moved.dy), (Phase::Move, 2, 10.0, 5.0), "a move is since that finger's own last sample");
+    let (phase, moved) = pointer_of(&fx.finger(Phase::Move, 60.0, 90.0, 0.3, 1));
+    assert_eq!((phase, moved.finger, moved.dx, moved.dy), (Phase::Move, 1, -10.0, 0.0));
+    let (phase, lifted) = pointer_of(&fx.finger(Phase::Up, 60.0, 90.0, 0.4, 1));
+    assert_eq!((phase, lifted.finger), (Phase::Up, 1));
+    let (phase, moved) = pointer_of(&fx.finger(Phase::Move, 140.0, 135.0, 0.5, 2));
+    assert_eq!((phase, moved.finger), (Phase::Move, 2), "the first finger's lift left the second one's press");
+    // A third finger lands while the second is down.
+    let (phase, third) = pointer_of(&fx.finger(Phase::Down, 30.0, 40.0, 0.6, 3));
+    assert_eq!((phase, third.finger), (Phase::Down, 3));
+    assert_eq!(kinds(&fx.finger(Phase::Up, 140.0, 135.0, 0.7, 2)), ["pointer:Up"]);
+    assert_eq!(kinds(&fx.finger(Phase::Up, 30.0, 40.0, 0.8, 3)), ["pointer:Up"]);
+    assert!(!fx.input.is_pressed());
+}
+
+/// A control inside a box with `on:pointer_multi=` takes its own finger:
+/// the box gets the fingers that land on the box itself.
+#[test]
+fn a_control_inside_a_pointer_multi_box_takes_its_own_finger() {
+    let mut fx = Fx::new(GROUND);
+    let inside: NodeId = fx.id("inside");
+    let button: Rect = fx.rect("inside");
+    assert_eq!(kinds(&fx.finger(Phase::Down, 70.0, 90.0, 0.0, 1)), ["pointer:Down"]);
+    assert!(fx.finger(Phase::Down, button.x + 10.0, button.y + 10.0, 0.1, 2).iter().all(|e| !matches!(e.kind, EventKind::Pointer(..))), "the finger on the button is no pointer of the box");
+    assert!(fx.rt.has(inside, HELD));
+    assert_eq!(kinds(&fx.finger(Phase::Up, button.x + 10.0, button.y + 10.0, 0.2, 2)), ["activate"]);
+    assert_eq!(kinds(&fx.finger(Phase::Up, 70.0, 90.0, 0.3, 1)), ["pointer:Up"]);
+}
+
+/// The mouse on a box with `on:pointer_multi=` is one pointer, as on
+/// any box.
+#[test]
+fn the_mouse_on_a_pointer_multi_box_is_one_pointer() {
+    let mut fx = Fx::new(GROUND);
+    let (phase, down) = pointer_of(&fx.mouse(Phase::Down, 70.0, 90.0, 0.0, Buttons::PRIMARY));
+    assert_eq!((phase, down.finger, down.tool), (Phase::Down, MOUSE_ID, Tool::Mouse));
+    let (phase, both) = pointer_of(&fx.mouse(Phase::Down, 72.0, 90.0, 0.1, Buttons::PRIMARY.with(Buttons::MIDDLE)));
+    assert_eq!((phase, both.finger), (Phase::Move, MOUSE_ID), "a second button is a move of the same press");
+    assert_eq!(kinds(&fx.mouse(Phase::Up, 72.0, 90.0, 0.2, Buttons::NONE)), ["pointer:Up"]);
+}
+
+/// `on:pointer_multi=` is a pointer wire like `on:pointer=`: it needs
+/// `interactive=true` (G0073) and goes on a passive box (G0072). A node
+/// writes one of the two wires (G0086).
+#[test]
+fn pointer_multi_is_checked_like_pointer_and_one_node_writes_one_of_them() {
+    assert!(codes("View v { Layers l interactive=true, on:pointer_multi=x }").is_empty());
+    assert_eq!(codes("View v { Layers l on:pointer_multi=x }"), ["G0073"]);
+    assert!(codes("View v { Button b on:pointer_multi=x }").contains(&"G0072".to_string()));
+    assert_eq!(codes("View v { Layers l interactive=true, on:pointer=x, on:pointer_multi=y }"), ["G0086"]);
+    assert!(codes("View v { Layers l interactive=true, on:pointer=x; Layers m interactive=true, on:pointer_multi=y }").is_empty(), "two nodes, one wire each");
+    let both = compile("View v { Layers l interactive=true, on:pointer=x, on:pointer_multi=y }", &|_| None);
+    assert!(both.diags[0].message.contains("write one of them"), "{}", both.diags[0].message);
 }
 
 /// The mouse is one pointer with a set of buttons: its press starts with

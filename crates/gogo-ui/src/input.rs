@@ -798,6 +798,40 @@ pub struct Input {
     committed: String,
 }
 
+/// Action of `node`'s pointer wire, and whether that wire takes every
+/// finger: `on:pointer=` (false) or `on:pointer_multi=` (true). A node
+/// writes one of the two (G0086).
+///
+/// Needed in one place so a press, the captured mouse and the
+/// one-finger rule all read the same two words.
+///
+/// Returns `None` for a node with neither.
+fn pointer_wire(page: &Page, node: NodeId) -> Option<(Action, bool)> {
+    match event_action(page, node, "pointer") {
+        Some(action) => Some((action, false)),
+        None => event_action(page, node, "pointer_multi").map(|action| (action, true)),
+    }
+}
+
+/// Says once, in a debug build, that a second finger on `node` was
+/// dropped, and the word that takes it.
+///
+/// Needed because the drop is silent: a page whose code wants a pinch
+/// on an `on:pointer=` box sees one finger arrive and no reason why.
+///
+/// Prints nothing in a release build, and nothing after the first time.
+fn say_once_a_finger_was_dropped(page: &Page, node: NodeId) {
+    #[cfg(debug_assertions)]
+    {
+        static WAS_SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !WAS_SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            eprintln!("gogo: a second finger on `{}` was dropped: `on:pointer=` takes one finger at a time. Write `on:pointer_multi=` on its line to take every finger.", page.str(page.nodes[node].name));
+        }
+    }
+    #[cfg(not(debug_assertions))]
+    let _ = (page, node);
+}
+
 /// The action the file wires to `event` on `node`.
 ///
 /// A List's row with no handler of its own answers with the handler its
@@ -2324,13 +2358,14 @@ impl Input {
             return events;
         }
         let sample = |dx: f32, dy: f32| PointerSample::of(&Touch { mods, ..Touch::mouse(Phase::Move, at.0, at.1, t, buttons) }, rect, dx, dy);
-        let (word, kind): (&str, EventKind) = match what {
-            CapturedMouse::Move { dx, dy } if buttons.is_none() => ("hover", EventKind::Hover(HoverPhase::Over, sample(dx, dy))),
-            CapturedMouse::Move { dx, dy } => ("pointer", EventKind::Pointer(Phase::Move, sample(dx, dy))),
-            CapturedMouse::Press(phase) => ("pointer", EventKind::Pointer(phase, sample(0.0, 0.0))),
-            CapturedMouse::Wheel { notches } => ("wheel", EventKind::Wheel { x: at.0 - rect.x, y: at.1 - rect.y, notches, mods }),
+        let pointer_action = || pointer_wire(page, surface).map(|(action, _)| action);
+        let (action, kind): (Option<Action>, EventKind) = match what {
+            CapturedMouse::Move { dx, dy } if buttons.is_none() => (event_action(page, surface, "hover"), EventKind::Hover(HoverPhase::Over, sample(dx, dy))),
+            CapturedMouse::Move { dx, dy } => (pointer_action(), EventKind::Pointer(Phase::Move, sample(dx, dy))),
+            CapturedMouse::Press(phase) => (pointer_action(), EventKind::Pointer(phase, sample(0.0, 0.0))),
+            CapturedMouse::Wheel { notches } => (event_action(page, surface, "wheel"), EventKind::Wheel { x: at.0 - rect.x, y: at.1 - rect.y, notches, mods }),
         };
-        if let Some(action) = event_action(page, surface, word) {
+        if let Some(action) = action {
             self.push_event(page, rt, &mut events, surface, kind, Some(action));
         }
         events
@@ -2572,12 +2607,21 @@ impl Input {
                 // no press, so its moves and its lift find none; and it
                 // dismisses no edit bar and stops no glide.
                 //
-                // A Surface takes every finger that lands on it: the
-                // program's code tells one finger (a stroke) from two (a
-                // zoom), so each gets a press of its own.
+                // A node with `on:pointer_multi=` takes every finger that
+                // lands on it: the program's code tells one finger (a
+                // stroke) from two (a zoom), so each gets a press of its
+                // own.
                 let landed_on: Option<NodeId> = hit_node.map(|n| behavior_at(page, n).map_or(n, |i| page.behaviors[i as usize].root));
-                if landed_on.is_some_and(|n| page.nodes[n].kind != Kind::Surface && self.is_held(n)) {
-                    return events;
+                if let Some(held) = landed_on.filter(|n| self.is_held(*n)) {
+                    match pointer_wire(page, held) {
+                        Some((_, true)) => {}
+                        wire => {
+                            if wire.is_some() {
+                                say_once_a_finger_was_dropped(page, held);
+                            }
+                            return events;
+                        }
+                    }
                 }
                 if rt.edit_bar.is_some() {
                     rt.edit_bar = None;
@@ -2628,7 +2672,7 @@ impl Input {
                 // Only `on:pointer=` hears a press that lacks the primary
                 // button (a mouse's middle or right one): every other node
                 // reacts to the primary button alone.
-                let raw: Option<Action> = event_action(page, node, "pointer");
+                let raw: Option<Action> = pointer_wire(page, node).map(|(action, _)| action);
                 if raw.is_none() && !t.buttons.has(Buttons::PRIMARY) {
                     return events;
                 }

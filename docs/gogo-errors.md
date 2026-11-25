@@ -502,7 +502,7 @@ Slider takes `on:press`/`on:release` (they bracket its drag) but not
 control's own gestures. So do `on:hover` and `on:wheel`: a control has its
 own answer to the mouse.
 
-## G0073 — `on:pointer`, `on:hover` and `on:wheel` need `interactive=true`
+## G0073 — `on:pointer`, `on:pointer_multi`, `on:hover` and `on:wheel` need `interactive=true`
 
 Passive boxes are transparent to input, always; the wire alone claims
 nothing. Declare the surface: `interactive=true`.
@@ -674,6 +674,32 @@ Fix:
 ```kdl
 View page {
     Label title text="HELLO"
+}
+```
+
+## G0086 — `on:pointer=` and `on:pointer_multi=` on one node
+
+A box takes fingers one of two ways. `on:pointer=` takes one finger at a
+time: a second finger on the box does nothing. `on:pointer_multi=` takes
+every finger that lands on the box, each with a press of its own. With
+both on one node, a second finger would be dropped by one line and taken
+by the other, so a node writes one of them.
+
+Wrong:
+
+```kdl error=G0086
+View page {
+    Panel ground width=200, height=200, interactive=true,
+        on:pointer=drag, on:pointer_multi=pinch
+}
+```
+
+Fix (one handler hears every finger; the sample's finger id says which):
+
+```kdl
+View page {
+    Panel ground width=200, height=200, interactive=true,
+        on:pointer_multi=ground_fingers
 }
 ```
 

@@ -1196,7 +1196,8 @@ pair already conformed):
 | `press` / `release` | the finger landed on a press surface, and that gesture ended — `release` fires exactly once however it ends (lift inside or out, cancel, a Scroll steal, disable/hide under the finger). A Slider brackets its drag with the same pair: `press` on down, `release` on up or cancel, one each. `activate` stays a press surface's completed tap; a Slider never fires it | — |
 | `show` / `hide` | visibility choreography (unchanged) | — |
 | `uncover` | the host says the page shows again after the page that covered it left (`Runtime::play_uncovers`); takes `play(anim)` | — |
-| `pointer` | a press on a box the program's code handles itself, every sample from landing to lift (the node needs `interactive=true`, G0073). The pointer stays with the box until it lifts, wherever it moves | the sample: its phase, the place inside the box (epx), the move since the last sample, the finger's id, the tool (finger, mouse, pen, eraser), the buttons down, the pressure, a pen's lean, the time, the keys held |
+| `pointer` | a press on a box the program's code handles itself, every sample from landing to lift (the node needs `interactive=true`, G0073). The pointer stays with the box until it lifts, wherever it moves. One finger at a time: a second finger on the box does nothing | the sample: its phase, the place inside the box (epx), the move since the last sample, the finger's id, the tool (finger, mouse, pen, eraser), the buttons down, the pressure, a pen's lean, the time, the keys held |
+| `pointer_multi` | the same, for every finger that lands on the box: each finger has a press of its own, from its landing to its lift. For a box whose code tells one finger from two (a drag from a pinch). A node writes `pointer` or `pointer_multi`, never both (G0086) | the same sample; its finger's id says which finger it is |
 | `hover` | a pointer over such a box with nothing pressed (a mouse with no button down, a pen above the screen), and once more when it is gone from the box. Needs `interactive=true` (G0073) | the same sample, and whether the pointer is over the box or left it (`Over`, `Left`) |
 | `wheel` | the mouse wheel turned over such a box. Needs `interactive=true` (G0073). The box takes the turn before a Scroll around it | the place inside the box, the notches (above 0: away from the user), the keys held |
 
@@ -1218,7 +1219,10 @@ there is no selection to change, activation still fires.
 **Several pointers at once.** Each finger has its own press: a finger
 drags a Slider while another taps a Button. A node holds one finger at a
 time: a second finger on a node that is held does nothing, from its
-landing to its lift. A Scroll or a List that a finger pans is held by
+landing to its lift. A node with `on:pointer_multi=` is the exception: it
+takes every finger that lands on it, each with a press of its own (a
+debug build says once when a second finger on an `on:pointer=` box was
+dropped, and names this word). A Scroll or a List that a finger pans is held by
 that finger: another finger presses the row under it, and cannot take the
 Scroll. Keyboard focus and the text caret stay single.
 
@@ -1773,9 +1777,9 @@ to the goals rather than to muscle memory from WPF or an engine (`Label`,
   `draw=` are refused (G7016). `draw=` is written on the Surface's own
   line only, because the build types the Surface's name by it
   (`PictureSurface`, `CommandSurface`, `GpuSurface`): code that fills it another way
-  does not compile. With `interactive=true` and `on:pointer=` it takes
-  every finger that lands on it, each with its own press; any other box
-  holds one finger at a time. `capture_mouse=true` (a bool: the line, a
+  does not compile. With `interactive=true` it takes fingers as any box
+  does: `on:pointer=` one finger at a time, `on:pointer_multi=` every
+  finger that lands on it, each with its own press. `capture_mouse=true` (a bool: the line, a
   `when` or code writes it) hides the cursor and hands everything the
   mouse does to the Surface, with moves in the mouse's own counts, while
   the Surface's page is the top page and the window has the keyboard.

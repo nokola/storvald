@@ -18,7 +18,7 @@ use gogo_ui::locale::Keys;
 use gogo_ui::page::Action;
 use gogo_ui::reload::{Reloader, Sources};
 use gogo_ui::runtime::{Item, ItemKey, ItemValue};
-use gogo_ui::{ArrangementId, Behavior, BehaviorSpec, Claim, Color_Straight_Srgb_4xU8_RGBA, CommandSurface, Compiled, CompileOptions, Cx, Draw, Event, EventKind, EventList, Finish, ImageKey, Input, KEYS_ARROWS, KeptFrame, KeyAction, KeyId, Locale, NO_KEY, NO_NODE, NO_STR, NodeId, Orientation, Page, Payload, Phase, PictureSurface, PropKey, Runtime, ScreenClass, StrId, SurfaceCommands, TextAlign, Touch, Value, compile, compile_with, has_errors};
+use gogo_ui::{ArrangementId, Behavior, BehaviorSpec, Claim, Color_Straight_Srgb_4xU8_RGBA, CommandSurface, Compiled, CompileOptions, Cx, Draw, Event, EventKind, EventList, Finish, ImageKey, Input, KEYS_ARROWS, KeptFrame, KeyAction, KeyId, Locale, NO_KEY, NO_NODE, NO_STR, NodeId, Orientation, Page, Payload, Phase, PictureSurface, PointerSample, PropKey, Runtime, ScreenClass, StrId, SurfaceCommands, TextAlign, Touch, Value, compile, compile_with, has_errors};
 
 /// Compiles a page from text and prints what the compiler says.
 ///
@@ -479,6 +479,69 @@ fn surface_tour() {
     assert!(host.draws.iter().any(|d| matches!(d, Draw::Surface { surface, .. } if *surface == score)));
 }
 
+const GROUND: &str = r#"
+View page {
+    Layers width=fill, height=fill {
+        Panel ground width=fill, height=fill, interactive=true,
+            on:pointer_multi=ground_fingers
+    }
+}
+"#;
+
+/// The fingers down on one box, and the zoom two of them made.
+pub struct Fingers {
+    /// Each finger that is down: its id and its place in the box.
+    pub down: Vec<(u64, f32, f32)>,
+    pub zoom: f32,
+}
+
+impl Fingers {
+    /// Takes one `Pointer` event of a box with `on:pointer_multi=`.
+    pub fn sample(&mut self, phase: Phase, sample: PointerSample) {
+        let spread_before: Option<f32> = self.spread();
+        match phase {
+            Phase::Down => self.down.push((sample.finger, sample.x, sample.y)),
+            Phase::Move => {
+                if let Some(finger) = self.down.iter_mut().find(|finger| finger.0 == sample.finger) {
+                    *finger = (sample.finger, sample.x, sample.y);
+                }
+            }
+            Phase::Up | Phase::Cancel => self.down.retain(|finger| finger.0 != sample.finger),
+        }
+        // Two fingers that moved apart or together: a zoom.
+        if let (Phase::Move, Some(before), Some(now)) = (phase, spread_before, self.spread()) {
+            self.zoom *= now / before;
+        }
+    }
+
+    /// Distance between the fingers, while exactly two are down.
+    fn spread(&self) -> Option<f32> {
+        match self.down[..] {
+            [(_, ax, ay), (_, bx, by)] => Some(((bx - ax).powi(2) + (by - ay).powi(2)).sqrt()),
+            _ => None,
+        }
+    }
+}
+
+fn fingers_tour() {
+    let (page, _) = compile_page(GROUND).expect("the ground compiles");
+    let mut host: Hosted = Hosted::new(page, 360.0, 640.0);
+    let mut fingers: Fingers = Fingers { down: Vec::new(), zoom: 1.0 };
+    // Two fingers 100 epx apart, then the second moves to 200 epx away.
+    let touches: [(Phase, f32, f32, u64); 5] = [(Phase::Down, 100.0, 300.0, 1), (Phase::Down, 200.0, 300.0, 2), (Phase::Move, 300.0, 300.0, 2), (Phase::Up, 300.0, 300.0, 2), (Phase::Up, 100.0, 300.0, 1)];
+    for (phase, x, y, id) in touches {
+        let events: EventList = host.input.touch(&host.page, &mut host.rt, host.kept.frame(), &FixedAdvance, Touch { phase, x, y, t: 0.0, id, ..Touch::PLAIN });
+        for ev in &events {
+            if let EventKind::Pointer(phase, sample) = ev.kind {
+                assert_eq!(handler_name(&host.page, ev), Some("ground_fingers"));
+                fingers.sample(phase, sample);
+            }
+        }
+    }
+    assert_eq!(fingers.zoom, 2.0);
+    assert!(fingers.down.is_empty());
+}
+
 /// Runs every piece above. The docs test calls it.
 pub fn tour() {
     let (page, keys) = compile_page(MENU).expect("the menu compiles");
@@ -496,5 +559,6 @@ pub fn tour() {
     safe_tour();
     behavior_tour();
     surface_tour();
+    fingers_tour();
     assert!(compile_page("View v { Label a no_such_word=1 }").is_none());
 }

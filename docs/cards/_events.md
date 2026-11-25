@@ -29,7 +29,8 @@ Priority when several hold (higher wins per property): arrangements <
 | `edit` | a live, uncommitted value moved — per drag tick, per keystroke that changes the text | the live value |
 | `show` / `hide` | visibility choreography — takes `play(anim)` | — |
 | `uncover` | the host says the page shows again after the page that covered it left — takes `play(anim)` | — |
-| `pointer` | a press on a box the program's code handles itself, every sample from landing to lift (needs `interactive=true`) | the sample: phase, place inside the box, move since the last sample, finger, tool, buttons, pressure, a pen's lean, time, keys held |
+| `pointer` | a press on a box the program's code handles itself, every sample from landing to lift (needs `interactive=true`). One finger at a time | the sample: phase, place inside the box, move since the last sample, finger, tool, buttons, pressure, a pen's lean, time, keys held |
+| `pointer_multi` | the same, for every finger that lands on the box, each with a press of its own (a pinch). A node writes `pointer` or `pointer_multi`, never both | the same sample; its finger's id says which finger |
 | `hover` | a pointer over such a box with nothing pressed, and once more when it is gone (needs `interactive=true`) | the same sample, and whether the pointer is over the box or left it |
 | `wheel` | the mouse wheel turned over such a box (needs `interactive=true`) | place inside the box, notches, keys held |
 

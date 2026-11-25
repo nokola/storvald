@@ -1501,7 +1501,11 @@ Rectangle shield interactive=true, color=#00000000         // the catcher idiom
 - A box the host draws itself takes the raw touch with `on:pointer=<name>`
   — every sample of a press, with its place inside the box, its finger,
   its pressure and the buttons down — and needs `interactive=true` on
-  the same node (G0073: the wire alone claims nothing). `on:hover=<name>`
+  the same node (G0073: the wire alone claims nothing). `on:pointer=`
+  takes one finger at a time. A box whose code tells one finger from two
+  (a pinch) writes `on:pointer_multi=<name>` in its place: every finger
+  that lands on the box arrives, each with a press of its own, and the
+  sample's finger id says which. `on:hover=<name>`
   hears a mouse that moves over the box with no button down, and
   `on:wheel=<name>` its wheel; both need `interactive=true` too.
 
@@ -1674,7 +1678,7 @@ for another.
 View main {
     Layers width=fill, height=fill {
         Surface painting draw=picture, fit=distort, width=fill, height=fill,
-            interactive=true, on:pointer=painting_pointer
+            interactive=true, on:pointer_multi=painting_pointer
         Surface chart draw=commands, width=200, height=120,
             halign=right, valign=top
         Surface model draw=gpu, width=160, height=160,
@@ -1743,11 +1747,12 @@ View main {
   program runs stops a debug build with the Surface's name. A phone the
   user turns needs none of this: the window gets a new size and the
   Surface a new rectangle.
-- **Fingers.** With `interactive=true` and `on:pointer=<name>` a Surface
-  takes every finger that lands on it, each with a press of its own from
-  its landing to its lift: the code tells one finger (a stroke) from two
-  (a zoom). Any other box holds one finger at a time. A Surface with
-  neither word lets a finger through to what is under it.
+- **Fingers.** A Surface takes fingers as any box does. With
+  `interactive=true` and `on:pointer_multi=<name>` it takes every finger
+  that lands on it, each with a press of its own from its landing to its
+  lift: the code tells one finger (a stroke) from two (a zoom). With
+  `on:pointer=<name>` it holds one finger at a time. A Surface with
+  neither wire lets a finger through to what is under it.
 - **`capture_mouse=true`** gives a Surface the mouse with no place: the
   cursor is hidden and held, and its moves do not stop at the edge of
   the screen. A game turns its camera that way, a 3D editor a model. It
@@ -2951,7 +2956,8 @@ View settings {
 | `change` | the committed value is now different — once per commit, genuine transitions only | Check/Toggle a bool, Slider a number, Input the text, `choice` the picked Radio's name; for a List read the keys with `Runtime::selected_keys` |
 | `edit` | a live, UNCOMMITTED value moved — Slider per drag tick, Input per keystroke that changes the text; discrete controls have no edit | the live value |
 | `show` / `hide` | the node was shown or hidden — takes `play(anim)` | — |
-| `pointer` | a press on a box the program's code handles itself, every sample from landing to lift (the node needs `interactive=true`, G0073). The pointer stays with the box until it lifts, wherever it moves | the sample: its phase, the place inside the box (epx), the move since the last sample, the finger's id, the tool (finger, mouse, pen, eraser), the buttons down, the pressure, a pen's lean, the time, the keys held |
+| `pointer` | a press on a box the program's code handles itself, every sample from landing to lift (the node needs `interactive=true`, G0073). The pointer stays with the box until it lifts, wherever it moves. One finger at a time: a second finger on the box does nothing | the sample: its phase, the place inside the box (epx), the move since the last sample, the finger's id, the tool (finger, mouse, pen, eraser), the buttons down, the pressure, a pen's lean, the time, the keys held |
+| `pointer_multi` | the same, for every finger that lands on the box: each finger has a press of its own, from its landing to its lift. For a box whose code tells one finger from two (a drag from a pinch). A node writes `pointer` or `pointer_multi`, never both (G0086) | the same sample; its finger's id says which finger it is |
 | `hover` | a pointer over such a box with nothing pressed (a mouse with no button down, a pen above the screen), and once more when it is gone from the box. Needs `interactive=true` (G0073) | the same sample, and whether the pointer is over the box or left it (`Over`, `Left`) |
 | `wheel` | the mouse wheel turned over such a box. Needs `interactive=true` (G0073). The box takes the turn before a Scroll around it | the place inside the box, the notches (above 0: away from the user), the keys held |
 
@@ -2980,8 +2986,8 @@ What `on:` takes:
   widget reports under the name of the instance (`Prompt ask` with two
   buttons inside: `ask`, and `Handler::Ask` in a build), and the event's
   node says which part it was (`NAMES.ask.keep`). `press`, `release`,
-  `pointer`, `hover` and `wheel` are the exception: gogo reports them only
-  on a node whose line has that `on:`.
+  `pointer`, `pointer_multi`, `hover` and `wheel` are the exception: gogo
+  reports them only on a node whose line has that `on:`.
 - **`emit(Name)`**: the event is reported under `Name`. Use it to give
   several controls one name (`emit(BackPressed)` on a button and on a
   key).

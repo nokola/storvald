@@ -407,12 +407,13 @@ fn pointer_downs(events: &EventList) -> Vec<u64> {
         .collect()
 }
 
-/// A Surface takes every finger that lands on it, each with a press of
-/// its own: the program's code tells one finger (a stroke) from two (a
-/// zoom). Any other box holds one finger at a time.
+/// A Surface with `on:pointer_multi=` takes every finger that lands on
+/// it, each with a press of its own: the program's code tells one finger
+/// (a stroke) from two (a zoom). With `on:pointer=` a Surface holds one
+/// finger at a time, as any other box does.
 #[test]
-fn a_surface_takes_every_finger_that_lands_on_it() {
-    let src = "View v { Layers l width=fill, height=fill {\n Surface world draw=commands, width=fill, height=300, valign=top, interactive=true, on:pointer=world_pointer\n Panel pad width=fill, height=300, valign=bottom, interactive=true, on:pointer=pad_pointer\n} }";
+fn a_surface_with_pointer_multi_takes_every_finger_that_lands_on_it() {
+    let src = "View v { Layers l width=fill, height=fill {\n Surface world draw=commands, width=fill, height=300, valign=top, interactive=true, on:pointer_multi=world_pointer\n Surface pad draw=commands, width=fill, height=300, valign=bottom, interactive=true, on:pointer=pad_pointer\n} }";
     let mut fx = Fx::new(src);
     fx.frame(400.0, 800.0);
     let mut input = Input::new();
@@ -434,7 +435,7 @@ fn a_surface_takes_every_finger_that_lands_on_it() {
     let lifted: EventList = touch(&mut fx, Phase::Up, 310.0, 210.0, 2);
     assert!(lifted.iter().any(|e| matches!(e.kind, EventKind::Pointer(Phase::Up, sample) if sample.finger == 2)));
 
-    // A box that is no Surface: the second finger does nothing.
+    // A Surface with `on:pointer=`: the second finger does nothing.
     assert_eq!(pointer_downs(&touch(&mut fx, Phase::Down, 100.0, 600.0, 3)), [3]);
     assert!(touch(&mut fx, Phase::Down, 300.0, 700.0, 4).is_empty());
 }
@@ -768,4 +769,12 @@ fn a_captured_mouse_s_events_go_to_its_surface() {
     quiet.rt.set_prop(world, PropKey::Disabled, Value::VBool(true));
     quiet.frame(400.0, 800.0);
     assert!(input.captured_mouse(&quiet.page, &mut quiet.rt, quiet.kept.frame(), world, at, CapturedMouse::Press(Phase::Down), Buttons::PRIMARY, 0.0, Mods::NONE).is_empty());
+
+    // A Surface that takes every finger (`on:pointer_multi=`) hears the
+    // captured mouse's buttons the same way.
+    let mut many = Fx::new("View v { Surface world draw=gpu, capture_mouse=true, interactive=true, on:pointer_multi=look, width=fill, height=fill }");
+    many.frame(400.0, 800.0);
+    let world: NodeId = many.id("world");
+    assert_eq!(input.captured_mouse(&many.page, &mut many.rt, many.kept.frame(), world, at, CapturedMouse::Press(Phase::Down), Buttons::PRIMARY, 0.0, Mods::NONE).len(), 1);
+    assert_eq!(input.captured_mouse(&many.page, &mut many.rt, many.kept.frame(), world, at, CapturedMouse::Move { dx: 1.0, dy: 1.0 }, Buttons::PRIMARY, 0.0, Mods::NONE).len(), 1);
 }

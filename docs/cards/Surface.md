@@ -32,10 +32,11 @@ holds no child: what goes over it is a node after it in the same
 `Layers`, as the toolbar above. gogo draws nothing of it, so it has no
 `background=`.
 
-With `interactive=true` and `on:pointer=<name>` it takes every finger
-that lands on it, each with a press of its own, so the code tells one
-finger (a stroke) from two (a zoom). Without them a finger goes through
-to what is under it.
+With `interactive=true` and `on:pointer_multi=<name>` it takes every
+finger that lands on it, each with a press of its own, so the code tells
+one finger (a stroke) from two (a zoom). With `on:pointer=<name>` it
+holds one finger at a time. Without either a finger goes through to what
+is under it.
 
 `capture_mouse=true` hides the cursor and hands every move of the mouse
 to the Surface: a game turns its camera that way.

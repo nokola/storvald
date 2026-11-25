@@ -1860,9 +1860,9 @@ engine does the asking.
 To hear touches on a Surface, give it `interactive=true` and
 `on:pointer=<name>`: every sample of a press arrives as a `Pointer` event
 with the place inside the box, which finger it is, its pressure and the
-buttons down. A Surface takes every finger that lands on it, each with a
-press of its own, so the code can tell a drag (one finger) from a zoom
-(two). Any other box holds one finger at a time. Add `on:hover=<name>`
+buttons down. `on:pointer=` takes one finger at a time; write
+`on:pointer_multi=<name>` in its place to take every finger that lands on
+the box (the next recipe). Add `on:hover=<name>`
 for a mouse that moves over the box with no button down (a brush outline
 follows it), and `on:wheel=<name>` for its wheel (a zoom at the mouse):
 
@@ -1870,6 +1870,70 @@ follows it), and `on:wheel=<name>` for its wheel (a zoom at the mouse):
 Surface pad draw=commands, width=200, height=200, interactive=true,
     on:pointer=drawn, on:hover=aimed, on:wheel=zoomed
 ```
+
+---
+
+## How do I take two fingers at once (a pinch, a zoom)?
+
+A box with `on:pointer=` takes one finger at a time: a second finger on
+it does nothing. Someone writes a crop page that way, pinches the
+picture, and nothing zooms. (A debug build says so once, and names the
+word below.)
+
+Write `on:pointer_multi=` in its place. The box then takes every finger
+that lands on it, and each finger has a press of its own, from its
+landing to its lift:
+
+```kdl
+View page {
+    Layers width=fill, height=fill {
+        Panel ground width=fill, height=fill, interactive=true,
+            on:pointer_multi=ground_fingers
+    }
+}
+```
+
+Every sample of every finger arrives as a `Pointer` event under the one
+handler name, `ground_fingers`. The sample's `finger` is the same number
+from a finger's landing to its lift, so the code keeps the fingers that
+are down by it. Two of them moving apart or together is the zoom:
+
+```rust
+impl Fingers {
+    /// Takes one `Pointer` event of a box with `on:pointer_multi=`.
+    pub fn sample(&mut self, phase: Phase, sample: PointerSample) {
+        let spread_before: Option<f32> = self.spread();
+        match phase {
+            Phase::Down => self.down.push((sample.finger, sample.x, sample.y)),
+            Phase::Move => {
+                if let Some(finger) = self.down.iter_mut().find(|finger| finger.0 == sample.finger) {
+                    *finger = (sample.finger, sample.x, sample.y);
+                }
+            }
+            Phase::Up | Phase::Cancel => self.down.retain(|finger| finger.0 != sample.finger),
+        }
+        // Two fingers that moved apart or together: a zoom.
+        if let (Phase::Move, Some(before), Some(now)) = (phase, spread_before, self.spread()) {
+            self.zoom *= now / before;
+        }
+    }
+
+    /// Distance between the fingers, while exactly two are down.
+    fn spread(&self) -> Option<f32> {
+        match self.down[..] {
+            [(_, ax, ay), (_, bx, by)] => Some(((bx - ax).powi(2) + (by - ay).powi(2)).sqrt()),
+            _ => None,
+        }
+    }
+}
+```
+
+- A control inside the box (a Button on the ground) still takes its own
+  finger; the box gets the fingers that land on the box itself.
+- A mouse is one pointer on either wire.
+- A node writes `on:pointer=` or `on:pointer_multi=`, never both (G0086).
+- A `Surface` follows the same rule: `on:pointer_multi=` for a painting
+  that zooms with two fingers.
 
 ---
 

@@ -327,6 +327,10 @@ impl Input { pub fn touch(&mut self, page: &Page, rt: &mut Runtime, f: Frame<'_>
   `pointer` never does (G0072 — the shadowing conflict cannot be
   written), and `on:pointer` without `interactive=true` on the same node
   is a dead wire (G0073, the D103 rule: the wire alone claims nothing).
+  `on:pointer=` takes one finger at a time; `on:pointer_multi=name`
+  (2026-11-25, user) takes every finger that lands on the node, each
+  with a press of its own, on a Surface as on any box. A node writes one
+  of the two (G0086).
 - `tap_pulse=true` on a press surface (decided 2026-09-05, user: the
   word stays, the motion is a TURNSTILE): a completed tap swings the box
   like a door about its left edge — out to 25° in 0.05 s (quad out), back

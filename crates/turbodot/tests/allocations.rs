@@ -262,7 +262,7 @@ View page background=#202020 {
     Layers width=fill, height=fill {
         Surface photo draw=picture, fit=cover, width=fill, height=fill
         Surface score draw=commands, width=120, height=32, halign=right, valign=top
-        Surface pad draw=commands, width=fill, height=200, valign=bottom, interactive=true, on:pointer=drawn
+        Surface pad draw=commands, width=fill, height=200, valign=bottom, interactive=true, on:pointer_multi=drawn
     }
 }
 "#;

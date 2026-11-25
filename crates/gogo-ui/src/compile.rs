@@ -70,15 +70,18 @@ pub struct CompileOptions<'a> {
 /// `pointer` hands the host the raw pointer (down/move/up/cancel with
 /// positions in the node's own epx space) — a code-drawn control's input.
 /// A mouse is one pointer: the shell feeds it as one fixed finger.
+/// `pointer` takes one finger at a time; `pointer_multi` takes every
+/// finger that lands on the node, each with a press of its own. A node
+/// writes one of the two (G0086).
 /// `show`, `hide` and `uncover` are hooks: each plays an anim and sends
 /// no event. `uncover` plays when host says page shows again from under
 /// what covered it (`Runtime::play_uncovers`).
-const EVENTS: &[&str] = &["activate", "press", "release", "change", "edit", "show", "hide", "uncover", "pointer", "hover", "wheel"];
+const EVENTS: &[&str] = &["activate", "press", "release", "change", "edit", "show", "hide", "uncover", "pointer", "pointer_multi", "hover", "wheel"];
 
 /// Events of a pointer as the device reports it, for a box the program's
 /// code handles itself. Each needs `interactive=true` on the same node
 /// (G0073) and goes on a passive box (G0072).
-const RAW_POINTER_EVENTS: &[&str] = &["pointer", "hover", "wheel"];
+const RAW_POINTER_EVENTS: &[&str] = &["pointer", "pointer_multi", "hover", "wheel"];
 
 /// The extensions the build embeds (`build_pages` collects every literal
 /// carrying one) — a literal naming one must write the `res://` scheme
@@ -7198,8 +7201,8 @@ impl<'a> Compiler<'a> {
             "activate" if !kind.is_press_surface() && kind != Kind::List => {
                 self.error("G0072", line, format!("`on:{event}` fires only on a press surface (Button, Check, Toggle, Radio, ListItem) or the List that owns them — a {kind:?} never emits it"));
             }
-            "pointer" if kind.is_press_surface() || matches!(kind, Kind::Scroll | Kind::Slider | Kind::Input) => {
-                self.error("G0072", line, format!("`on:pointer` takes the raw finger, so a {kind:?}'s own gestures would never fire — put the pointer surface on a passive box (Layers, Panel)"));
+            "pointer" | "pointer_multi" if kind.is_press_surface() || matches!(kind, Kind::Scroll | Kind::Slider | Kind::Input) => {
+                self.error("G0072", line, format!("`on:{event}` takes the raw finger, so a {kind:?}'s own gestures would never fire — put the pointer surface on a passive box (Layers, Panel)"));
             }
             "hover" | "wheel" if kind.is_press_surface() || matches!(kind, Kind::Scroll | Kind::List | Kind::Slider | Kind::Input) => {
                 self.error("G0072", line, format!("`on:{event}` is for a box the program's code handles itself, and a {kind:?} has its own answer to the mouse — put it on a passive box (Layers, Panel)"));
@@ -7754,6 +7757,23 @@ impl<'a> Compiler<'a> {
                 if self.page.prop(NodeId::from_index(i), PropKey::Interactive) != Some(Value::VBool(true)) {
                     let line = node.line;
                     self.error_at(i, "G0073", line, format!("`on:{word}` needs `interactive=true` on the same node — passive boxes are transparent to input, always; the wire alone claims nothing"));
+                }
+            }
+        }
+        // One pointer wire per node: `on:pointer=` says one finger at a
+        // time, `on:pointer_multi=` says every finger. With both, a
+        // second finger would be dropped by one line and taken by the
+        // other.
+        let one_finger: StrId = self.page.intern_lookup("pointer");
+        let every_finger: StrId = self.page.intern_lookup("pointer_multi");
+        if one_finger != NO_STR && every_finger != NO_STR {
+            for i in 0..self.page.nodes.len() {
+                let node = &self.page.nodes[i];
+                let (first, count) = node.handlers;
+                let wires = &self.page.handlers[first as usize..(first + count) as usize];
+                if wires.iter().any(|h| h.event == one_finger) && wires.iter().any(|h| h.event == every_finger) {
+                    let line: u32 = node.line;
+                    self.error_at(i, "G0086", line, "`on:pointer=` and `on:pointer_multi=` on one node — write one of them: `on:pointer=` takes one finger at a time, `on:pointer_multi=` every finger that lands on the node".to_string());
                 }
             }
         }
