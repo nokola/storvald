@@ -1,4 +1,4 @@
-# `open_controls_page` at commit 2e6144f143345584c7a1feddf2c0468edf3fe383: instructions by function, 121170 in all.
+# `open_controls_page` at commit 4be3ae077534385ecddcf5e3e44e99416dbcfe1c: instructions by function, 121379 in all.
 # A function's own code only: what it calls is counted at the called function.
 27019 __memcpy_avx_unaligned_erms
 11820 <gogo_ui::tree::PlacedTree>::build
@@ -21,9 +21,9 @@
 1283 malloc
 1263 <gogo_ui::runtime::Runtime>::set_screen
 1245 <gogo_ui::page::Page>::from_static
-924 gogo_ui::input::event_action
+1140 gogo_ui::input::event_action
 868 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::alloc
-724 <gogo_ui::input::Input>::touch
+717 <gogo_ui::input::Input>::touch
 715 __memcmp_avx2_movbe
 612 <alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global>
 599 <gogo_ui::anim::Player>::new

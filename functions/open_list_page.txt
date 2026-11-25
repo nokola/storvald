@@ -1,4 +1,4 @@
-# `open_list_page` at commit 2e6144f143345584c7a1feddf2c0468edf3fe383: instructions by function, 1821303 in all.
+# `open_list_page` at commit 4be3ae077534385ecddcf5e3e44e99416dbcfe1c: instructions by function, 1821512 in all.
 # A function's own code only: what it calls is counted at the called function.
 246849 _int_malloc
 159222 <gogo_ui::runtime::Watchers>::extend
@@ -72,15 +72,15 @@
 1328 gogo_ui::runtime::resolve
 1248 __rustc::__rust_alloc_zeroed
 1154 <gogo_ui::runtime::Runtime>::new
+1140 gogo_ui::input::event_action
 1062 gogo_ui::runtime::ladder_node
 1000 <alloc::string::String as core::fmt::Display>::fmt
 1000 <gogo_ui::page::PropKey>::closed_words
 1000 <str as core::fmt::Display>::fmt
 990 __rustc::__rust_realloc
 961 <gogo_ui::page::Page>::from_static
-924 gogo_ui::input::event_action
 770 <gogo_ui::tree::Subtree as core::iter::traits::iterator::Iterator>::next
-724 <gogo_ui::input::Input>::touch
+717 <gogo_ui::input::Input>::touch
 640 <storvald_perf::pages::ListPage as turbodot::page::Page<storvald_perf::AppState>>::show
 599 <gogo_ui::anim::Player>::new
 570 <gogo_ui::runtime::Runtime>::play_hook_on_drawn_nodes

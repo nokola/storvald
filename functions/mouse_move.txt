@@ -1,4 +1,4 @@
-# `mouse_move` at commit 2e6144f143345584c7a1feddf2c0468edf3fe383: instructions by function, 113503 in all.
+# `mouse_move` at commit 4be3ae077534385ecddcf5e3e44e99416dbcfe1c: instructions by function, 113503 in all.
 # A function's own code only: what it calls is counted at the called function.
 16093 gogo_ui::runtime::resolve_into
 15435 gogo_ui::draw::walk'2

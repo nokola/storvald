@@ -9,26 +9,26 @@ What gogo and TurboDot cost in the measured program (`perf/` on `main`), counted
 
 ## Last run
 
-2026-11-25T18:13:38Z, commit [2e6144f](https://github.com/nokola/storvald/commit/2e6144f143345584c7a1feddf2c0468edf3fe383), rustc 1.100.0, machine `github-ubuntu26`. 30 runs so far.
+2026-11-25T18:58:05Z, commit [4be3ae0](https://github.com/nokola/storvald/commit/4be3ae077534385ecddcf5e3e44e99416dbcfe1c), rustc 1.100.0, machine `github-ubuntu26`. 31 runs so far.
 
 | Scenario | What is counted | Instructions | Against run before | Allocations | Nodes placed | Nodes measured |
 |---|---|---:|---:|---:|---:|---:|
-| `compile_controls_page` | gogo compiles the controls page's file | 3,161,180 | -0.1 % | 3,517 | 0 | 0 |
-| `start_program` | program is made and runs its first frame | 1,173,103 | -0.0 % | 343 | 6 | 8 |
-| `open_controls_page` | tap that opens the controls page: page is made | 121,170 | -0.0 % | 67 | 0 | 0 |
-| `first_frame_of_controls_page` | first frame of the controls page: its first layout | 4,896,509 | -0.0 % | 1,664 | 115 | 229 |
-| `open_list_page` | tap that opens the list page: page and its 100 rows are made | 1,821,303 | +0.1 % | 2,561 | 0 | 0 |
-| `first_frame_of_list_page` | first frame of the list page: its first layout | 21,524,745 | +0.0 % | 6,047 | 413 | 910 |
-| `open_list_page_again` | same tap, at page's second open | 1,834,238 | +0.2 % | 2,556 | 0 | 0 |
-| `first_frame_of_list_page_again` | first frame of the list page at its second open | 8,246,522 | +0.0 % | 599 | 413 | 910 |
+| `compile_controls_page` | gogo compiles the controls page's file | 3,165,249 | +0.1 % | 3,517 | 0 | 0 |
+| `start_program` | program is made and runs its first frame | 1,173,103 | +0.0 % | 343 | 6 | 8 |
+| `open_controls_page` | tap that opens the controls page: page is made | 121,379 | +0.2 % | 67 | 0 | 0 |
+| `first_frame_of_controls_page` | first frame of the controls page: its first layout | 4,896,554 | +0.0 % | 1,664 | 115 | 229 |
+| `open_list_page` | tap that opens the list page: page and its 100 rows are made | 1,821,512 | +0.0 % | 2,561 | 0 | 0 |
+| `first_frame_of_list_page` | first frame of the list page: its first layout | 21,524,496 | -0.0 % | 6,047 | 413 | 910 |
+| `open_list_page_again` | same tap, at page's second open | 1,834,447 | +0.0 % | 2,556 | 0 | 0 |
+| `first_frame_of_list_page_again` | first frame of the list page at its second open | 8,246,562 | +0.0 % | 599 | 413 | 910 |
 | `draw_list_of_list_page` | draw list of the list page, walked whole | 2,702,056 | +0.0 % | 7 | 0 | 0 |
-| `still_frame` | frame of the controls page while nothing changes | 3,162 | -0.0 % | 0 | 0 | 0 |
-| `mouse_move` | mouse moves onto another row of the controls page, and the frame after | 113,503 | -0.0 % | 0 | 0 | 0 |
-| `scroll_step` | finger pans the list one step, and the frame after | 3,347,572 | +0.0 % | 0 | 0 | 0 |
-| `slider_drag_step` | finger drags a slider one step, and the frame after | 62,700 | -0.0 % | 0 | 0 | 0 |
-| `text_change` | code writes a new text to one label, and the frame after | 68,760 | -0.0 % | 3 | 0 | 2 |
-| `slide_frame` | frame while the controls page slides in | 3,803 | -0.0 % | 0 | 0 | 0 |
-| `leave_and_come_back` | controls page leaves and first page comes back, to the end of both anims | 118,329 | -0.0 % | 0 | 0 | 0 |
+| `still_frame` | frame of the controls page while nothing changes | 3,162 | +0.0 % | 0 | 0 | 0 |
+| `mouse_move` | mouse moves onto another row of the controls page, and the frame after | 113,503 | +0.0 % | 0 | 0 | 0 |
+| `scroll_step` | finger pans the list one step, and the frame after | 3,347,564 | -0.0 % | 0 | 0 | 0 |
+| `slider_drag_step` | finger drags a slider one step, and the frame after | 62,697 | -0.0 % | 0 | 0 | 0 |
+| `text_change` | code writes a new text to one label, and the frame after | 68,760 | +0.0 % | 3 | 0 | 2 |
+| `slide_frame` | frame while the controls page slides in | 3,803 | +0.0 % | 0 | 0 | 0 |
+| `leave_and_come_back` | controls page leaves and first page comes back, to the end of both anims | 118,329 | +0.0 % | 0 | 0 | 0 |
 
 ## Numbers that moved
 
