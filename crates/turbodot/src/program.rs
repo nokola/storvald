@@ -8,9 +8,11 @@ use std::sync::Arc;
 
 use gogo_text::TextEngine;
 use gogo_ui::reload::{BuildTables, Reloader, Sources};
-use gogo_ui::{Buttons, CapturedMouse, Draw, Event, EventList, Hook, ImageKey, Key, Locale, MOUSE_ID, Mods, NodeId, NodeName, Orientation, Phase, PropKey, Rect, ScreenClass, Touch, Value};
+use gogo_ui::{Buttons, CapturedMouse, Draw, Event, EventList, Hook, ImageKey, Key, Locale, MOUSE_ID, Mods, NO_NODE, NodeId, NodeName, Orientation, Phase, PropKey, Rect, ScreenClass, Touch, Value};
 
-use crate::page::{Back, Host, IntoPage, Nav, PageKind, PageObject, Request};
+#[cfg(feature = "gpu")]
+use crate::page::PageGpu;
+use crate::page::{Back, Host, IntoPage, KeptOffScreen, Nav, OffScreenPage, PageKind, PageObject, Request};
 use crate::pages::{PageUi, PageId, PagePlatform, PagePose, PageStack, UiAssets};
 
 /// Root of a page: first node of its file.
@@ -58,6 +60,22 @@ impl Way {
         }
     }
 }
+
+/// Pixels per epx a page kept off screen is laid out at
+/// (`Nav::keep_off_screen`).
+///
+/// Needed as one fixed scale: such a page has no screen, and is drawn
+/// at a scale each draw names (`TexturePlacement::px_per_epx`). Laid
+/// out at the window's scale, its texts would be measured for a screen
+/// it is never shown on, and differ from phone to phone.
+const OFF_SCREEN_PX_PER_EPX: f32 = 1.0;
+
+/// How many times in one frame `Page::after_layout` calls are made
+/// again for pages laid out by what an earlier such call asked of `Nav`.
+///
+/// Needed as a limit: two pages that tell each other something in
+/// `after_layout` at every call would never end a frame.
+const AFTER_LAYOUT_ROUNDS: u32 = 4;
 
 /// One page on its way in or out, for as long as its root's anim for
 /// that way plays.
@@ -139,6 +157,8 @@ pub struct Program<A = ()> {
     layers: Vec<PageId>,
     /// By page's id in `stack`: page it is placed in and that page's
     /// node (`Nav::place`). `None`: page of the back stack, or cached.
+    /// For page kept off screen: its keeping page and `NO_NODE`, so
+    /// `frame_pages` lays it out neither for the window nor in a node.
     placed_in: Vec<Option<(PageId, NodeId)>>,
     /// Placed pages in the order placed: page placed inside a placed
     /// page comes after it.
@@ -163,6 +183,9 @@ pub struct Program<A = ()> {
     /// one `for_each_list` call.
     #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
     posed: RefCell<Vec<Draw>>,
+    /// Pages kept off screen, in the order kept (`Nav::keep_off_screen`).
+    /// None of them is in draw order or on the back stack.
+    kept_off_screen: Vec<KeptOffScreen>,
 }
 
 impl<A: 'static> Program<A> {
@@ -217,6 +240,7 @@ impl<A: 'static> Program<A> {
             has_freed_a_page: false,
             has_depth_surface: built.has_depth_surface,
             posed: RefCell::new(Vec::new()),
+            kept_off_screen: Vec::new(),
         };
         program.open(first.into_page_object().0);
         program.carry_out_requests();
@@ -337,8 +361,8 @@ impl<A: 'static> Program<A> {
         self.stack.order.iter().any(|id| self.page_type(*id) == Some(TypeId::of::<P>()))
     }
 
-    /// Count of live pages: on the back stack, placed in a page, cached,
-    /// layers.
+    /// Count of live pages: on the back stack, placed in a page, kept
+    /// off screen, cached, layers.
     ///
     /// Needed by a check that a page was freed, with what was placed in
     /// it.
@@ -478,6 +502,9 @@ impl<A: 'static> Program<A> {
             let id: PageId = self.stack.order[i];
             is_page_asking_for_frames |= self.call(id, |page, host| page.frame(host, dt));
         }
+        if !self.kept_off_screen.is_empty() {
+            is_page_asking_for_frames |= self.frame_pages_off_screen(dt);
+        }
         self.carry_out_requests();
         self.place_code_pictures();
         let size_px: (u32, u32) = (((width * self.epx).round() as u32).max(1), ((height * self.epx).round() as u32).max(1));
@@ -489,11 +516,12 @@ impl<A: 'static> Program<A> {
             self.place_code_pictures();
             is_moving |= self.frame_pages(0.0, size_px);
         }
-        // Only a layout leaves a Surface to write, or another Surface
-        // asking for the mouse, so a frame with none asks no page.
+        // Only a layout leaves a page to tell, a Surface to write, or
+        // another Surface asking for the mouse, so a frame with none
+        // asks no page.
         let news: u8 = self.assets.take_layout_news();
         if news != 0 {
-            self.do_what_layouts_left(news);
+            is_moving |= self.do_what_layouts_left(news, size_px);
         }
         #[cfg(debug_assertions)]
         self.check_page_kinds();
@@ -501,21 +529,210 @@ impl<A: 'static> Program<A> {
     }
 
     /// What layouts left this frame to do (`UiAssets::take_layout_news`):
-    /// writes the Surfaces that need their draw commands, and finds who
-    /// has the mouse.
+    /// tells each page laid out (`Page::after_layout`), writes the
+    /// Surfaces that need their draw commands, and finds who has the
+    /// mouse.
     ///
     /// Needed out of line, never folded into `frame`: most frames have
     /// none of it, and folded in it made every frame's own code longer.
     /// A still frame then counted 15 instructions more.
+    ///
+    /// Returns true while what a page wrote in `after_layout` moves.
     #[cold]
     #[inline(never)]
-    fn do_what_layouts_left(&mut self, news: u8) {
+    fn do_what_layouts_left(&mut self, mut news: u8, size_px: (u32, u32)) -> bool {
+        let mut is_moving: bool = false;
+        if news & crate::pages::LAYOUT_RAN != 0 {
+            let (is_written_moving, is_a_call_owed): (bool, bool) = self.tell_pages_laid_out(size_px);
+            // Layouts of what pages wrote there: their Surfaces, their
+            // mouse.
+            news |= self.assets.take_layout_news();
+            if is_a_call_owed {
+                // After the take above, which would drop it. The frame
+                // that makes the calls is asked for.
+                self.assets.note_layout_ran();
+            }
+            is_moving = is_written_moving | is_a_call_owed;
+        }
         if news & crate::pages::SURFACE_ASKS != 0 {
             self.draw_surfaces();
         }
         if news & crate::pages::MOUSE_CAPTURE_NEWS != 0 {
             self.update_mouse_capture();
         }
+        is_moving
+    }
+
+    /// One frame of each page kept off screen whose keeping page is
+    /// drawn: its own `Page::frame`, then its layout, for its own size at
+    /// one pixel per epx, with no safe inset and the program's language.
+    ///
+    /// Needed apart from `frame_pages`, which lays every page out for
+    /// the window. Out of line: a program that keeps no page pays one
+    /// compare a frame.
+    ///
+    /// Returns true while one of them asks for frames or moves.
+    #[cold]
+    #[inline(never)]
+    fn frame_pages_off_screen(&mut self, dt: f32) -> bool {
+        let mut is_moving: bool = false;
+        for i in 0..self.kept_off_screen.len() {
+            let kept: KeptOffScreen = self.kept_off_screen[i];
+            if self.stack.is_ordered(kept.keeper) {
+                is_moving |= self.call(kept.page, |page, host| page.frame(host, dt));
+            }
+        }
+        // What they asked for is done before they are laid out. A page
+        // freed on the way is gone from the list.
+        self.carry_out_requests();
+        for i in 0..self.kept_off_screen.len() {
+            let kept: KeptOffScreen = self.kept_off_screen[i];
+            if self.stack.is_ordered(kept.keeper) {
+                let platform: PagePlatform = PagePlatform::new([0.0; 4], Orientation::from_view(kept.width, kept.height), ScreenClass::from_view(kept.width, kept.height), self.platform.locale.clone());
+                is_moving |= self.stack.get_mut(kept.page).frame(dt, kept.size_px(), OFF_SCREEN_PX_PER_EPX, &platform, &self.assets);
+            }
+        }
+        is_moving
+    }
+
+    /// Lays out again each page kept off screen that was written into
+    /// since its frame, when its keeping page is drawn.
+    ///
+    /// Needed before pages draw (`Page::before_draw`): what a page told
+    /// the page it keeps in this frame's `frame` or `after_layout` is in
+    /// the texture it draws now.
+    #[cfg(feature = "gpu")]
+    #[cold]
+    #[inline(never)]
+    fn relayout_pages_off_screen(&mut self) {
+        for i in 0..self.kept_off_screen.len() {
+            let kept: KeptOffScreen = self.kept_off_screen[i];
+            if self.stack.is_ordered(kept.keeper) && self.stack.get(kept.page).runtime.dirty {
+                self.stack.get_mut(kept.page).relayout(kept.size_px(), OFF_SCREEN_PX_PER_EPX, &self.assets);
+            }
+        }
+    }
+
+    /// Keeps `page` off screen for page `keeper`.
+    fn keep_off_screen(&mut self, keeper: PageId, handle: OffScreenPage, page: Box<dyn PageObject<A>>, width: f32, height: f32) {
+        if !self.stack.contains(keeper) {
+            return; // asking page was freed before its request's turn
+        }
+        let id: PageId = self.make(page, true);
+        self.stack.order_remove(id);
+        self.placed_in[id.index()] = Some((keeper, NO_NODE));
+        self.kept_off_screen.push(KeptOffScreen { handle, page: id, keeper, width, height });
+        self.call(id, |page, host| page.show(host));
+    }
+
+    /// Page kept off screen under `page`, as its last frame laid it out.
+    /// `None` once the page that kept it is freed, and until the call
+    /// that kept it returned.
+    ///
+    /// Needed by a test, which reads what a page nobody sees holds: its
+    /// texts, its rectangles.
+    pub fn off_screen_ui(&self, page: OffScreenPage) -> Option<&PageUi> {
+        let kept: &KeptOffScreen = self.kept_off_screen.iter().find(|kept| kept.handle == page)?;
+        Some(self.stack.get(kept.page))
+    }
+
+    /// Calls `Page::after_layout` of page `id`, then lays the page out
+    /// again for `size_px` at `epx` when it wrote something there.
+    ///
+    /// Returns true when it was laid out again.
+    fn tell_page_laid_out(&mut self, id: PageId, size_px: (u32, u32), epx: f32) -> bool {
+        self.stack.get_mut(id).is_layout_new = false;
+        self.call(id, |page, host| page.after_layout(host));
+        let page_ui: &mut PageUi = self.stack.get_mut(id);
+        if !page_ui.runtime.dirty {
+            return false;
+        }
+        page_ui.relayout(size_px, epx, &self.assets);
+        // That layout is of page's own writes: no second call.
+        page_ui.is_layout_new = false;
+        true
+    }
+
+    /// Calls `Page::after_layout` of each drawn page laid out since its
+    /// last such call, then lays out again what the page wrote there,
+    /// and pages placed in it. A page kept off screen is called while
+    /// its keeping page is drawn.
+    ///
+    /// Needed after `frame_pages` and not inside it: page's function
+    /// gets the program's state, which layout holds while it runs.
+    ///
+    /// A page laid out by what another page asked for there (`Nav::tell`,
+    /// `Nav::go`) is called in the same frame, for
+    /// `AFTER_LAYOUT_ROUNDS` rounds; one still owed its call then gets
+    /// it next frame.
+    ///
+    /// Returns whether what a page wrote there moves, and whether a
+    /// page is still owed its call.
+    fn tell_pages_laid_out(&mut self, size_px: (u32, u32)) -> (bool, bool) {
+        let mut is_moving: bool = false;
+        for _ in 0..AFTER_LAYOUT_ROUNDS {
+            let mut was_a_page_told: bool = false;
+            for i in 0..self.stack.order.len() {
+                let id: PageId = self.stack.order[i];
+                if !self.stack.get(id).is_layout_new {
+                    continue;
+                }
+                was_a_page_told = true;
+                if self.tell_page_laid_out(id, size_px, self.epx) {
+                    is_moving |= self.stack.get(id).runtime.is_moving();
+                    is_moving |= self.frame_pages_placed_in(id, size_px);
+                }
+            }
+            for i in 0..self.kept_off_screen.len() {
+                let kept: KeptOffScreen = self.kept_off_screen[i];
+                if !self.stack.get(kept.page).is_layout_new || !self.stack.is_ordered(kept.keeper) {
+                    continue;
+                }
+                was_a_page_told = true;
+                if self.tell_page_laid_out(kept.page, kept.size_px(), OFF_SCREEN_PX_PER_EPX) {
+                    is_moving |= self.stack.get(kept.page).runtime.is_moving();
+                }
+            }
+            // Only what a call asked of `Nav` lays out a page this
+            // round has passed: with nothing asked, no page is owed.
+            if !was_a_page_told || self.nav.requests.is_empty() {
+                return (is_moving, false);
+            }
+            self.carry_out_requests();
+            self.place_code_pictures();
+            is_moving |= self.frame_pages(0.0, size_px);
+        }
+        (is_moving, true)
+    }
+
+    /// Lays out again each page placed in a node of page `parent`, in
+    /// that node's rectangle as `parent` has it now, then pages placed
+    /// in those. As `frame_pages` lays a placed page out, with no time
+    /// passed.
+    ///
+    /// Needed after `parent` was laid out a second time in one frame
+    /// (`tell_pages_laid_out`): its node may sit elsewhere now.
+    ///
+    /// Returns true while something of those pages moves.
+    fn frame_pages_placed_in(&mut self, parent: PageId, size_px: (u32, u32)) -> bool {
+        let window: Rect = Rect::new(0.0, 0.0, self.size.0, self.size.1);
+        let mut is_moving: bool = false;
+        for i in 0..self.placed_order.len() {
+            let id: PageId = self.placed_order[i];
+            let Some((in_page, node)) = self.placed_in[id.index()] else { continue };
+            if in_page != parent {
+                continue;
+            }
+            let parent_ui: &PageUi = self.stack.get(parent);
+            let rect: Rect = parent_ui.rect(node);
+            let node_pose: Option<PagePose> = parent_ui.drawn_pose(node);
+            let page: &mut PageUi = self.stack.get_mut(id);
+            page.viewport = Some(rect);
+            is_moving |= page.frame(0.0, size_px, self.epx, &self.platform.residual(window, rect), &self.assets);
+            page.pose = PagePose::both(node_pose, page.root_pose());
+            is_moving |= self.frame_pages_placed_in(id, size_px);
+        }
+        is_moving
     }
 
     /// Finds who has the mouse now: the Surface of the top page whose
@@ -636,8 +853,10 @@ impl<A: 'static> Program<A> {
     /// known, and with no GPU, so a test that runs `Program` alone sees
     /// the commands.
     fn draw_surfaces(&mut self) {
-        for i in 0..self.stack.order.len() {
-            let id: PageId = self.stack.order[i];
+        for i in 0..self.stack.order.len() + self.kept_off_screen.len() {
+            // Drawn pages, then pages kept off screen: theirs show in
+            // the textures they are drawn into.
+            let id: PageId = if i < self.stack.order.len() { self.stack.order[i] } else { self.kept_off_screen[i - self.stack.order.len()].page };
             let page_ui: &mut PageUi = self.stack.get_mut(id);
             while let Some(ask) = page_ui.runtime.next_surface_to_draw() {
                 let mut out: gogo_ui::SurfaceCommands<'_> = page_ui.page.write_surface(ask);
@@ -1116,7 +1335,7 @@ impl<A: 'static> Program<A> {
     }
 
     /// Pages' own GPU work for one frame: each drawn page's
-    /// `gpu_prepare`, then the textures it handed its Surfaces go to
+    /// `before_draw`, then the textures it handed its Surfaces go to
     /// the renderer. A window calls it after `frame` and before renderer
     /// prepares the pages.
     ///
@@ -1213,9 +1432,16 @@ impl<A: 'static> Program<A> {
                 }
             });
         }
+        if !self.kept_off_screen.is_empty() {
+            self.relayout_pages_off_screen();
+        }
         let stack: &PageStack = &self.stack;
+        let kept_off_screen: &[KeptOffScreen] = &self.kept_off_screen;
         self.pictures.upload_for_draws(&mut self.assets.images, renderer, &gpu.device, &gpu.queue, lazy, |wanted| {
             stack.wanted_images(wanted);
+            for kept in kept_off_screen {
+                stack.wanted_images_of(kept.page, wanted);
+            }
             if let Some(host_pages) = host_pages {
                 host_pages.wanted_images(wanted);
             }
@@ -1244,10 +1470,14 @@ impl<A: 'static> Program<A> {
             let id: PageId = self.stack.order[i];
             let Some(mut object) = self.objects[id.index()].take() else { continue };
             self.nav.caller = Some(id);
-            self.stack.get_mut(id).target_format = Some(renderer.target_format());
-            self.stack.get_mut(id).depth_format = renderer.depth_format();
-            let mut host: Host<'_, A> = Host { app: &mut self.app, ui: self.stack.get_mut(id), nav: &mut self.nav };
-            object.gpu_prepare(&mut host, gpu);
+            {
+                let (page_ui, others) = self.stack.one_and_others(id);
+                page_ui.target_format = Some(renderer.target_format());
+                page_ui.depth_format = renderer.depth_format();
+                let mut host: Host<'_, A> = Host { app: &mut self.app, ui: page_ui, nav: &mut self.nav };
+                let mut page_gpu: PageGpu<'_> = PageGpu { device: &gpu.device, queue: &gpu.queue, renderer: &mut *renderer, assets: &self.assets, others, kept: &self.kept_off_screen };
+                object.before_draw(&mut host, &mut page_gpu);
+            }
             self.nav.caller = None;
             self.objects[id.index()] = Some(object);
             // Textures the page handed its Surfaces, to the renderer.
@@ -1274,7 +1504,7 @@ impl<A: 'static> Program<A> {
                 let external: gogo_wgpu::ExternalImage = renderer.external_image(key);
                 renderer.set_external_image(&gpu.device, external, gogo_wgpu::Tex_Image_Straight_Srgb_4xU8_RGBA::new(&page_ui.picture_textures[k].texture));
             }
-            // What page wrote in `gpu_prepare` shows in the frame being
+            // What page wrote in `before_draw` shows in the frame being
             // drawn. Needed because a Surface names its first texture
             // here, after the pages were laid out: without this the user
             // sees an empty place for one frame.
@@ -1360,6 +1590,7 @@ impl<A: 'static> Program<A> {
                     Request::Preload(page) => self.preload(page),
                     Request::Layer(page) => self.add_layer_object(page),
                     Request::Place { parent, node, page } => self.place(parent, node, page),
+                    Request::KeepOffScreen { keeper, handle, page, width, height } => self.keep_off_screen(keeper, handle, page, width, height),
                     Request::Tell { page_type, call } => {
                         if let Some(id) = self.page_to_tell(page_type) {
                             self.call(id, |page, host| call(page.page_mut(), host));
@@ -1429,6 +1660,11 @@ impl<A: 'static> Program<A> {
         }
         self.placed_order.retain(|other| *other != id);
         self.placed_in[id.index()] = None;
+        // Pages it keeps off screen go with it too.
+        while let Some(kept) = self.kept_off_screen.iter().find(|kept| kept.keeper == id).map(|kept| kept.page) {
+            self.free(kept);
+        }
+        self.kept_off_screen.retain(|kept| kept.page != id);
         self.on_their_way.retain(|moving| moving.page != id);
         self.code_pictures_to_release.extend(self.stack.get(id).code_pictures.iter().filter_map(|picture| picture.key));
         #[cfg(feature = "gpu")]
@@ -1657,6 +1893,9 @@ impl<A: 'static> Program<A> {
     /// Needed so a page under a fullscreen page costs no drawing, and a
     /// page under an overlay keeps showing.
     fn order_drawn_pages(&mut self) {
+        // A page that comes into draw order may have been laid out while
+        // it was not drawn: next frame looks for its `after_layout`.
+        self.assets.note_layout_ran();
         let lowest_drawn: usize = (0..self.back_stack.len()).rev().find(|i| self.page_covers_screen(self.back_stack[*i])).unwrap_or(0);
         for i in 0..self.back_stack.len() {
             let id: PageId = self.back_stack[i];

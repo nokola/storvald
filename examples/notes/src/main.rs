@@ -58,7 +58,7 @@ fn main() -> Result<(), String> {
 mod tests {
     use turbodot::Program;
     use turbodot::prelude::*;
-    use turbodot::gogo::{Phase, Rect};
+    use turbodot::gogo::{Phase, PropKey, Rect, Value};
 
     use super::*;
     use crate::clear_page::ClearPage;
@@ -616,6 +616,406 @@ mod tests {
         let_the_slides_end(&mut program);
         let long: f32 = program.ui().rect(SETTINGS.title).w;
         assert!(long > short * 2.0, "the frame its way ended laid the longer title out: {short} then {long}");
+    }
+
+    /// `edit_page.gogo` as a page that makes its footer three times as
+    /// tall as its title, from the title's rectangle of this frame, and
+    /// notes each call.
+    struct FittingPage;
+    impl Page<AppState> for FittingPage {
+        const PAGE: &'static BuiltPage = &edit_page::PAGE;
+        type Handler = edit_page::Handler;
+        fn handle(&mut self, _host: &mut Host<AppState>, _event: PageEvent<edit_page::Handler>) {}
+        fn after_layout(&mut self, host: &mut Host<AppState>) {
+            host.app.page_log.push("fitting page laid out");
+            let title: Rect = host.ui.rect(EDIT.title);
+            host.ui.runtime.set_prop(EDIT.footer, PropKey::Height, Value::VNum(title.h * 3.0));
+        }
+    }
+
+    /// Page is told once after each layout of it. A rectangle it reads
+    /// there is this frame's, and what it writes there shows in this
+    /// frame: no frame draws the page with its footer in the old size.
+    /// A frame that lays the page out for nothing new makes no call.
+    ///
+    /// Needed for what a page places from a rectangle of its own layout:
+    /// read in `Page::frame`, that rectangle is of the frame before.
+    #[test]
+    fn a_page_is_told_after_its_layout_and_what_it_writes_then_shows_in_that_frame() {
+        let mut program: Program<AppState> = Program::new(&crate::ui::BUILT, AppState::default(), FittingPage).expect("the pages can be shown");
+        frame(&mut program, 0.0);
+        let title: Rect = program.ui().rect(EDIT.title);
+        assert!(title.h > 0.0);
+        assert_eq!(program.ui().rect(EDIT.footer).h, title.h * 3.0, "the first frame shows the footer fitted to the title of that frame");
+        assert_eq!(program.app().page_log, ["fitting page laid out"], "one call, though the page was laid out twice");
+
+        let_the_slides_end(&mut program);
+        let calls_at_rest: usize = program.app().page_log.len();
+        frame(&mut program, 0.016);
+        frame(&mut program, 0.016);
+        assert_eq!(program.app().page_log.len(), calls_at_rest, "a frame that lays nothing out makes no call");
+
+        // A taller title: the footer follows in the frame that lays the
+        // title out.
+        assert!(program.tell::<FittingPage>(|_, host| host.ui.runtime.set_prop(EDIT.title, PropKey::FontSize, Value::VNum(48.0))));
+        frame(&mut program, 0.016);
+        let taller: Rect = program.ui().rect(EDIT.title);
+        assert!(taller.h > title.h * 1.5, "{} then {}", title.h, taller.h);
+        assert_eq!(program.ui().rect(EDIT.footer).h, taller.h * 3.0);
+        assert_eq!(program.app().page_log.len(), calls_at_rest + 1);
+    }
+
+    /// Page placed in a node that its page moves in `after_layout` is
+    /// laid out in the node's new rectangle in that frame, before its
+    /// own `after_layout`.
+    ///
+    /// Needed because a placed page is laid out right after its page:
+    /// by then its page has not written yet.
+    #[test]
+    fn a_placed_page_follows_what_its_page_writes_after_layout() {
+        /// `FittingPage` with a part placed in its footer.
+        struct OuterPage;
+        impl Page<AppState> for OuterPage {
+            const PAGE: &'static BuiltPage = &edit_page::PAGE;
+            type Handler = edit_page::Handler;
+            fn loaded(&mut self, host: &mut Host<AppState>) {
+                host.nav.place(EDIT.footer, PartPage);
+            }
+            fn handle(&mut self, _host: &mut Host<AppState>, _event: PageEvent<edit_page::Handler>) {}
+            fn after_layout(&mut self, host: &mut Host<AppState>) {
+                host.app.page_log.push("outer");
+                host.ui.runtime.set_prop(EDIT.footer, PropKey::Height, Value::VNum(90.0));
+            }
+        }
+        /// `footer_page.gogo` as a part that notes how tall it found
+        /// itself.
+        struct PartPage;
+        impl Page<AppState> for PartPage {
+            const PAGE: &'static BuiltPage = &footer_page::PAGE;
+            type Handler = footer_page::Handler;
+            fn handle(&mut self, _host: &mut Host<AppState>, _event: PageEvent<footer_page::Handler>) {}
+            fn after_layout(&mut self, host: &mut Host<AppState>) {
+                let height: f32 = host.ui.rect(FOOTER.footer_page).h;
+                host.app.page_log.push(if height == 90.0 { "part, 90 tall" } else { "part, some other height" });
+            }
+        }
+        let mut program: Program<AppState> = Program::new(&crate::ui::BUILT, AppState::default(), OuterPage).expect("the pages can be shown");
+        frame(&mut program, 0.0);
+        assert_eq!(program.app().page_log, ["outer", "part, 90 tall"]);
+        let place: Rect = program.ui().rect(EDIT.footer);
+        let part: Rect = program.placed_ui(EDIT.footer).expect("the part is placed").rect(FOOTER.footer_page);
+        assert_eq!((place.h, part.h, part.y), (90.0, 90.0, place.y), "the part fills its place as the first frame draws it");
+    }
+
+    /// What a page tells another in `after_layout` is laid out in that
+    /// frame, and the told page gets its own `after_layout` in it. Two
+    /// pages that tell each other something at every call do not hold
+    /// the frame for ever: it ends after a few rounds, and the calls go
+    /// on at next frame.
+    ///
+    /// Needed for a part that follows the page it sits in: the page
+    /// hands it what it found in its layout, and no frame shows the part
+    /// a step behind.
+    #[test]
+    fn a_page_told_after_another_s_layout_is_laid_out_and_told_in_that_frame() {
+        /// `edit_page.gogo` as a page that hands its part a longer text
+        /// at every `after_layout`.
+        struct PingPage;
+        impl Page<AppState> for PingPage {
+            const PAGE: &'static BuiltPage = &edit_page::PAGE;
+            type Handler = edit_page::Handler;
+            fn loaded(&mut self, host: &mut Host<AppState>) {
+                host.nav.place(EDIT.footer, PongPage);
+            }
+            fn handle(&mut self, _host: &mut Host<AppState>, _event: PageEvent<edit_page::Handler>) {}
+            fn after_layout(&mut self, host: &mut Host<AppState>) {
+                host.app.page_log.push("ping");
+                let calls: usize = host.app.page_log.len();
+                host.nav.tell::<PongPage>(move |_, part| part.ui.set_text(FOOTER.note_count, &"n".repeat(calls)));
+            }
+        }
+        /// `footer_page.gogo` as a part that answers each of its layouts
+        /// with a longer title for the page it sits in.
+        struct PongPage;
+        impl Page<AppState> for PongPage {
+            const PAGE: &'static BuiltPage = &footer_page::PAGE;
+            type Handler = footer_page::Handler;
+            fn handle(&mut self, _host: &mut Host<AppState>, _event: PageEvent<footer_page::Handler>) {}
+            fn after_layout(&mut self, host: &mut Host<AppState>) {
+                host.app.page_log.push("pong");
+                let calls: usize = host.app.page_log.len();
+                host.nav.tell::<PingPage>(move |_, page| page.ui.set_text(EDIT.title, &"t".repeat(calls)));
+            }
+        }
+        let mut program: Program<AppState> = Program::new(&crate::ui::BUILT, AppState::default(), PingPage).expect("the pages can be shown");
+        frame(&mut program, 0.0);
+        let log: Vec<&'static str> = program.app().page_log.clone();
+        assert_eq!(&log[..4], ["ping", "pong", "ping", "pong"], "each was told again in the first frame, for what the other handed it");
+        assert!(log.len() <= 8, "and the frame ended: {} calls", log.len());
+        let told: &str = program.placed_ui(EDIT.footer).expect("the part").text_of(FOOTER.note_count).expect("a text");
+        assert!(told.len() >= 3, "the part shows what a later round handed it: `{told}`");
+        frame(&mut program, 0.016);
+        assert!(program.app().page_log.len() > log.len(), "the calls owed go on at next frame");
+    }
+
+    /// Page laid out while a fullscreen page covers it gets its
+    /// `after_layout` in the first frame it is drawn again.
+    ///
+    /// Needed because a page is told only while it is drawn: without the
+    /// later call it would keep what it placed from rectangles it no
+    /// longer has.
+    #[test]
+    fn a_page_laid_out_under_another_is_told_when_it_shows_again() {
+        /// `home_page.gogo` as a fullscreen page that comes and goes at
+        /// once: no page is laid out in the frame after it left, so
+        /// nothing but the change of draw order says a call is owed.
+        struct PlainPage;
+        impl Page<AppState> for PlainPage {
+            const PAGE: &'static BuiltPage = &home_page::PAGE;
+            type Handler = home_page::Handler;
+            fn handle(&mut self, _host: &mut Host<AppState>, _event: PageEvent<home_page::Handler>) {}
+        }
+        let mut program: Program<AppState> = Program::new(&crate::ui::BUILT, AppState::default(), FittingPage).expect("the pages can be shown");
+        frame(&mut program, 0.0);
+        let_the_slides_end(&mut program);
+        let title: Rect = program.ui().rect(EDIT.title);
+        program.go(PlainPage);
+        let_the_slides_end(&mut program);
+        frame(&mut program, 0.016);
+        assert!(!program.is_drawn::<FittingPage>(), "covered");
+        let calls_before: usize = program.app().page_log.len();
+
+        assert!(program.tell::<FittingPage>(|_, host| host.ui.runtime.set_prop(EDIT.title, PropKey::FontSize, Value::VNum(48.0))));
+        frame(&mut program, 0.016);
+        frame(&mut program, 0.016);
+        assert_eq!(program.app().page_log.len(), calls_before, "not told while it is not drawn");
+
+        program.back();
+        frame(&mut program, 0.016);
+        assert!(program.is_drawn::<FittingPage>());
+        assert!(program.app().page_log.len() > calls_before, "told in the first frame it is drawn again");
+        let taller: Rect = program.ui().rect(EDIT.title);
+        assert!(taller.h > title.h * 1.5);
+        assert_eq!(program.ui().rect(EDIT.footer).h, taller.h * 3.0, "and that frame shows the footer fitted");
+    }
+
+    /// `footer_page.gogo` as a page kept off screen: it notes its calls.
+    struct ArtPage;
+    impl Page<AppState> for ArtPage {
+        const PAGE: &'static BuiltPage = &footer_page::PAGE;
+        type Handler = footer_page::Handler;
+        fn show(&mut self, host: &mut Host<AppState>) {
+            host.ui.set_text(FOOTER.note_count, "kept");
+        }
+        fn handle(&mut self, _host: &mut Host<AppState>, _event: PageEvent<footer_page::Handler>) {}
+        fn frame(&mut self, host: &mut Host<AppState>, _dt_sec: f32) -> bool {
+            host.app.page_log.push("art frame");
+            false
+        }
+        fn after_layout(&mut self, host: &mut Host<AppState>) {
+            host.app.page_log.push("art laid out");
+        }
+    }
+
+    /// Page kept off screen is a page like any other, laid out for the
+    /// size its keeping page named at one pixel per epx, whatever the
+    /// window's size and scale. Nothing draws it to the screen. It has
+    /// its frames while its keeping page is drawn, and is freed with it.
+    ///
+    /// Needed for a picture made of nodes that no screen shows, drawn
+    /// into a texture when its keeping page wants.
+    #[test]
+    fn a_page_kept_off_screen_is_laid_out_for_its_own_size_and_lives_with_its_page() {
+        /// `edit_page.gogo` as a page that keeps `ArtPage`.
+        struct KeeperPage {
+            art: Option<OffScreenPage>,
+            paper: Option<OffScreenPage>,
+        }
+        impl Page<AppState> for KeeperPage {
+            const PAGE: &'static BuiltPage = &edit_page::PAGE;
+            type Handler = edit_page::Handler;
+            fn loaded(&mut self, host: &mut Host<AppState>) {
+                self.art = Some(host.nav.keep_off_screen(ArtPage, 300.0, 80.0));
+                self.paper = Some(host.nav.keep_off_screen(PaperPage::default(), 400.0, 300.0));
+            }
+            fn handle(&mut self, _host: &mut Host<AppState>, _event: PageEvent<edit_page::Handler>) {}
+        }
+        /// `home_page.gogo` as a fullscreen page that comes and goes at
+        /// once.
+        struct PlainPage;
+        impl Page<AppState> for PlainPage {
+            const PAGE: &'static BuiltPage = &home_page::PAGE;
+            type Handler = home_page::Handler;
+            fn handle(&mut self, _host: &mut Host<AppState>, _event: PageEvent<home_page::Handler>) {}
+        }
+        let frames_of_art = |program: &Program<AppState>| -> usize { program.app().page_log.iter().filter(|line| **line == "art frame").count() };
+        let mut program: Program<AppState> = started(AppState::default());
+        let live_at_home: usize = program.live_page_count();
+        program.go(KeeperPage { art: None, paper: None });
+        let art: OffScreenPage = program.page::<KeeperPage>().expect("the keeping page is on screen").art.expect("kept in `loaded`");
+        let paper: OffScreenPage = program.page::<KeeperPage>().expect("the keeping page is on screen").paper.expect("kept in `loaded`");
+        assert_eq!(program.live_page_count(), live_at_home + 3, "the page and the two pages it keeps");
+        assert_eq!(program.off_screen_ui(art).expect("made when the call that kept it returned").text_of(FOOTER.note_count), Some("kept"), "its `show` ran");
+        assert!(!program.is_drawn::<ArtPage>(), "no screen shows it");
+
+        frame(&mut program, 0.016);
+        let root: Rect = program.off_screen_ui(art).expect("kept").rect(FOOTER.footer_page);
+        assert_eq!((root.x, root.y, root.w, root.h), (0.0, 0.0, 300.0, 80.0), "laid out for the size its keeping page named");
+        assert_eq!(frames_of_art(&program), 1);
+        assert!(program.app().page_log.contains(&"art laid out"), "told after its layout: {:?}", program.app().page_log);
+        let button: Rect = program.off_screen_ui(art).expect("kept").rect(FOOTER.add_sample);
+        // A `Surface draw=commands` of a kept page is written as on screen,
+        // for the kept page's own size.
+        {
+            use crate::paper_page::{MARGIN, MARGIN_FROM_RIGHT_EPX, MARGIN_WIDTH_EPX};
+            use turbodot::gogo::{Color_Straight_Srgb_4xU8_RGBA, Draw};
+            let margin: NodeId = crate::ui::paper_page::NAMES.margin.node();
+            let line: Draw = Draw::Quad { rect: Rect::new(400.0 - MARGIN_FROM_RIGHT_EPX, 0.0, MARGIN_WIDTH_EPX, 300.0), color: Color_Straight_Srgb_4xU8_RGBA(MARGIN), corner: 0.0, border: 0.0, border_color: Color_Straight_Srgb_4xU8_RGBA::TRANSPARENT };
+            assert_eq!(program.off_screen_ui(paper).expect("kept").page.surface_commands(margin), [line]);
+        }
+
+        // Another window size and scale: its own layout stays.
+        program.set_epx(2.0);
+        program.frame(900.0, 500.0, 0.016);
+        let ui: &PageUi = program.off_screen_ui(art).expect("kept");
+        assert_eq!((ui.rect(FOOTER.footer_page), ui.rect(FOOTER.add_sample)), (root, button), "one pixel per epx, whatever the window's scale");
+        program.set_epx(1.0);
+
+        // What another page tells it is laid out at next frame.
+        assert!(program.tell::<ArtPage>(|_, host| host.ui.set_text(FOOTER.note_count, "a much longer line than before")));
+        frame(&mut program, 0.016);
+        assert!(program.off_screen_ui(art).expect("kept").rect(FOOTER.add_sample).x > button.x + 50.0, "the longer text pushed the button right");
+
+        // Its keeping page covered: no frame of its own.
+        let_the_slides_end(&mut program);
+        program.go(PlainPage);
+        frame(&mut program, 0.016);
+        let frames_when_covered: usize = frames_of_art(&program);
+        frame(&mut program, 0.016);
+        frame(&mut program, 0.016);
+        assert_eq!(frames_of_art(&program), frames_when_covered, "not while its keeping page is not drawn");
+        program.back();
+        frame(&mut program, 0.016);
+        assert_eq!(frames_of_art(&program), frames_when_covered + 1, "again with its keeping page");
+
+        program.back();
+        let_the_slides_end(&mut program);
+        assert_eq!(program.live_page_count(), live_at_home, "freed with the page that kept it");
+        assert!(program.off_screen_ui(art).is_none());
+    }
+
+    /// Page draws a node of its own, and a node of a page it keeps off
+    /// screen, into textures of the size and scale it names: the
+    /// button's plate and its text are there, and nothing around the
+    /// button's round corners.
+    ///
+    /// Needed for a piece of a page kept as a picture (a text burned
+    /// into a painting), and for a picture made of nodes no screen
+    /// shows.
+    ///
+    /// Ignored unless asked for: needs a GPU adapter.
+    #[test]
+    #[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
+    fn a_page_draws_its_own_node_and_a_node_of_a_page_it_keeps_into_textures() {
+        use turbodot::{Tex_Tile_Premul_Srgb_4xU8_RGBA, wgpu};
+
+        /// The `.Plain` buttons' plate (`look.gogo`): sRGB bytes, RGBA.
+        const PLATE: [u8; 4] = [0x2C, 0x2F, 0x38, 0xFF];
+        /// Texture pixels per epx the kept page's button is drawn at.
+        const ART_PX_PER_EPX: f32 = 2.0;
+
+        /// `edit_page.gogo` as a page that draws its "Save" button and
+        /// the button of the page it keeps, once.
+        #[derive(Default)]
+        struct DrawingPage {
+            art: Option<OffScreenPage>,
+            notes: Option<OffScreenPage>,
+            own_tile: Option<Tex_Tile_Premul_Srgb_4xU8_RGBA>,
+            art_tile: Option<Tex_Tile_Premul_Srgb_4xU8_RGBA>,
+            icon_tile: Option<Tex_Tile_Premul_Srgb_4xU8_RGBA>,
+        }
+        /// `home_page.gogo` as a page kept off screen: it has a picture
+        /// from a file.
+        struct NotesArtPage;
+        impl Page<AppState> for NotesArtPage {
+            const PAGE: &'static BuiltPage = &home_page::PAGE;
+            type Handler = home_page::Handler;
+            fn handle(&mut self, _host: &mut Host<AppState>, _event: PageEvent<home_page::Handler>) {}
+        }
+        impl Page<AppState> for DrawingPage {
+            const PAGE: &'static BuiltPage = &edit_page::PAGE;
+            type Handler = edit_page::Handler;
+            fn loaded(&mut self, host: &mut Host<AppState>) {
+                self.art = Some(host.nav.keep_off_screen(ArtPage, 300.0, 80.0));
+                self.notes = Some(host.nav.keep_off_screen(NotesArtPage, 400.0, 300.0));
+            }
+            fn handle(&mut self, _host: &mut Host<AppState>, _event: PageEvent<edit_page::Handler>) {}
+            fn before_draw(&mut self, host: &mut Host<AppState>, gpu: &mut PageGpu) {
+                if self.own_tile.is_some() {
+                    return;
+                }
+                let own: Rect = host.ui.rect(EDIT.save_note);
+                self.own_tile = Some(host.ui.draw_to_texture(gpu, EDIT.save_note, TexturePlacement { px_per_epx: 1.0, origin_epx: (own.x, own.y), size_px: (own.w.round() as u32, own.h.round() as u32), turn: None }));
+                let art: OffScreenPage = self.art.expect("kept in `loaded`");
+                let button: Rect = gpu.off_screen_ui(art).expect("laid out by the frame before this draw").rect(FOOTER.add_sample);
+                let size_px: (u32, u32) = ((button.w * ART_PX_PER_EPX).round() as u32, (button.h * ART_PX_PER_EPX).round() as u32);
+                self.art_tile = gpu.draw_to_texture(art, FOOTER.add_sample, TexturePlacement { px_per_epx: ART_PX_PER_EPX, origin_epx: (button.x, button.y), size_px, turn: None });
+                let notes: OffScreenPage = self.notes.expect("kept in `loaded`");
+                let icon: Rect = gpu.off_screen_ui(notes).expect("laid out").rect(HOME.note_icon);
+                self.icon_tile = gpu.draw_to_texture(notes, HOME.note_icon, TexturePlacement { px_per_epx: 1.0, origin_epx: (icon.x, icon.y), size_px: (icon.w.round() as u32, icon.h.round() as u32), turn: None });
+            }
+        }
+        /// Bytes of `texture`, row by row from the top, four a pixel.
+        fn pixels_of(gpu: &turbodot::Gpu, texture: &wgpu::Texture) -> Vec<u8> {
+            let (width, height): (u32, u32) = (texture.width(), texture.height());
+            // The GPU copies rows at a fixed byte step, wider than the row.
+            let row_step: u32 = (width * 4).div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT) * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+            let buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("a tile's pixels"), size: (row_step * height) as u64, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
+            let mut encoder = gpu.device.create_command_encoder(&Default::default());
+            encoder.copy_texture_to_buffer(
+                wgpu::TexelCopyTextureInfo { texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+                wgpu::TexelCopyBufferInfo { buffer: &buffer, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row_step), rows_per_image: Some(height) } },
+                wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+            );
+            gpu.queue.submit([encoder.finish()]);
+            let slice = buffer.slice(..);
+            slice.map_async(wgpu::MapMode::Read, |_| {});
+            gpu.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: Some(std::time::Duration::from_secs(10)) }).expect("the GPU answers");
+            let data = slice.get_mapped_range().expect("the bytes can be read");
+            (0..height as usize).flat_map(|y| data[y * row_step as usize..y * row_step as usize + (width * 4) as usize].to_vec()).collect()
+        }
+        /// What a tile of a `.Plain` button holds, drawn at `px_per_epx`.
+        fn check_button_tile(gpu: &turbodot::Gpu, tile: &Tex_Tile_Premul_Srgb_4xU8_RGBA, button: Rect, px_per_epx: f32, which: &str) {
+            assert_eq!((tile.width(), tile.height()), ((button.w * px_per_epx).round() as u32, (button.h * px_per_epx).round() as u32), "{which}: the size its page named");
+            let pixels: Vec<u8> = pixels_of(gpu, &tile.RGBA);
+            let at = |x: u32, y: u32| -> [u8; 4] {
+                let i: usize = ((y * tile.width() + x) * 4) as usize;
+                [pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3]]
+            };
+            assert_eq!(at((4.0 * px_per_epx) as u32, tile.height() / 2), PLATE, "{which}: the plate, left of the text");
+            assert_eq!(at(0, 0), [0, 0, 0, 0], "{which}: nothing outside the round corner");
+            assert!(pixels.chunks_exact(4).any(|pixel| pixel[0] > 0xC0 && pixel[3] == 0xFF), "{which}: the text's ink");
+        }
+
+        let mut program: Program<AppState> = Program::new(&crate::ui::BUILT, AppState::default(), DrawingPage::default()).expect("the pages can be shown");
+        frame(&mut program, 0.0);
+        let_the_slides_end(&mut program);
+        // Written after the last frame: the draw lays the kept page out
+        // first, so the button is drawn where the longer text put it.
+        let art: OffScreenPage = program.page::<DrawingPage>().expect("on screen").art.expect("kept");
+        let button_before: Rect = program.off_screen_ui(art).expect("kept").rect(FOOTER.add_sample);
+        assert!(program.tell::<ArtPage>(|_, host| host.ui.set_text(FOOTER.note_count, "a much longer line than before")));
+        let gpu: turbodot::Gpu = turbodot::Gpu::new().expect("this test needs a GPU adapter");
+        gpu.draw_program(&mut program).expect("the pages are drawn");
+        let page: &DrawingPage = program.page::<DrawingPage>().expect("on screen");
+        check_button_tile(&gpu, page.own_tile.as_ref().expect("drawn in `before_draw`"), program.ui().rect(EDIT.save_note), 1.0, "its own button");
+        let art_button: Rect = program.off_screen_ui(art).expect("kept").rect(FOOTER.add_sample);
+        assert!(art_button.x > button_before.x + 50.0, "laid out again before the draw: {} then {}", button_before.x, art_button.x);
+        check_button_tile(&gpu, page.art_tile.as_ref().expect("the kept page was laid out, so it was drawn"), art_button, ART_PX_PER_EPX, "the kept page's button");
+        // A picture from a file that only a kept page shows is uploaded
+        // for it.
+        let icon_tile: &Tex_Tile_Premul_Srgb_4xU8_RGBA = page.icon_tile.as_ref().expect("drawn");
+        assert!(icon_tile.width() > 0 && pixels_of(&gpu, &icon_tile.RGBA).chunks_exact(4).any(|pixel| pixel[3] == 0xFF), "the note icon's pixels");
     }
 
     /// Page placed in a node is drawn where an anim has that node now,

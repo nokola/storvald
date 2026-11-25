@@ -71,13 +71,13 @@ impl Page<AppState> for PaperPage {
     /// Each frame before screen is drawn, while page is drawn: makes paper
     /// texture once and hands it to the `paper` Surface. A painting would
     /// draw its new strokes into its texture here.
-    fn gpu_prepare(&mut self, host: &mut Host<AppState>, gpu: &Gpu) {
+    fn before_draw(&mut self, host: &mut Host<AppState>, gpu: &mut PageGpu) {
         host.app.paper_frames_drawn += 1;
         // Stamp's pipeline, for the format of the pass page is drawn in:
         // a window and a picture of the program may have two.
         if let Some(format) = host.ui.target_format() {
             if self.stamp.as_ref().is_none_or(|(made_for, _)| *made_for != format) {
-                self.stamp = Some((format, stamp_pipeline(&gpu.device, format)));
+                self.stamp = Some((format, stamp_pipeline(gpu.device, format)));
             }
         }
         if self.paper.is_some() {

@@ -4,9 +4,9 @@ use std::any::{Any, TypeId};
 
 use gogo_ui::{CommandSurface, Event, EventKind, HandlerName, NodeId, StaticPage, StrId, SurfaceCommands};
 
-#[cfg(feature = "gpu")]
-use crate::gpu::Gpu;
 use crate::pages::{PageId, PageUi};
+#[cfg(feature = "gpu")]
+use crate::pages::{OtherPages, TexturePlacement, UiAssets};
 
 /// Page as build compiled it from its `.gogo` file: `PAGE` of page's
 /// module in `ui`.
@@ -61,11 +61,108 @@ pub struct Host<'a, A = ()> {
     pub nav: &'a mut Nav<A>,
 }
 
-/// GPU device a page draws its own textures with (`Page::gpu_prepare`).
-/// Without cargo feature `gpu` nothing makes one: page code still
-/// compiles, and its GPU functions are never called.
+/// The GPU as a page gets it in `Page::before_draw`: device and queue
+/// for page's own textures, and what draws nodes into a texture
+/// (`PageUi::draw_to_texture`, `PageGpu::draw_to_texture`).
+///
+/// Needed as a type made for that one call: drawing nodes takes the
+/// renderer the screen is drawn with, its letters and the program's
+/// language, and a page names none of them. Who looks for "draw my
+/// page into a texture" finds a function that takes this, and this
+/// only in `before_draw`.
+#[cfg(feature = "gpu")]
+pub struct PageGpu<'a> {
+    pub device: &'a wgpu::Device,
+    pub queue: &'a wgpu::Queue,
+    pub(crate) renderer: &'a mut gogo_wgpu::UiRenderer,
+    pub(crate) assets: &'a UiAssets,
+    /// Every live page but the one being called.
+    pub(crate) others: OtherPages<'a>,
+    /// Every page kept off screen (`Nav::keep_off_screen`).
+    pub(crate) kept: &'a [KeptOffScreen],
+}
+
+/// The GPU as a page gets it in `Page::before_draw`. Without cargo
+/// feature `gpu` nothing makes one: page code still compiles, and
+/// `before_draw` is never called.
 #[cfg(not(feature = "gpu"))]
-pub struct Gpu(());
+pub struct PageGpu<'a>(std::marker::PhantomData<&'a ()>);
+
+#[cfg(feature = "gpu")]
+impl PageGpu<'_> {
+    /// Draws `node` of `page`, a page kept off screen
+    /// (`Nav::keep_off_screen`), and everything inside it to a new
+    /// texture, as that page's last layout has them. The walk and the
+    /// renderer are the screen's. `place.px_per_epx` is texture pixels
+    /// per epx of that page: its layout is in whole epx.
+    ///
+    /// Needed for a picture made of nodes no screen shows, at a size the
+    /// screen does not have: art of a collage at the size of the saved
+    /// file.
+    ///
+    /// WARNING: each call makes a texture, a pass and a submit. For a
+    /// change (a new size, a new text), not for every frame.
+    ///
+    /// Returns a tile with colors multiplied by alpha, transparent where
+    /// nothing was drawn. `None` when `page` was freed with the page
+    /// that kept it, or has had no frame yet: it was kept in this frame.
+    #[inline]
+    pub fn draw_to_texture(&mut self, page: OffScreenPage, node: impl gogo_ui::NodeName, place: TexturePlacement) -> Option<gogo_wgpu::Tex_Tile_Premul_Srgb_4xU8_RGBA> {
+        self.draw_to_texture_by_id(page, node.node(), place)
+    }
+
+    /// What `draw_to_texture` does, by the id of the node.
+    fn draw_to_texture_by_id(&mut self, page: OffScreenPage, node: NodeId, place: TexturePlacement) -> Option<gogo_wgpu::Tex_Tile_Premul_Srgb_4xU8_RGBA> {
+        let page_ui: &PageUi = off_screen_ui_among(self.kept, &self.others, page)?;
+        Some(page_ui.draw_to_texture_with_by_id(self.renderer, self.device, self.queue, self.assets, node, place))
+    }
+
+    /// `page`, a page kept off screen, as its last layout has it, to
+    /// read: where its nodes sit, what its texts say.
+    ///
+    /// Needed to draw one node of it whole: the node's rectangle gives
+    /// `TexturePlacement` its origin and its size.
+    ///
+    /// Returns `None` where `draw_to_texture` does.
+    pub fn off_screen_ui(&self, page: OffScreenPage) -> Option<&PageUi> {
+        off_screen_ui_among(self.kept, &self.others, page)
+    }
+}
+
+/// Page kept off screen under `page`, when it is among `others` and was
+/// laid out.
+///
+/// Needed apart from `PageGpu`: what it returns is borrowed from the
+/// pages alone, so the `PageGpu`'s renderer stays free for the draw.
+#[cfg(feature = "gpu")]
+fn off_screen_ui_among<'a>(kept: &[KeptOffScreen], others: &OtherPages<'a>, page: OffScreenPage) -> Option<&'a PageUi> {
+    let kept: &KeptOffScreen = kept.iter().find(|kept| kept.handle == page)?;
+    others.get(kept.page).filter(|page_ui| page_ui.kept.is_laid_out())
+}
+
+/// A page kept off screen, as `Nav::keep_off_screen` named it for the
+/// page that keeps it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OffScreenPage(pub(crate) u32);
+
+/// One page kept off screen.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct KeptOffScreen {
+    pub(crate) handle: OffScreenPage,
+    pub(crate) page: PageId,
+    /// Page that keeps it: kept page lives and is laid out with it.
+    pub(crate) keeper: PageId,
+    /// Size it is laid out for, in epx.
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+}
+
+impl KeptOffScreen {
+    /// Size the page is laid out for in pixels: one per epx.
+    pub(crate) fn size_px(&self) -> (u32, u32) {
+        ((self.width.round() as u32).max(1), (self.height.round() as u32).max(1))
+    }
+}
 
 /// One screen of a program: `.gogo` file plus struct that writes into it
 /// and answers its events.
@@ -119,12 +216,37 @@ pub trait Page<A = ()>: Sized + 'static {
     /// Needed for what changes with time and not with a touch: a toast
     /// that goes away, a progress bar.
     ///
+    /// A rectangle read here (`PageUi::rect`) is of the frame before:
+    /// `after_layout` reads this frame's.
+    ///
     /// Returns true while page needs more frames. A program whose pages
     /// all return false, with nothing moving, draws no frame until next
     /// touch.
     fn frame(&mut self, host: &mut Host<'_, A>, dt_sec: f32) -> bool {
         let _ = (host, dt_sec);
         false
+    }
+
+    /// Called after page was laid out, while page is drawn: each of its
+    /// nodes has its rectangle of this frame (`PageUi::rect`).
+    ///
+    /// Needed for what page places from a rectangle of its own layout:
+    /// a picture fitted into the room its file leaves it, a bar seated
+    /// over a node. In `frame` that rectangle is of the frame before.
+    ///
+    /// Not called in a frame that did not lay page out: nothing of it
+    /// changed. Page laid out while it was not drawn (cached, under a
+    /// fullscreen page) is called in first frame it is drawn again.
+    ///
+    /// What page writes here is laid out once more before the draw, and
+    /// that layout makes no second call. A page placed in a node of this
+    /// page is laid out again too, in that node's new rectangle, before
+    /// its own call.
+    ///
+    /// WARNING: page that writes here at every call is laid out twice
+    /// in every frame that lays it out. Write only what changed.
+    fn after_layout(&mut self, host: &mut Host<'_, A>) {
+        let _ = host;
     }
 
     /// Called once page is on screen, in place, with no page on its
@@ -182,15 +304,23 @@ pub trait Page<A = ()>: Sized + 'static {
         let _ = host;
     }
 
-    /// Page's own GPU work, before the pass that draws the pages: draws
-    /// into its own textures (strokes of a painting, a game's world) and
+    /// Page's own GPU work, each frame before the pages are drawn: draws
+    /// into its own textures (strokes of a painting, a game's world),
     /// hands a `Surface draw=picture` its texture
-    /// (`PageUi::set_picture_texture`). Called each frame.
+    /// (`PageUi::set_picture_texture`), draws nodes into a texture
+    /// (`PageUi::draw_to_texture`, `PageGpu::draw_to_texture`).
+    ///
+    /// Needed before the draw: a texture the pages show must hold its
+    /// picture when the pass that draws them starts.
+    ///
+    /// Called after the pages were laid out. What page writes here is
+    /// laid out again before the draw; `after_layout` hears of that
+    /// layout at next frame.
     ///
     /// Called only while page is drawn: not for page under a fullscreen
-    /// page, not for cached page. Never called without a GPU (a test
-    /// that runs `Program` alone).
-    fn gpu_prepare(&mut self, host: &mut Host<'_, A>, gpu: &Gpu) {
+    /// page, not for cached page, not for page kept off screen. Never
+    /// called without a GPU (a test that runs `Program` alone).
+    fn before_draw(&mut self, host: &mut Host<'_, A>, gpu: &mut PageGpu<'_>) {
         let _ = (host, gpu);
     }
 
@@ -221,7 +351,7 @@ pub trait Page<A = ()>: Sized + 'static {
     /// were its whole screen. Page leaves the pass in any state it likes.
     ///
     /// Reads only: what the calls need (buffers written, textures drawn)
-    /// was made in `gpu_prepare`. Called each frame while the Surface
+    /// was made in `before_draw`. Called each frame while the Surface
     /// shows. Never called without a GPU.
     #[cfg(feature = "gpu")]
     fn draw_surface_gpu(&self, app: &A, surface: gogo_ui::GpuSurface, pass: &mut wgpu::RenderPass<'_>, place: &gogo_wgpu::SurfacePlace) {
@@ -279,12 +409,20 @@ pub trait CachedPage<A = ()>: Sized + 'static {
     /// Needed for what changes with time and not with a touch: a toast
     /// that goes away, a progress bar.
     ///
+    /// A rectangle read here (`PageUi::rect`) is of the frame before:
+    /// `after_layout` reads this frame's.
+    ///
     /// Returns true while page needs more frames. A program whose pages
     /// all return false, with nothing moving, draws no frame until next
     /// touch.
     fn frame(&mut self, host: &mut Host<'_, A>, dt_sec: f32) -> bool {
         let _ = (host, dt_sec);
         false
+    }
+
+    /// As `Page::after_layout`.
+    fn after_layout(&mut self, host: &mut Host<'_, A>) {
+        let _ = host;
     }
 
     /// As `Page::arrived`.
@@ -308,8 +446,8 @@ pub trait CachedPage<A = ()>: Sized + 'static {
         let _ = host;
     }
 
-    /// As `Page::gpu_prepare`.
-    fn gpu_prepare(&mut self, host: &mut Host<'_, A>, gpu: &Gpu) {
+    /// As `Page::before_draw`.
+    fn before_draw(&mut self, host: &mut Host<'_, A>, gpu: &mut PageGpu<'_>) {
         let _ = (host, gpu);
     }
 
@@ -339,7 +477,7 @@ pub(crate) trait PageObject<A> {
     /// True for page that takes a touch on none of its nodes.
     fn takes_every_touch(&self) -> bool;
     #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
-    fn gpu_prepare(&mut self, host: &mut Host<'_, A>, gpu: &Gpu);
+    fn before_draw(&mut self, host: &mut Host<'_, A>, gpu: &mut PageGpu<'_>);
     fn draw_surface(&self, app: &A, surface: CommandSurface, out: &mut SurfaceCommands<'_>);
     #[cfg(feature = "gpu")]
     fn draw_surface_gpu(&self, app: &A, surface: gogo_ui::GpuSurface, pass: &mut wgpu::RenderPass<'_>, place: &gogo_wgpu::SurfacePlace);
@@ -352,6 +490,7 @@ pub(crate) trait PageObject<A> {
     fn handle(&mut self, host: &mut Host<'_, A>, event: &Event);
     fn loaded(&mut self, host: &mut Host<'_, A>);
     fn frame(&mut self, host: &mut Host<'_, A>, dt_sec: f32) -> bool;
+    fn after_layout(&mut self, host: &mut Host<'_, A>);
     fn arrived(&mut self, host: &mut Host<'_, A>);
     fn left(&mut self, host: &mut Host<'_, A>);
     fn back(&mut self, host: &mut Host<'_, A>) -> Back;
@@ -433,8 +572,8 @@ impl<A: 'static, P: Page<A>> PageObject<A> for Plain<P, P::Handler> {
     fn takes_every_touch(&self) -> bool {
         P::TAKES_EVERY_TOUCH
     }
-    fn gpu_prepare(&mut self, host: &mut Host<'_, A>, gpu: &Gpu) {
-        self.0.gpu_prepare(host, gpu);
+    fn before_draw(&mut self, host: &mut Host<'_, A>, gpu: &mut PageGpu<'_>) {
+        self.0.before_draw(host, gpu);
     }
     fn draw_surface(&self, app: &A, surface: CommandSurface, out: &mut SurfaceCommands<'_>) {
         self.0.draw_surface(app, surface, out);
@@ -459,6 +598,9 @@ impl<A: 'static, P: Page<A>> PageObject<A> for Plain<P, P::Handler> {
     }
     fn frame(&mut self, host: &mut Host<'_, A>, dt_sec: f32) -> bool {
         self.0.frame(host, dt_sec)
+    }
+    fn after_layout(&mut self, host: &mut Host<'_, A>) {
+        self.0.after_layout(host);
     }
     fn arrived(&mut self, host: &mut Host<'_, A>) {
         self.0.arrived(host);
@@ -502,8 +644,8 @@ impl<A: 'static, P: CachedPage<A>> PageObject<A> for Cached<P, P::Handler> {
     fn takes_every_touch(&self) -> bool {
         P::TAKES_EVERY_TOUCH
     }
-    fn gpu_prepare(&mut self, host: &mut Host<'_, A>, gpu: &Gpu) {
-        self.0.gpu_prepare(host, gpu);
+    fn before_draw(&mut self, host: &mut Host<'_, A>, gpu: &mut PageGpu<'_>) {
+        self.0.before_draw(host, gpu);
     }
     fn draw_surface(&self, app: &A, surface: CommandSurface, out: &mut SurfaceCommands<'_>) {
         self.0.draw_surface(app, surface, out);
@@ -528,6 +670,9 @@ impl<A: 'static, P: CachedPage<A>> PageObject<A> for Cached<P, P::Handler> {
     }
     fn frame(&mut self, host: &mut Host<'_, A>, dt_sec: f32) -> bool {
         self.0.frame(host, dt_sec)
+    }
+    fn after_layout(&mut self, host: &mut Host<'_, A>) {
+        self.0.after_layout(host);
     }
     fn arrived(&mut self, host: &mut Host<'_, A>) {
         self.0.arrived(host);
@@ -602,6 +747,8 @@ pub(crate) enum Request<A> {
     Layer(Box<dyn PageObject<A>>),
     /// Page to place inside node `node` of page `parent`.
     Place { parent: PageId, node: NodeId, page: Box<dyn PageObject<A>> },
+    /// Page for page `keeper` to keep off screen, `width` x `height` epx.
+    KeepOffScreen { keeper: PageId, handle: OffScreenPage, page: Box<dyn PageObject<A>>, width: f32, height: f32 },
     /// Call for the live page whose struct is of type `page_type`.
     Tell { page_type: TypeId, call: TellCall<A> },
 }
@@ -616,11 +763,13 @@ pub struct Nav<A = ()> {
     pub(crate) is_page_cache_enabled: bool,
     /// Page whose function is running now. `None` between calls.
     pub(crate) caller: Option<PageId>,
+    /// Handle the next page kept off screen gets.
+    next_off_screen_page: u32,
 }
 
 impl<A: 'static> Nav<A> {
     pub(crate) fn new() -> Nav<A> {
-        Nav { requests: Vec::new(), is_page_cache_enabled: true, caller: None }
+        Nav { requests: Vec::new(), is_page_cache_enabled: true, caller: None, next_off_screen_page: 0 }
     }
 
     /// Opens `page` over page on screen. Back returns to page that asked.
@@ -676,6 +825,37 @@ impl<A: 'static> Nav<A> {
     pub fn place<P: IntoPage<A, Kind>, Kind>(&mut self, node: NodeId, page: P) {
         let parent: PageId = self.caller.expect("`Nav::place` is for a page's own function (`loaded`, `show`, `handle`): no page is running now");
         self.requests.push(Request::Place { parent, node, page: page.into_page_object().0 });
+    }
+
+    /// Keeps `page` off screen for the page that asks. `page` is a page
+    /// like any other (its own file, its own struct, `show`, `frame`,
+    /// `after_layout`), laid out `width` x `height` epx at one pixel
+    /// per epx. No screen shows it and no finger reaches it: the asking
+    /// page draws it, or one node of it, into a texture when it wants
+    /// (`PageGpu::draw_to_texture`, in `Page::before_draw`).
+    ///
+    /// Needed for a picture made of nodes that no screen shows: art
+    /// drawn into a collage at the size of the saved file, a panel a
+    /// game shows on a wall of its world.
+    ///
+    /// Kept page lives until the asking page is freed. Its `frame` is
+    /// called, and it is laid out, in the frames in which the asking
+    /// page is drawn. Another page writes into it with `tell`. Its
+    /// `before_draw` is not called, and a page placed in it is not
+    /// drawn with it.
+    ///
+    /// WARNING: panics when no page's function is running: only a page
+    /// keeps a page.
+    ///
+    /// Returns the name the asking page draws it by. Page is made once
+    /// the running function returns, and laid out at next frame: drawn
+    /// before that, it draws nothing.
+    pub fn keep_off_screen<P: IntoPage<A, Kind>, Kind>(&mut self, page: P, width: f32, height: f32) -> OffScreenPage {
+        let keeper: PageId = self.caller.expect("`Nav::keep_off_screen` is for a page's own function (`loaded`, `show`, `handle`): no page is running now");
+        let handle: OffScreenPage = OffScreenPage(self.next_off_screen_page);
+        self.next_off_screen_page += 1;
+        self.requests.push(Request::KeepOffScreen { keeper, handle, page: page.into_page_object().0, width, height });
+        handle
     }
 
     /// Calls `call` with the live page whose struct is a `P`, once the

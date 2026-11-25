@@ -198,11 +198,11 @@ impl Page<AppState> for WorldPage {
     /// for the pass's formats, and writes where the cube is now. The
     /// draw calls themselves come later, inside the pass
     /// (`draw_surface_gpu`), and only read.
-    fn gpu_prepare(&mut self, host: &mut Host<AppState>, gpu: &Gpu) {
+    fn before_draw(&mut self, host: &mut Host<AppState>, gpu: &mut PageGpu) {
         let Some(target_format) = host.ui.target_format() else { return };
         let made_for: (wgpu::TextureFormat, Option<wgpu::TextureFormat>) = (target_format, host.ui.depth_format());
         if self.gpu.as_ref().is_none_or(|world| world.made_for != made_for) {
-            self.gpu = Some(WorldGpu::new(&gpu.device, made_for));
+            self.gpu = Some(WorldGpu::new(gpu.device, made_for));
         }
         let Some(world) = &self.gpu else { return };
         let rect = host.ui.rect(NAMES.world);

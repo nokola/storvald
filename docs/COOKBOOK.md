@@ -1986,12 +1986,108 @@ mean the same. It has no size of its own, so its line writes one, or
 row gets its own key.
 
 A page of a TurboDot program keeps no key. It hands the Surface a texture
-in `Page::gpu_prepare`
+in `Page::before_draw`
 (`host.ui.set_picture_texture(NAMES.preview, texture)`), or pixels from
 anywhere (`host.ui.set_picture(NAMES.preview, width, height, rgba)`).
 
 An `Image` names a picture file and nothing else: `source="preview://brush"`
 on an Image is an error (G2023) that names the Surface to write.
+
+---
+
+## How do I place something from where layout put a node?
+
+A picture fitted into the room the file leaves it, a bar seated over a
+node: the code needs the node's rectangle of THIS frame. In
+`Page::frame` it reads the rectangle of the frame before, because
+`frame` runs before layout. So after the phone is turned, the picture
+would sit in the old place for one frame.
+
+A page of a TurboDot program writes it in `Page::after_layout`:
+
+```rust partial
+fn after_layout(&mut self, host: &mut Host<'_, AppState>) {
+    let room: Rect = host.ui.rect(NAMES.room);
+    if room != self.fitted_for {
+        self.fitted_for = room;
+        host.ui.runtime.set_prop(NAMES.picture, PropKey::Width, Value::VNum(room.w.min(room.h)));
+    }
+}
+```
+
+(TurboDot is not part of `gogo-ui`, so the tests do not compile this
+example.)
+
+- It is called after the page was laid out, and only in a frame that
+  laid it out. A still page is not called.
+- What the page writes there is laid out once more before the draw. No
+  frame shows the old place.
+- Write only what changed, as above. A page that writes at every call is
+  laid out twice in every frame that lays it out.
+
+---
+
+## How do I draw part of a page into a texture?
+
+A text burned into a painting, a share card, a label a game puts on a
+quad in its world: nodes of a page, kept as a picture.
+
+A page of a TurboDot program draws one of its nodes, with everything
+inside it, in `Page::before_draw`:
+
+```rust partial
+fn before_draw(&mut self, host: &mut Host<'_, AppState>, gpu: &mut PageGpu<'_>) {
+    if !self.is_card_wanted {
+        return;
+    }
+    self.is_card_wanted = false;
+    let card: Rect = host.ui.rect(NAMES.card);
+    let place = TexturePlacement {
+        px_per_epx: 3.0,
+        origin_epx: (card.x, card.y),
+        size_px: ((card.w * 3.0).round() as u32, (card.h * 3.0).round() as u32),
+        turn: None,
+    };
+    self.card = Some(host.ui.draw_to_texture(gpu, NAMES.card, place));
+}
+```
+
+(TurboDot is not part of `gogo-ui`, so the tests do not compile this
+example.)
+
+- The walk, the text shaping and the shader are the screen's, so the
+  texture holds what the user sees. `px_per_epx` is the texture's own
+  scale: here three pixels per epx, whatever the screen has.
+- `before_draw` is the one call that has a `PageGpu`. A tap that wants
+  the texture sets a flag in `handle`, as `is_card_wanted` here.
+- The texture's colors are multiplied by alpha, and it is transparent
+  where nothing was drawn. Its type says so.
+- Each call makes a texture and a pass. Draw at a change, not in every
+  frame.
+
+Nodes that no screen shows (art for a file to save, a panel for a wall
+of a world) go into a page of their own, kept off screen:
+
+```rust partial
+fn loaded(&mut self, host: &mut Host<'_, AppState>) {
+    self.art = Some(host.nav.keep_off_screen(ArtPage, 1024.0, 960.0));
+}
+
+fn before_draw(&mut self, host: &mut Host<'_, AppState>, gpu: &mut PageGpu<'_>) {
+    let Some(tile) = self.art.and_then(|art| gpu.draw_to_texture(art, ART.frame, self.art_place)) else { return };
+    self.art_tile = Some(tile);
+}
+```
+
+(Not compiled by the tests either.)
+
+- The kept page is a page like any other: a file, a struct, `show`,
+  `frame`, the program's language. It is laid out for the size named,
+  at one pixel per epx: the window's size and scale do not reach it.
+- It lives with the page that keeps it. Another page writes into it
+  with `host.nav.tell`.
+- It is laid out at the frame after it was kept. Drawn before that, it
+  draws nothing (`None`).
 
 ---
 
@@ -2018,7 +2114,7 @@ whole screen (clip space -1 to 1 is the Surface), and does nothing for a
 page that slides in or a box that clips the Surface: the drawing moves
 and is cut with it.
 
-A page of a TurboDot program makes its pipeline in `Page::gpu_prepare`,
+A page of a TurboDot program makes its pipeline in `Page::before_draw`,
 for the format the pass has (`host.ui.target_format()`), and its calls
 in `Page::draw_surface_gpu`:
 
@@ -2086,7 +2182,7 @@ Three things to know:
   be in a `when` (G7018).
 - **With a depth buffer in the pass, every pipeline you draw with in a
   `draw=gpu` Surface names its format**, also in a Surface without
-  `depth=true`: `host.ui.depth_format()` in `gpu_prepare`,
+  `depth=true`: `host.ui.depth_format()` in `before_draw`,
   `place.depth_format` at the draw call. The GPU refuses a pipeline with
   no depth format there. A Surface without `depth=true` leaves depth
   alone: no depth write, compare `Always`.

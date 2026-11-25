@@ -144,7 +144,7 @@ impl Gpu {
     /// The same renderer and shader a window uses draw it, so the picture
     /// is what a user would see. Where no page paints, the picture is
     /// transparent. Pages' own GPU drawing runs first, as in a window's
-    /// frame (`Page::gpu_draw_textures`).
+    /// frame (`Page::before_draw`).
     ///
     /// WARNING: builds a renderer on every call, about 70 ms on Direct3D 12
     /// (it compiles the shader each time). Fine for a test, too slow for a

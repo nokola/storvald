@@ -286,10 +286,10 @@ pub struct UiAssets {
     /// runtime and handed to the renderer. `None` = the texts as the
     /// files have them.
     pub locale: Option<Arc<Locale>>,
-    /// What layouts left a frame to do, as bits: `SURFACE_ASKS` from a
-    /// layout that left a page with a `Surface draw=commands` to write,
-    /// `MOUSE_CAPTURE_NEWS` from one after which another Surface of its
-    /// page asks for the mouse, or none does.
+    /// What layouts left a frame to do, as bits: `LAYOUT_RAN` from any
+    /// layout, `SURFACE_ASKS` from one that left a page with a `Surface
+    /// draw=commands` to write, `MOUSE_CAPTURE_NEWS` from one after which
+    /// another Surface of its page asks for the mouse, or none does.
     ///
     /// Needed here, in what every page lays out against, and as one
     /// number: a frame in which no page is laid out asks no page for
@@ -302,6 +302,10 @@ pub struct UiAssets {
 pub(crate) const SURFACE_ASKS: u8 = 1;
 /// `UiAssets::layout_news`: who asks for the mouse may have changed.
 pub(crate) const MOUSE_CAPTURE_NEWS: u8 = 2;
+/// `UiAssets::layout_news`: a page was laid out, or a page came into
+/// draw order: one may be owed its `Page::after_layout`
+/// (`PageUi::is_layout_new`).
+pub(crate) const LAYOUT_RAN: u8 = 4;
 
 impl UiAssets {
     pub fn new(text: TextEngine, images: ImageTable) -> UiAssets {
@@ -309,10 +313,17 @@ impl UiAssets {
     }
 
     /// Takes what layouts since the last call left a frame to do:
-    /// `SURFACE_ASKS`, `MOUSE_CAPTURE_NEWS`, or 0 when no page was laid
-    /// out.
+    /// `LAYOUT_RAN`, `SURFACE_ASKS`, `MOUSE_CAPTURE_NEWS`, or 0 when no
+    /// page was laid out.
     pub(crate) fn take_layout_news(&self) -> u8 {
         self.layout_news.replace(0)
+    }
+
+    /// Says that a page may be owed its `Page::after_layout` for a
+    /// reason no layout knows: a page laid out while it was not drawn
+    /// came into draw order.
+    pub(crate) fn note_layout_ran(&self) {
+        self.layout_news.set(self.layout_news.get() | LAYOUT_RAN);
     }
 
     /// Says that who asks for the mouse may have changed, for a reason
@@ -446,8 +457,8 @@ impl PagePose {
     }
 }
 
-/// Where `PageUi::draw_to_texture` puts a node and its children on the
-/// texture.
+/// Where `PageUi::draw_to_texture` and `PageGpu::draw_to_texture` put a
+/// node and its children on the texture.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TexturePlacement {
     /// Texture pixels per epx of the page. It need not be the screen's
@@ -507,6 +518,9 @@ pub struct PageUi {
     /// (`Runtime::mouse_capture`). Kept so a layout tells the program
     /// only when it changed.
     pub(crate) mouse_capture_seen: Option<NodeId>,
+    /// True from a layout of the page until the program called its
+    /// `Page::after_layout` for it.
+    pub(crate) is_layout_new: bool,
     /// Pictures page's code made (`set_picture`), one per Surface.
     pub(crate) code_pictures: Vec<CodePicture>,
     /// Textures page's code handed over (`set_picture_texture`), one per
@@ -573,6 +587,7 @@ impl PageUi {
             pose: None,
             viewport: None,
             mouse_capture_seen: None,
+            is_layout_new: false,
             code_pictures: Vec::new(),
             #[cfg(feature = "gpu")]
             picture_textures: Vec::new(),
@@ -624,9 +639,9 @@ impl PageUi {
         let viewport: Rect = self.viewport.unwrap_or(Rect::new(0.0, 0.0, size.0 as f32 / epx, size.1 as f32 / epx));
         let measure: EpxMeasure<'_> = assets.measure(epx);
         self.kept.frame_retained(&mut self.runtime, &self.page, viewport, &measure, &mut self.draws, self.above_children.map(|top| (top, &mut self.top_draws)));
-        if self.runtime.has_surface_to_draw() {
-            assets.layout_news.set(assets.layout_news.get() | SURFACE_ASKS);
-        }
+        self.is_layout_new = true;
+        let surface_asks: u8 = if self.runtime.has_surface_to_draw() { SURFACE_ASKS } else { 0 };
+        assets.layout_news.set(assets.layout_news.get() | LAYOUT_RAN | surface_asks);
         if self.runtime.mouse_capture() != self.mouse_capture_seen {
             self.mouse_capture_seen = self.runtime.mouse_capture();
             assets.note_mouse_capture_news();
@@ -794,12 +809,14 @@ impl PageUi {
 #[cfg(feature = "gpu")]
 impl PageUi {
     /// Draws `node` and everything inside it to a new texture, as the last
-    /// `relayout` laid it out. A node that is hidden on screen is drawn
-    /// too.
+    /// `relayout` laid it out, with a renderer the caller names. A node
+    /// that is hidden on screen is drawn too.
     ///
-    /// Needed so a picture made for a file is drawn by the same walk and
-    /// the same renderer as the screen: what the user sees is what the
-    /// file gets.
+    /// Needed by a host that lays out and draws pages of its own: a
+    /// picture made for a file is drawn by the same walk and the same
+    /// renderer as the screen, so what the user sees is what the file
+    /// gets. A page of a `Program` calls `draw_to_texture`, which names
+    /// no renderer.
     ///
     /// WARNING: lay the page out first (`relayout`). A write since then is
     /// not drawn.
@@ -807,13 +824,13 @@ impl PageUi {
     /// Returns a tile with colors multiplied by alpha, transparent where
     /// nothing was drawn.
     #[inline]
-    pub fn draw_to_texture(&self, renderer: &mut gogo_wgpu::UiRenderer, device: &wgpu::Device, queue: &wgpu::Queue, assets: &UiAssets, node: impl NodeName, place: TexturePlacement) -> gogo_wgpu::Tex_Tile_Premul_Srgb_4xU8_RGBA {
-        self.draw_to_texture_by_id(renderer, device, queue, assets, node.node(), place)
+    pub fn draw_to_texture_with(&self, renderer: &mut gogo_wgpu::UiRenderer, device: &wgpu::Device, queue: &wgpu::Queue, assets: &UiAssets, node: impl NodeName, place: TexturePlacement) -> gogo_wgpu::Tex_Tile_Premul_Srgb_4xU8_RGBA {
+        self.draw_to_texture_with_by_id(renderer, device, queue, assets, node.node(), place)
     }
 
-    /// What `draw_to_texture` does, by the id of the node.
-    fn draw_to_texture_by_id(&self, renderer: &mut gogo_wgpu::UiRenderer, device: &wgpu::Device, queue: &wgpu::Queue, assets: &UiAssets, node: NodeId, place: TexturePlacement) -> gogo_wgpu::Tex_Tile_Premul_Srgb_4xU8_RGBA {
-        debug_assert!(self.kept.is_laid_out(), "draw_to_texture before the page's first relayout");
+    /// What `draw_to_texture_with` does, by the id of the node.
+    pub(crate) fn draw_to_texture_with_by_id(&self, renderer: &mut gogo_wgpu::UiRenderer, device: &wgpu::Device, queue: &wgpu::Queue, assets: &UiAssets, node: NodeId, place: TexturePlacement) -> gogo_wgpu::Tex_Tile_Premul_Srgb_4xU8_RGBA {
+        debug_assert!(self.kept.is_laid_out(), "draw_to_texture before the page's first layout");
         let mut draws: Vec<Draw> = Vec::new();
         self.kept.subtree_draws(&self.page, node, &mut draws);
         if let Some((angle_deg, pivot_epx)) = place.turn {
@@ -862,6 +879,26 @@ pub struct PageStack {
     touched: Vec<(u64, PageId)>,
     /// Whether a page was removed since `take_freed` was last asked.
     was_page_removed: bool,
+}
+
+/// Every page of a stack but one (`PageStack::one_and_others`).
+#[cfg_attr(not(feature = "gpu"), allow(dead_code))]
+pub(crate) struct OtherPages<'a> {
+    /// Pages with an id under the left-out page's.
+    before: &'a [Option<PageUi>],
+    /// Pages with an id over it.
+    after: &'a [Option<PageUi>],
+}
+
+#[cfg_attr(not(feature = "gpu"), allow(dead_code))]
+impl<'a> OtherPages<'a> {
+    /// Page `id`, unless it is the left-out page or was removed.
+    pub(crate) fn get(&self, id: PageId) -> Option<&'a PageUi> {
+        if id.0 < self.before.len() {
+            return self.before[id.0].as_ref();
+        }
+        self.after.get(id.0.checked_sub(self.before.len() + 1)?)?.as_ref()
+    }
 }
 
 /// Pages a host lays out and draws itself, beside a program's pages.
@@ -953,6 +990,34 @@ impl PageStack {
     /// WARNING: panics for a page that was removed.
     pub fn get_mut(&mut self, id: PageId) -> &mut PageUi {
         self.pages[id.0].as_mut().expect("a live page")
+    }
+
+    /// Page `id` to write into, and every other page to read.
+    ///
+    /// Needed for a call that hands a page its own `PageUi` and lets it
+    /// read another's: a page draws a page it keeps off screen.
+    ///
+    /// WARNING: panics for a page that was removed.
+    #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
+    pub(crate) fn one_and_others(&mut self, id: PageId) -> (&mut PageUi, OtherPages<'_>) {
+        let (before, rest) = self.pages.split_at_mut(id.0);
+        let (one, after) = rest.split_first_mut().expect("a live page");
+        (one.as_mut().expect("a live page"), OtherPages { before, after })
+    }
+
+    /// Adds to `out` the key of every picture page `id` shows this
+    /// frame, each once. As `wanted_images`, for one page that is not
+    /// in the order: a page kept off screen.
+    #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
+    pub(crate) fn wanted_images_of(&self, id: PageId, out: &mut Vec<ImageKey>) {
+        let Some(page) = self.pages[id.0].as_ref() else { return };
+        for draw in &page.draws {
+            if let Draw::Image { image, .. } = draw {
+                if !out.contains(image) {
+                    out.push(*image);
+                }
+            }
+        }
     }
 
     /// Two pages at once.

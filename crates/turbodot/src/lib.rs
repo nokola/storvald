@@ -39,7 +39,7 @@
 //!   `const KIND: PageKind = PageKind::Overlay;`.
 //! - A page with a part its own code draws (a painting, a game's world)
 //!   has a `Surface` there in its file. `Surface draw=picture` shows a
-//!   texture the page draws in `gpu_prepare`, in the pass that draws
+//!   texture the page draws in `before_draw`, in the pass that draws
 //!   every page, with no copy. `Surface draw=commands` shows gogo draw
 //!   commands the page writes in `draw_surface`. `Surface draw=gpu` is
 //!   where the page makes GPU draw calls of its own in that same pass
@@ -98,6 +98,10 @@ pub use gogo_ui as gogo;
 /// to say what its texels hold.
 #[cfg(feature = "gpu")]
 pub use gogo_wgpu::Tex_Image_Straight_Srgb_4xU8_RGBA;
+/// Texture `PageUi::draw_to_texture` returns: nodes drawn over nothing,
+/// wrapped to say that its colors are multiplied by alpha.
+#[cfg(feature = "gpu")]
+pub use gogo_wgpu::Tex_Tile_Premul_Srgb_4xU8_RGBA;
 /// Where a `Surface draw=gpu` is drawn this frame: what
 /// `Page::draw_surface_gpu` gets with the pass.
 #[cfg(feature = "gpu")]
@@ -110,10 +114,9 @@ pub use wgpu;
 #[cfg(feature = "gpu")]
 pub use gpu::{Buf_Straight_Srgb_4xU8_RGBA, DEPTH_FORMAT, Gpu, Picture};
 #[cfg(feature = "ui")]
-#[cfg(all(feature = "ui", not(feature = "gpu")))]
-pub use page::Gpu;
+pub use page::{AsCachedPage, AsPage, Back, BuiltPage, CachedPage, Host, IntoPage, Nav, OffScreenPage, Page, PageBox, PageEvent, PageGpu, PageKind};
 #[cfg(feature = "ui")]
-pub use page::{AsCachedPage, AsPage, Back, BuiltPage, CachedPage, Host, IntoPage, Nav, Page, PageBox, PageEvent, PageKind};
+pub use pages::TexturePlacement;
 #[cfg(feature = "ui")]
 pub use program::{Built, Program};
 #[cfg(feature = "window")]
@@ -124,8 +127,8 @@ pub use window::WindowOptions;
 /// What a file with a page needs: `use turbodot::prelude::*;`.
 #[cfg(feature = "ui")]
 pub mod prelude {
-    pub use crate::pages::PageUi;
-    pub use crate::{Back, BuiltPage, CachedPage, Gpu, Host, Page, PageEvent, PageKind};
+    pub use crate::pages::{PageUi, TexturePlacement};
+    pub use crate::{Back, BuiltPage, CachedPage, Host, OffScreenPage, Page, PageEvent, PageGpu, PageKind};
     pub use gogo_ui::runtime::{Item, ItemKey, ItemValue};
     pub use gogo_ui::{Buttons, CommandSurface, EventKind, GpuSurface, HoverPhase, Mods, NodeId, Phase, PictureSurface, PointerSample, SurfaceCommands, Tool};
 }

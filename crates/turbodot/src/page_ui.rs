@@ -78,7 +78,7 @@ impl PageUi {
     /// of its own.
     ///
     /// Needed for a picture page draws on the GPU: a painting, a game's
-    /// world drawn into a texture. Called from `Page::gpu_prepare`, once
+    /// world drawn into a texture. Called from `Page::before_draw`, once
     /// or every frame: the same texture again costs one compare, and
     /// another texture (page draws into two in turn) takes its place.
     ///
@@ -98,11 +98,36 @@ impl PageUi {
         }
     }
 
+    /// Draws `node` of this page and everything inside it to a new
+    /// texture, as page's last layout has them. The walk and the
+    /// renderer are the screen's, so what the user sees is what the
+    /// texture gets. A node that is hidden on screen is drawn too.
+    ///
+    /// Needed for a piece of a page kept as a picture: a text burned
+    /// into a painting, at the painting's scale and not the screen's
+    /// (`place.px_per_epx`).
+    ///
+    /// Called from `Page::before_draw`, the one call that has a
+    /// `PageGpu`. A page kept off screen is drawn by
+    /// `PageGpu::draw_to_texture`.
+    ///
+    /// WARNING: what page wrote in this same `before_draw` is not laid
+    /// out yet, and is not drawn. Each call makes a texture, a pass and
+    /// a submit: for a change, not for every frame.
+    ///
+    /// Returns a tile with colors multiplied by alpha, transparent where
+    /// nothing was drawn.
+    #[cfg(feature = "gpu")]
+    #[inline]
+    pub fn draw_to_texture(&self, gpu: &mut crate::PageGpu<'_>, node: impl NodeName, place: crate::pages::TexturePlacement) -> gogo_wgpu::Tex_Tile_Premul_Srgb_4xU8_RGBA {
+        self.draw_to_texture_with_by_id(gpu.renderer, gpu.device, gpu.queue, gpu.assets, node.node(), place)
+    }
+
     /// Format of the color target that the pass which draws the pages
-    /// writes into, as `Page::gpu_prepare` finds it.
+    /// writes into, as `Page::before_draw` finds it.
     ///
     /// Needed by a page with a `Surface draw=gpu`: the pipeline of its
-    /// own draw calls is made for this format, in `gpu_prepare`, before
+    /// own draw calls is made for this format, in `before_draw`, before
     /// `draw_surface_gpu` uses it. A window and a picture of the program
     /// (`Gpu::draw_program`) may have two formats: a page compares, and
     /// makes its pipeline again for another one.
@@ -114,7 +139,7 @@ impl PageUi {
     }
 
     /// Format of the depth buffer of the pass which draws the pages, as
-    /// `Page::gpu_prepare` finds it. `Some` in a program with a `Surface
+    /// `Page::before_draw` finds it. `Some` in a program with a `Surface
     /// draw=gpu, depth=true` in any of its pages.
     ///
     /// Needed by a page with a `Surface draw=gpu`, with `depth=true` or
