@@ -1,4 +1,4 @@
-# `slider_drag_step` at commit d196abf48a6a4ae44a6a1aac012294f03c7733d5: instructions by function, 62954 in all.
+# `slider_drag_step` at commit 3222203fafaaa1814e2ffac10f7107d21660e288: instructions by function, 62954 in all.
 # A function's own code only: what it calls is counted at the called function.
 14228 gogo_ui::draw::walk'2
 5988 <gogo_ui::page::Page>::kind_default::{closure#0}

@@ -1,10 +1,10 @@
-# `first_frame_of_controls_page` at commit d196abf48a6a4ae44a6a1aac012294f03c7733d5: instructions by function, 4905135 in all.
+# `first_frame_of_controls_page` at commit 3222203fafaaa1814e2ffac10f7107d21660e288: instructions by function, 4905240 in all.
 # A function's own code only: what it calls is counted at the called function.
 403474 <gogo_ui::page::Page>::kind_default::{closure#0}
 315542 <gogo_ui::page::Page>::prop_by_id
 276146 <gogo_ui::runtime::Resolved>::override_of_by_id
 228765 <gogo_ui::runtime::Resolved>::prop_by_id
-170587 __memcpy_avx_unaligned_erms
+170597 __memcpy_avx_unaligned_erms
 163930 harfrust::hb::ot_shape::shape_internal
 140806 <cosmic_text::attrs::AttrsList>::get_span
 126352 cosmic_text::shape::shape_fallback
@@ -61,7 +61,7 @@
 17460 <harfrust::hb::face::hb_font_t>::shape_with_plan
 17112 <cosmic_text::buffer::Buffer>::set_text
 17100 <harfrust::hb::ot_layout_gsubgpos::skipping_iterator_t<for<'a> fn(&'a mut harfrust::hb::buffer::GlyphInfo, u16) -> bool>>::match_at
-16818 <gogo_text::TextEngine>::measure
+16885 <gogo_text::TextEngine>::measure
 16740 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&str>
 16376 <harfrust::hb::glyph_metrics::GlyphMetrics>::populate_advance_widths
 16366 <core::iter::adapters::map::Map<core::str::iter::CharIndices, unicode_linebreak::linebreaks::{closure#0}> as core::iter::traits::iterator::Iterator>::try_fold::<(), &mut <core::iter::adapters::scan::Scan<_, _, _> as core::iter::traits::iterator::Iterator>::try_fold::scan<(usize, u8), (u8, bool), (usize, bool, bool), (), core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>, unicode_linebreak::linebreaks::{closure#1}, core::iter::traits::iterator::Iterator::find_map::check<(usize, bool, bool), (usize, unicode_linebreak::BreakOpportunity), &mut unicode_linebreak::linebreaks::{closure#2}>::{closure#0}>::{closure#0}, core::ops::control_flow::ControlFlow<core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>>>
@@ -135,7 +135,7 @@
 5276 gogo_ui::draw::push_shown
 5060 <hashbrown::raw::RawTable<(u64, (f32, f32))>>::reserve_rehash::<hashbrown::map::make_hasher<u64, (f32, f32), std::hash::random::RandomState>::{closure#0}>
 5052 <core::iter::adapters::chain::Chain<core::iter::adapters::map::Map<core::str::iter::CharIndices, unicode_linebreak::linebreaks::{closure#0}>, core::iter::sources::once::Once<(usize, u8)>> as core::iter::traits::iterator::Iterator>::try_fold::<(), <core::iter::adapters::scan::Scan<_, _, _> as core::iter::traits::iterator::Iterator>::try_fold::scan<(usize, u8), (u8, bool), (usize, bool, bool), (), core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>, unicode_linebreak::linebreaks::{closure#1}, core::iter::traits::iterator::Iterator::find_map::check<(usize, bool, bool), (usize, unicode_linebreak::BreakOpportunity), &mut unicode_linebreak::linebreaks::{closure#2}>::{closure#0}>::{closure#0}, core::ops::control_flow::ControlFlow<core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>>>
-5013 <hashbrown::map::HashMap<u64, (f32, f32), std::hash::random::RandomState>>::insert
+5041 <hashbrown::map::HashMap<u64, (f32, f32), std::hash::random::RandomState>>::insert
 4978 <read_fonts::table_ref::TableRef<read_fonts::tables::gsub::LigatureMarker> as read_fonts::read::FontRead>::read
 4712 <alloc::vec::Vec<cosmic_text::shape::ShapeSpan> as core::ops::drop::Drop>::drop
 4672 _int_free_maybe_trim
