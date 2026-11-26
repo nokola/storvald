@@ -210,7 +210,7 @@ pub type HostColorGlyphPainter = Box<dyn FnMut(&str, f32) -> Option<HostColorGly
 ///
 /// Needed for the whole process, not per engine, so a renderer that drew
 /// with one engine and is handed another never takes the second engine's
-/// atlas for the one it uploaded (`TextEngine::atlas_rows_to_send`).
+/// atlas for the one it uploaded (`TextEngine::atlas_part_to_send`).
 fn next_atlas_version() -> u64 {
     static NEXT_ATLAS_VERSION: AtomicU64 = AtomicU64::new(1);
     NEXT_ATLAS_VERSION.fetch_add(1, Ordering::Relaxed)
@@ -218,11 +218,12 @@ fn next_atlas_version() -> u64 {
 
 /// What a renderer has sent to its GPU of one atlas: it keeps one for
 /// the letters' atlas and one for the emoji atlas, and hands each to
-/// `TextEngine::atlas_rows_to_send` or `color_atlas_rows_to_send`.
+/// `TextEngine::atlas_part_to_send` or `color_atlas_part_to_send`.
 ///
-/// Needed so a renderer sends only the rows it has not sent. A new
-/// letter changes a few rows; the whole atlas is 4 MB at 2048 a side,
-/// and sending it took 11 to 17 ms on an old phone, for one letter.
+/// Needed so a renderer sends only the part it has not sent. A new
+/// letter changes a small rectangle; the whole atlas is 4 MB at 2048 a
+/// side, and sending it took 11 to 17 ms on an old phone, for one
+/// letter.
 ///
 /// `AtlasSent::default()` says nothing was sent: the next send is the
 /// whole atlas.
@@ -236,6 +237,33 @@ pub struct AtlasSent {
     /// later glyph may have landed in that shelf; no row above it has
     /// changed.
     open_row: u32,
+    /// How far across that shelf was filled at the send: a later glyph
+    /// in it lies to the right, and nothing to the left has changed.
+    open_x: u32,
+}
+
+/// A rectangle of an atlas, in texels: the part a renderer has not sent
+/// to its GPU (`TextEngine::atlas_part_to_send`).
+///
+/// Needed as a rectangle, not as a run of rows: a new letter beside
+/// letters already sent changes a few columns of its shelf, and a shelf
+/// that holds one big letter is hundreds of rows tall.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AtlasPart {
+    pub columns: Range<u32>,
+    pub rows: Range<u32>,
+}
+
+impl AtlasPart {
+    /// Whether there is nothing to send.
+    pub fn is_empty(&self) -> bool {
+        self.columns.is_empty() || self.rows.is_empty()
+    }
+
+    /// How many texels the part holds.
+    pub fn texel_count(&self) -> u64 {
+        u64::from(self.columns.end.saturating_sub(self.columns.start)) * u64::from(self.rows.end.saturating_sub(self.rows.start))
+    }
 }
 
 /// The color atlas's first side; it doubles when it fills (`grow_color`).
@@ -275,26 +303,35 @@ impl Shelf {
         Some(pos)
     }
 
-    /// The rows a renderer at `sent` has not got of the atlas `atlas_id`
+    /// The part a renderer at `sent` has not got of the atlas `atlas_id`
     /// this shelf packs, now at `version`.
     ///
     /// Needed in one place because both atlases answer it the same way.
-    /// Slots are packed left to right, shelf below shelf, so the rows
-    /// above the shelf being filled never change: what a renderer lacks
-    /// starts at the shelf that was being filled when it sent last.
+    /// Slots are packed left to right, shelf below shelf. So nothing
+    /// above the shelf that was being filled at the last send has
+    /// changed, and in that shelf nothing to the left of where it was
+    /// filled to.
     ///
-    /// Returns the rows, and what the renderer has sent once it sent
-    /// them. No rows when the version is the one sent; every row when
-    /// the atlas is another than the one sent.
-    fn rows_to_send(&self, atlas_id: u64, version: u64, sent: AtlasSent) -> (Range<u32>, AtlasSent) {
-        let rows: Range<u32> = if sent.version == version {
-            0..0
+    /// A send that starts a new shelf sends whole rows, the earlier
+    /// slots of the shelf above included: once per shelf, not per
+    /// letter.
+    ///
+    /// Returns the part, and what the renderer has sent once it sent
+    /// it. Nothing when the version is the one sent. The whole atlas
+    /// when it is another than the one sent. The new slots' columns of
+    /// the shelf when that shelf is still being filled. Else whole rows,
+    /// from that shelf down to the last one used.
+    fn part_to_send(&self, atlas_id: u64, version: u64, sent: AtlasSent) -> (AtlasPart, AtlasSent) {
+        let part: AtlasPart = if sent.version == version {
+            AtlasPart { columns: 0..0, rows: 0..0 }
         } else if sent.atlas_id != atlas_id {
-            0..self.size
+            AtlasPart { columns: 0..self.size, rows: 0..self.size }
+        } else if sent.open_row == self.y {
+            AtlasPart { columns: sent.open_x..self.x.min(self.size), rows: self.y..self.y + self.h }
         } else {
-            sent.open_row..self.y + self.h
+            AtlasPart { columns: 0..self.size, rows: sent.open_row..self.y + self.h }
         };
-        (rows, AtlasSent { version, atlas_id, open_row: self.y })
+        (part, AtlasSent { version, atlas_id, open_row: self.y, open_x: self.x })
     }
 }
 
@@ -382,7 +419,7 @@ pub struct TextEngine {
     /// process have the same one.
     ///
     /// Needed so each renderer knows by itself whether the atlas it
-    /// uploaded is still this one (`atlas_rows_to_send` compares it with
+    /// uploaded is still this one (`atlas_part_to_send` compares it with
     /// the version that renderer sent). With one flag that the first
     /// reader cleared, a second renderer over the same engine drew every
     /// plate and picture and no letters.
@@ -689,30 +726,31 @@ impl TextEngine {
         self.shape_cache.clear();
     }
 
-    /// The rows of the letters' atlas that a renderer at `sent` has not
-    /// sent to its GPU. A renderer calls it once a frame and writes
-    /// those rows of `atlas` into its texture.
+    /// The part of the letters' atlas that a renderer at `sent` has not
+    /// sent to its GPU. A renderer calls it once a frame, after the
+    /// frame's texts are shaped, and writes that rectangle of `atlas`
+    /// into its texture: all the frame's new letters in one write.
     ///
     /// Needed because a frame that draws one new letter otherwise sends
     /// the whole atlas: the largest part of such a frame's text time.
     /// Each renderer keeps its own `AtlasSent`, so several renderers
-    /// over one engine each get the rows they lack.
+    /// over one engine each get the part they lack.
     ///
-    /// Returns the rows, and what the renderer keeps as sent once it
-    /// wrote them. No rows when nothing was packed since `sent`. Every
-    /// row when the atlas is not the one `sent` names: nothing sent yet,
-    /// another engine's, or this one after it grew. Row `r` is the bytes
-    /// `r * size..(r + 1) * size` of `atlas`.
-    pub fn atlas_rows_to_send(&self, sent: AtlasSent) -> (Range<u32>, AtlasSent) {
-        self.shelf.rows_to_send(self.atlas_id, self.atlas_version, sent)
+    /// Returns the part, and what the renderer keeps as sent once it
+    /// wrote it. An empty part when nothing was packed since `sent`. The
+    /// whole atlas when it is not the one `sent` names: nothing sent
+    /// yet, another engine's, or this one after it grew. The texel at
+    /// column `x` of row `y` is the byte `y * size + x` of `atlas`.
+    pub fn atlas_part_to_send(&self, sent: AtlasSent) -> (AtlasPart, AtlasSent) {
+        self.shelf.part_to_send(self.atlas_id, self.atlas_version, sent)
     }
 
-    /// `atlas_rows_to_send`, for the emoji atlas (4 bytes a texel).
+    /// `atlas_part_to_send`, for the emoji atlas (4 bytes a texel).
     ///
-    /// Returns no rows until the first emoji packs: a start without an
-    /// emoji sends no emoji atlas.
-    pub fn color_atlas_rows_to_send(&self, sent: AtlasSent) -> (Range<u32>, AtlasSent) {
-        self.color_shelf.rows_to_send(self.color_atlas_id, self.color_atlas_version, sent)
+    /// Returns an empty part until the first emoji packs: a start
+    /// without an emoji sends no emoji atlas.
+    pub fn color_atlas_part_to_send(&self, sent: AtlasSent) -> (AtlasPart, AtlasSent) {
+        self.color_shelf.part_to_send(self.color_atlas_id, self.color_atlas_version, sent)
     }
 
     /// The face `font` names (its style suffix ignored), else the default.

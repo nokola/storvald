@@ -180,7 +180,7 @@ impl Gpu {
         let depth_format: Option<wgpu::TextureFormat> = program.depth_format();
         let mut renderer: UiRenderer = UiRenderer::new(&self.device, format, depth_format);
         // Renderer is new: it has no picture yet (the letters it uploads
-        // by itself, `TextEngine::atlas_rows_to_send`). And a picture of the
+        // by itself, `TextEngine::atlas_part_to_send`). And a picture of the
         // pages shows the lazy ones too.
         program.forget_uploads();
         program.gpu_draw_as(&mut renderer, self, crate::pictures::LazyPictures::Now, host_pages.map(|pages| pages as &dyn crate::pages::HostPages));

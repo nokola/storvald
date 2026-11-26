@@ -5,7 +5,7 @@
 //! draws the wedge of a dial and checks it against the hit test. Two
 //! more draw one text engine's letters with a second renderer, and a
 //! second engine's letters with the same renderer. A sixth draws letters
-//! new to the atlas and counts the rows of it the renderer sent.
+//! new to the atlas and counts the texels of it the renderer sent.
 //!
 //! Needed because nothing else in this repository runs the shader: the
 //! unit tests cover the gradient tables only, and a renderer whose quads
@@ -376,7 +376,7 @@ fn a_second_renderer_over_one_text_engine_draws_its_letters() {
 /// A renderer handed another text engine draws that engine's letters.
 ///
 /// Needed because a renderer keeps the version of the atlas it uploaded
-/// (`TextEngine::atlas_rows_to_send`). Two engines that each packed two glyphs
+/// (`TextEngine::atlas_part_to_send`). Two engines that each packed two glyphs
 /// would share a count kept per engine: the renderer would keep the first
 /// engine's atlas and draw the second engine's letters from the wrong
 /// places in it.
@@ -405,38 +405,40 @@ View card {
 "#;
 
 /// A renderer that drew one text and then draws letters new to the
-/// atlas sends those letters' rows only, and draws them as a renderer
-/// that sent the whole atlas does.
+/// atlas sends those letters' rectangle only, and draws them as a
+/// renderer that sent the whole atlas does.
 ///
 /// Needed because a frame with one new letter otherwise sends the whole
-/// atlas to the GPU, megabytes for a few rows. Red on the row count when
-/// every send is the whole atlas; red on the picture when the rows sent
-/// are not the rows that changed.
+/// atlas to the GPU, megabytes for a few hundred texels. Red on the
+/// texel count when every send is the whole atlas; red on the picture
+/// when the rectangle sent is not the one that changed.
 #[test]
 #[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
-fn a_new_letter_sends_only_its_rows_of_the_atlas() {
+fn a_new_letter_sends_only_its_part_of_the_atlas() {
     let (device, queue) = device();
     let mut ui: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
     let text: RefCell<TextEngine> = engine();
     // 52 letters at 64 px are wider than the atlas: they fill its first
-    // shelf, so the letters drawn below land under it. Needed because
-    // rows written at a wrong height, or read from a wrong place, are
-    // still right for letters in the top shelf.
+    // shelf, so the letters drawn below land under it and right of its
+    // left edge. Needed because a rectangle written at a wrong place,
+    // or read from a wrong place, is still right at the atlas's top
+    // left corner.
     text.borrow_mut().warm("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", 64.0, None);
     drawn_tile(PAGE, &mut ui, &device, &queue, &text);
-    let atlas_rows: u64 = u64::from(text.borrow().atlas().1);
-    assert_eq!(ui.debug_atlas_rows_written(), atlas_rows, "the first frame sends the whole atlas");
+    let atlas_side: u64 = u64::from(text.borrow().atlas().1);
+    let atlas_texels: u64 = atlas_side * atlas_side;
+    assert_eq!(ui.debug_atlas_texels_written(), atlas_texels, "the first frame sends the whole atlas");
 
     let (pixels, label) = drawn_tile(PAGE_OTHER_LETTERS, &mut ui, &device, &queue, &text);
-    let rows_of_new_letters: u64 = ui.debug_atlas_rows_written() - atlas_rows;
-    assert!(rows_of_new_letters > 0 && rows_of_new_letters < 100, "two new letters at 32 px: {rows_of_new_letters} rows sent");
+    let texels_of_new_letters: u64 = ui.debug_atlas_texels_written() - atlas_texels;
+    assert!(texels_of_new_letters > 0 && texels_of_new_letters < 100 * 100, "two new letters at 32 px: {texels_of_new_letters} texels sent");
     assert!(white_pixels(&pixels, label) > 20, "the new letters are drawn");
     let new_letter: GlyphQuad = text.borrow_mut().glyph("o", 32.0, None).expect("the letter drawn above");
-    assert!(new_letter.uv[1] > 0.0, "the precondition: the new letters are below the atlas's first shelf");
+    assert!(new_letter.uv[0] > 0.0 && new_letter.uv[1] > 0.0, "the precondition: the new letters are below the atlas's first shelf and right of its left edge");
     let mut fresh: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
     let (want, _) = drawn_tile(PAGE_OTHER_LETTERS, &mut fresh, &device, &queue, &text);
     assert!(pixels == want, "the picture of a renderer that sent the whole atlas");
 
     drawn_tile(PAGE_OTHER_LETTERS, &mut ui, &device, &queue, &text);
-    assert_eq!(ui.debug_atlas_rows_written(), atlas_rows + rows_of_new_letters, "a frame with no new letter sends no row");
+    assert_eq!(ui.debug_atlas_texels_written(), atlas_texels + texels_of_new_letters, "a frame with no new letter sends nothing");
 }
