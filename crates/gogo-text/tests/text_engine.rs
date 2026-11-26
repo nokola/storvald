@@ -304,12 +304,12 @@ fn the_work_counts_each_shape_and_each_letter_drawn() {
     assert_eq!(e.take_work(), gogo_text::TextWork::default(), "a text seen before costs two lookups");
     e.narrowest_wrap("Hello there", px(24.0), None);
     assert_eq!(counts(e.take_work()), (1, 0, 0, 0), "the narrowest width of a wrapping text is a shape of its own");
-    // 26 letters of 400 px do not fit the letters' texture: it doubles,
-    // the text is shaped again against the grown one, and the letters
-    // drawn before the grow are drawn again.
+    // 26 letters of 400 px do not fit the letters' texture: it doubles
+    // and keeps the letters drawn. The text is shaped again against the
+    // grown one, and each letter is drawn once.
     e.shape("ABCDEFGHIJKLMNOPQRSTUVWXYZ", px(400.0), None, None, 0.0, 0.0, 100_000.0, 0);
     let work = e.take_work();
-    assert!(work.texture_grows >= 1 && work.shapes_to_draw >= 2 && work.letters_drawn > 26, "{work:?}");
+    assert_eq!((work.texture_grows, work.shapes_to_draw, work.letters_drawn), (1, 2, 26), "{work:?}");
 }
 
 /// The OS scan runs once, names each family once, and a family can
@@ -618,4 +618,110 @@ fn a_copy_that_takes_only_the_part_to_send_holds_the_whole_emoji_atlas() {
     let beside: AtlasPart = copy.take_emoji(&e);
     assert!(beside.rows.start == 0 && beside.rows.end < 128 && beside.columns.start > 0, "a second emoji beside the first: its own columns of their shelf, {beside:?}");
     assert!(copy.bytes == e.color_atlas().0, "the copy after a second emoji");
+}
+
+/// The texels of `q`'s slot in its atlas (the color atlas for an emoji),
+/// row by row.
+fn texels_of(e: &TextEngine, q: &GlyphQuad) -> Vec<u8> {
+    let ((atlas, side), texel_bytes) = if q.color { (e.color_atlas(), 4) } else { (e.atlas(), 1) };
+    let (x, y) = ((q.uv[0] * side as f32).round() as usize, (q.uv[1] * side as f32).round() as usize);
+    let (w, h) = (q.w as usize * texel_bytes, q.h as usize);
+    (0..h).flat_map(|row| atlas[((y + row) * side as usize + x) * texel_bytes..][..w].iter().copied()).collect()
+}
+
+/// A text drawn before an atlas grew, asked for again after: kept
+/// shaped with no letter drawn, at the same place on screen, each glyph
+/// in the same texels of the grown atlas. Then the same text past the
+/// kept shapes: shaped once, and still no letter drawn.
+///
+/// `grown` shapes what makes the atlas grow.
+fn check_a_grow_keeps(e: &mut TextEngine, text: &str, font_size: f32, grown: impl FnOnce(&mut TextEngine)) {
+    let before: Vec<GlyphQuad> = e.shape(text, px(font_size), None, None, 0.0, 0.0, 0.0, 0);
+    let texels_before: Vec<Vec<u8>> = before.iter().map(|q| texels_of(e, q)).collect();
+    assert!(!before.is_empty() && texels_before.iter().all(|texels| texels.iter().any(|byte| *byte > 128)), "the precondition: glyphs with ink");
+    let is_color: bool = before[0].color;
+    let texel_bytes: usize = if is_color { 4 } else { 1 };
+    let atlas_of = |e: &TextEngine| -> (Vec<u8>, usize) {
+        let (atlas, side) = if is_color { e.color_atlas() } else { e.atlas() };
+        (atlas.to_vec(), side as usize)
+    };
+    let (atlas_before, side_before) = atlas_of(e);
+    let generation: u32 = e.generation;
+    e.take_work();
+    grown(e);
+    assert!(e.generation > generation, "the precondition: an atlas grew");
+    let grows: u32 = e.take_work().texture_grows;
+    // Every byte with ink before the grow is the same after it, in the
+    // same row and column. (`grown` drew into what was empty of the
+    // atlas that was, too.)
+    let (atlas_after, side_after) = atlas_of(e);
+    assert!(side_after > side_before, "the precondition: the atlas of the text's glyphs grew");
+    let row_bytes: usize = side_before * texel_bytes;
+    for row in 0..side_before {
+        let (was, is) = (&atlas_before[row * row_bytes..][..row_bytes], &atlas_after[row * side_after * texel_bytes..][..row_bytes]);
+        assert!(was.iter().zip(is).all(|(was, is)| *was == 0 || was == is), "row {row}: what was drawn before the grow is in the same place after it");
+    }
+
+    let after: Vec<GlyphQuad> = e.shape(text, px(font_size), None, None, 0.0, 0.0, 0.0, 0);
+    assert_eq!(e.take_work(), gogo_text::TextWork::default(), "a text shaped before the grow is kept: nothing shaped, no letter drawn");
+    assert_eq!(after.len(), before.len());
+    for ((b, a), texels) in before.iter().zip(&after).zip(&texels_before) {
+        assert_eq!((a.x, a.y, a.w, a.h, a.color), (b.x, b.y, b.w, b.h, b.color), "the glyph is where it was on screen");
+        assert_eq!(a.uv, b.uv.map(|coordinate| coordinate * 0.5f32.powi(grows as i32)), "its uv is a half for each grow");
+        assert!(texels_of(e, a) == *texels, "and the same texels are under it");
+    }
+
+    // The box width is part of the kept shapes' key and moves no glyph
+    // of a start-aligned line.
+    let past_the_kept_shapes: Vec<GlyphQuad> = e.shape(text, px(font_size), None, None, 0.0, 0.0, 7.0, 0);
+    let work = e.take_work();
+    assert_eq!((work.shapes_to_draw, work.letters_drawn), (1, 0), "shaped anew, its letters are found in the grown atlas: none is drawn again");
+    for (a, b) in after.iter().zip(&past_the_kept_shapes) {
+        assert_eq!(a.uv, b.uv);
+    }
+}
+
+/// The letters' atlas grows and keeps what was drawn. Red when a grow
+/// empties the atlas: every text on screen is shaped again and every
+/// letter drawn again in the frame of the grow, 10 ms for 61 letters on
+/// an old phone.
+#[test]
+fn a_grown_atlas_keeps_the_letters_drawn_and_the_texts_shaped() {
+    let mut e = engine();
+    // 52 letters of 32 px lie across the whole width of the atlas.
+    check_a_grow_keeps(&mut e, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", 32.0, |e| {
+        e.shape("ABCDEFGHIJKLMNOPQRSTUVWXYZ", px(400.0), None, None, 0.0, 0.0, 100_000.0, 0);
+    });
+}
+
+/// The emoji atlas grows the same way.
+#[test]
+#[ignore = "needs Windows' Segoe UI Emoji font: run with --include-ignored on Windows"]
+fn a_grown_color_atlas_keeps_the_emoji_drawn() {
+    let mut e: TextEngine = engine_with_emoji();
+    // Ten emoji of 40 px lie across the whole width of the atlas.
+    check_a_grow_keeps(&mut e, "\u{1F600}\u{1F601}\u{1F602}\u{1F603}\u{1F604}\u{1F605}\u{1F606}\u{1F609}\u{1F60A}\u{1F60D}", 40.0, |e| {
+        // Nine emoji of 200 px do not fit an atlas 512 a side.
+        e.shape("\u{1F388}\u{1F34E}\u{1F680}\u{1F308}\u{1F381}\u{1F436}\u{1F33B}\u{1F3C0}\u{1F525}", px(200.0), None, None, 0.0, 0.0, 100_000.0, 0);
+    });
+}
+
+/// A grow of the letters' atlas leaves the uv of a kept emoji alone:
+/// the emoji is in the color atlas, which did not grow. Red when a grow
+/// rewrites every kept quad: the user sees a piece of another emoji, at
+/// half its size.
+#[test]
+#[ignore = "needs Windows' Segoe UI Emoji font: run with --include-ignored on Windows"]
+fn a_grow_of_the_letters_atlas_leaves_a_kept_emoji_alone() {
+    let mut e: TextEngine = engine_with_emoji();
+    let before: Vec<GlyphQuad> = e.shape("a\u{1F600}", px(40.0), None, None, 0.0, 0.0, 0.0, 0);
+    assert!(before.len() == 2 && !before[0].color && before[1].color, "the precondition: a letter and an emoji, {before:?}");
+    let color_side: u32 = e.color_atlas().1;
+    e.take_work();
+    e.shape("ABCDEFGHIJKLMNOPQRSTUVWXYZ", px(400.0), None, None, 0.0, 0.0, 100_000.0, 0);
+    assert_eq!(e.take_work().texture_grows, 1, "the precondition: one grow");
+    assert_eq!(e.color_atlas().1, color_side, "the precondition: the letters' atlas grew, not the color atlas");
+    let after: Vec<GlyphQuad> = e.shape("a\u{1F600}", px(40.0), None, None, 0.0, 0.0, 0.0, 0);
+    assert_eq!(after[0].uv, before[0].uv.map(|coordinate| coordinate * 0.5), "the letter: a half");
+    assert_eq!(after[1].uv, before[1].uv, "the emoji: as it was");
 }

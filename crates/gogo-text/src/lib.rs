@@ -171,6 +171,41 @@ struct Slot {
     color: bool,
 }
 
+impl Slot {
+    /// Rewrites the slot's uv for its atlas grown to twice the side
+    /// (`uv_in_doubled_atlas`).
+    fn move_to_doubled_atlas(&mut self) {
+        let mut uv: [f32; 4] = [self.u0, self.v0, self.u1, self.v1];
+        uv_in_doubled_atlas(&mut uv);
+        [self.u0, self.v0, self.u1, self.v1] = uv;
+    }
+}
+
+/// `uv` of a glyph in an atlas, as it is in that atlas grown to twice
+/// the side with the glyph left where it was (`TextEngine::grow`).
+///
+/// Exact: a half of an f32 is the number a fresh division by the
+/// doubled side gives.
+fn uv_in_doubled_atlas(uv: &mut [f32; 4]) {
+    for coordinate in uv {
+        *coordinate *= 0.5;
+    }
+}
+
+/// `atlas`, `side` texels a side of `texel_bytes` each, as the top left
+/// quarter of a new atlas twice the side; the rest of it empty.
+///
+/// Needed because an atlas that fills up grows, and the glyphs drawn
+/// into it stay where they are: none is drawn a second time.
+fn doubled_atlas(atlas: &[u8], side: u32, texel_bytes: u32) -> Vec<u8> {
+    let row_bytes: usize = (side * texel_bytes) as usize;
+    let mut doubled: Vec<u8> = vec![0; row_bytes * 2 * side as usize * 2];
+    for row in 0..side as usize {
+        doubled[row * row_bytes * 2..row * row_bytes * 2 + row_bytes].copy_from_slice(&atlas[row * row_bytes..(row + 1) * row_bytes]);
+    }
+    doubled
+}
+
 /// One glyph to draw: a rect in device pixels and its atlas uv.
 #[derive(Clone, Copy, Debug)]
 pub struct GlyphQuad {
@@ -274,28 +309,59 @@ const COLOR_ATLAS_START: u32 = 512;
 ///
 /// Needed because both atlases (coverage and color) pack the same way and
 /// grow the same way — one packer, two sizes.
+///
+/// It packs one region of the atlas at a time: from `left` to the
+/// atlas's right edge, down to `bottom`. A new atlas is one region. A
+/// grown one (`grown`) holds the atlas that was in its top left
+/// quarter, so it has two: the top right quarter, then the lower half.
+/// A slot's row never lies above the row of a slot packed before it,
+/// which `part_to_send` relies on.
 #[derive(Clone, Copy, Debug)]
 struct Shelf {
     size: u32,
+    /// The left edge of the region being packed.
+    left: u32,
+    /// The row the region being packed ends above.
+    bottom: u32,
     x: u32,
     y: u32,
     h: u32,
+    /// Whether the lower half of the atlas is still to be packed, after
+    /// the region being packed.
+    is_lower_half_free: bool,
 }
 
 impl Shelf {
     fn new(size: u32) -> Shelf {
-        Shelf { size, x: 0, y: 0, h: 0 }
+        Shelf { size, left: 0, bottom: size, x: 0, y: 0, h: 0, is_lower_half_free: false }
+    }
+
+    /// The packer of this shelf's atlas grown to twice the side, with
+    /// what was packed left in the top left quarter.
+    ///
+    /// Needed so the glyphs drawn stay where they are when the atlas
+    /// grows. What was left free of the top left quarter is not packed
+    /// again: a strip under the last shelf, less than one slot tall.
+    fn grown(self) -> Shelf {
+        Shelf { size: self.size * 2, left: self.size, bottom: self.size, x: self.size, y: 0, h: 0, is_lower_half_free: true }
     }
 
     /// The top-left of a `w` × `h` slot, or `None` when the atlas is full.
     fn pack(&mut self, w: u32, h: u32) -> Option<(u32, u32)> {
-        if self.x + w > self.size {
-            self.y += self.h;
-            self.x = 0;
-            self.h = 0;
-        }
-        if self.y + h > self.size {
-            return None;
+        loop {
+            if self.x + w > self.size {
+                self.y += self.h;
+                self.x = self.left;
+                self.h = 0;
+            }
+            if self.x + w <= self.size && self.y + h <= self.bottom {
+                break;
+            }
+            if !self.is_lower_half_free {
+                return None;
+            }
+            self.is_lower_half_free = false;
+            (self.left, self.x, self.y, self.h, self.bottom) = (0, 0, self.bottom, 0, self.size);
         }
         let pos = (self.x, self.y);
         self.x += w;
@@ -349,8 +415,7 @@ struct Face {
 ///
 /// Needed to see where a slow frame's text time goes, and whether a text
 /// is shaped more than once. A text is shaped when it is measured and
-/// again when it is drawn, and every text again when a letters' texture
-/// grew: each shows here as a count.
+/// again when it is drawn: each shows here as a count.
 ///
 /// A step is counted only when it ran. A text the engine has measured or
 /// shaped before costs a lookup and counts nothing, so a frame that
@@ -362,17 +427,17 @@ pub struct TextWork {
     pub shapes_to_measure: u32,
     pub seconds_shaping_to_measure: f32,
     /// Texts shaped to draw them (`shape`, `shape_into`): one a text not
-    /// shaped before, and one more each time a letters' texture grew
-    /// while it was shaped.
+    /// shaped before, and one more for the text whose letter made a
+    /// letters' texture grow.
     pub shapes_to_draw: u32,
     /// Time of those shapes, without the letters they drew.
     pub seconds_shaping_to_draw: f32,
-    /// Letters drawn into a letters' texture: at first sight, and again
-    /// after the texture grew.
+    /// Letters drawn into a letters' texture, each at first sight.
     pub letters_drawn: u32,
     pub seconds_drawing_letters: f32,
-    /// Times a letters' texture filled and doubled. Each drops every
-    /// kept shape and every letter's place: all are made again.
+    /// Times a letters' texture filled and doubled. The letters drawn
+    /// and the texts shaped are kept; a renderer sends the grown
+    /// texture whole.
     pub texture_grows: u32,
 }
 
@@ -424,7 +489,11 @@ pub struct TextEngine {
     /// reader cleared, a second renderer over the same engine drew every
     /// plate and picture and no letters.
     atlas_version: u64,
-    /// Set when the atlas grew: every uv handed out before is stale.
+    /// Counts the grows of both atlases: every uv handed out before a
+    /// grow is stale, since the glyph it names is in the same texels of
+    /// an atlas twice the side. The engine's own slots and kept shapes
+    /// are put right in the grow; a caller that holds quads (a renderer
+    /// in the middle of a frame) shapes them again when this changed.
     pub generation: u32,
     /// Keyed by a hash of (text, size, width, font) — no String is built
     /// to look a measure up (a page lays out every animated frame). The
@@ -433,9 +502,9 @@ pub struct TextEngine {
     /// wrong size for one string in ~10^19; accepted.
     measure_cache: HashMap<u64, (f32, f32)>,
     /// Shaped quads at the origin, keyed by a hash of (text, size, width,
-    /// font, box_w, halign), with the atlas generation they were shaped
-    /// against.
-    shape_cache: HashMap<u64, (u32, Vec<GlyphQuad>)>,
+    /// font, box_w, halign). Their uvs are into the atlases as they are
+    /// now: a grow rewrites them.
+    shape_cache: HashMap<u64, Vec<GlyphQuad>>,
     /// What `take_work` returns.
     work: TextWork,
 }
@@ -891,18 +960,16 @@ impl TextEngine {
     pub fn shape_into(&mut self, text: &str, size: TextPx, max_width: Option<f32>, font: Option<&str>, x: f32, y: f32, box_w: f32, halign: u8, out: &mut Vec<GlyphQuad>) {
         let (dx, dy) = (x.round(), y.round());
         let key = cache_key(text, size, max_width, font, box_w, halign);
-        if let Some((generation, quads)) = self.shape_cache.get(&key) {
-            if *generation == self.generation {
-                out.extend(quads.iter().map(|q| GlyphQuad { x: q.x + dx, y: q.y + dy, ..*q }));
-                return;
-            }
+        if let Some(quads) = self.shape_cache.get(&key) {
+            out.extend(quads.iter().map(|q| GlyphQuad { x: q.x + dx, y: q.y + dy, ..*q }));
+            return;
         }
         let quads = self.shape_uncached(text, size, max_width, font, box_w, halign);
         if self.shape_cache.len() >= CACHE_CAP {
             self.shape_cache.clear();
         }
         out.extend(quads.iter().map(|q| GlyphQuad { x: q.x + dx, y: q.y + dy, ..*q }));
-        self.shape_cache.insert(key, (self.generation, quads));
+        self.shape_cache.insert(key, quads);
     }
 
     /// Shapes `text` into quads with the pen at the origin, every uv into
@@ -916,7 +983,9 @@ impl TextEngine {
     /// shape cache with the stale uvs.
     ///
     /// The run is shaped again against the grown atlas, in the same
-    /// buffer. A run that grows nothing (the usual one) is shaped once.
+    /// buffer: its glyphs are all in the atlas by then, so none is
+    /// drawn again. A run that grows nothing (the usual one) is shaped
+    /// once.
     fn shape_uncached(&mut self, text: &str, size: TextPx, max_width: Option<f32>, font: Option<&str>, box_w: f32, halign: u8) -> Vec<GlyphQuad> {
         let mut out: Vec<GlyphQuad> = Vec::new();
         loop {
@@ -1106,32 +1175,54 @@ impl TextEngine {
         pos
     }
 
+    /// The letters' atlas doubles its side and keeps every glyph drawn:
+    /// the atlas that was is the top left quarter of the new one.
+    ///
+    /// Needed because the atlas fills up, a few times in a program's
+    /// life. Emptied at a grow, it had every glyph on screen drawn
+    /// again and every text shaped again in that frame.
+    ///
+    /// A glyph stays in its texels, so its uv is a half of what it was:
+    /// the slots and the kept shapes are rewritten here. A uv handed out
+    /// before is stale (`generation`).
     fn grow(&mut self) {
         self.work.texture_grows += 1;
-        self.shape_cache.clear();
+        self.atlas = doubled_atlas(&self.atlas, self.atlas_size, 1);
         self.atlas_size *= 2;
-        self.atlas = vec![0; (self.atlas_size * self.atlas_size) as usize];
-        self.shelf = Shelf::new(self.atlas_size);
-        self.slots.clear();
+        self.shelf = self.shelf.grown();
+        for slot in self.slots.values_mut().flatten() {
+            slot.move_to_doubled_atlas();
+        }
+        self.kept_shapes_into_doubled_atlas(false);
         self.generation += 1;
         self.atlas_version = next_atlas_version();
         self.atlas_id = next_atlas_version();
     }
 
-    /// The color atlas doubles: every emoji slot handed out is stale, the
-    /// shape cache with them (`generation`, the same stale-uv law as the
-    /// coverage atlas's `grow`).
+    /// `grow`, for the color atlas: every emoji drawn stays, the ones
+    /// the host painted too.
     fn grow_color(&mut self) {
         self.work.texture_grows += 1;
-        self.shape_cache.clear();
-        let side: u32 = self.color_shelf.size * 2;
-        self.color_atlas = vec![0; (side * side * 4) as usize];
-        self.color_shelf = Shelf::new(side);
-        self.color_slots.clear();
-        self.host_slots.clear();
+        self.color_atlas = doubled_atlas(&self.color_atlas, self.color_shelf.size, 4);
+        self.color_shelf = self.color_shelf.grown();
+        for slot in self.color_slots.values_mut().chain(self.host_slots.values_mut()).flatten() {
+            slot.move_to_doubled_atlas();
+        }
+        self.kept_shapes_into_doubled_atlas(true);
         self.generation += 1;
         self.color_atlas_version = next_atlas_version();
         self.color_atlas_id = next_atlas_version();
+    }
+
+    /// Rewrites the uv of every kept quad of one atlas (`is_color`: the
+    /// color atlas) for that atlas grown to twice its side.
+    ///
+    /// Needed so a text shaped before a grow is not shaped again after
+    /// it: its glyphs are where they were.
+    fn kept_shapes_into_doubled_atlas(&mut self, is_color: bool) {
+        for quad in self.shape_cache.values_mut().flatten().filter(|quad| quad.color == is_color) {
+            uv_in_doubled_atlas(&mut quad.uv);
+        }
     }
 
     /// Rasterizes every glyph of `chars` at `font_size`.
@@ -1233,6 +1324,44 @@ impl TextMeasure for EpxMeasure<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A grown shelf packs the three free quarters of the grown atlas
+    /// and nothing over the atlas that was, and its slots' rows never
+    /// go back up. Red when a glyph packed after a grow lands on a
+    /// glyph drawn before it: the user sees one letter inside another.
+    #[test]
+    fn a_grown_shelf_packs_around_the_atlas_that_was() {
+        const SIZES: [(u32, u32); 5] = [(10, 12), (7, 9), (20, 15), (5, 5), (13, 11)];
+        // Packs slots of those sizes in turn until one does not fit.
+        fn pack_until_full(shelf: &mut Shelf, slots: &mut Vec<(u32, u32, u32, u32)>) {
+            for (w, h) in SIZES.iter().cycle() {
+                match shelf.pack(*w, *h) {
+                    Some((x, y)) => slots.push((x, y, *w, *h)),
+                    None => return,
+                }
+            }
+        }
+        let mut slots: Vec<(u32, u32, u32, u32)> = Vec::new();
+        let mut shelf = Shelf::new(64);
+        pack_until_full(&mut shelf, &mut slots);
+        let old_count: usize = slots.len();
+        assert!(slots.iter().all(|&(x, y, w, h)| x + w <= 64 && y + h <= 64));
+
+        let mut shelf: Shelf = shelf.grown();
+        pack_until_full(&mut shelf, &mut slots);
+        let new: &[(u32, u32, u32, u32)] = &slots[old_count..];
+        assert!(new.len() * 2 >= old_count * 5, "three free quarters hold about three times the slots of one: {} after {old_count}", new.len());
+        for &(x, y, w, h) in new {
+            assert!(x + w <= 128 && y + h <= 128, "inside the grown atlas: {x},{y} {w}x{h}");
+            assert!(x >= 64 || y >= 64, "not over the atlas that was: {x},{y} {w}x{h}");
+        }
+        for (i, a) in slots.iter().enumerate() {
+            for b in &slots[i + 1..] {
+                assert!(a.0 + a.2 <= b.0 || b.0 + b.2 <= a.0 || a.1 + a.3 <= b.1 || b.1 + b.3 <= a.1, "two slots overlap: {a:?} {b:?}");
+            }
+        }
+        assert!(new.windows(2).all(|pair| pair[0].1 <= pair[1].1), "a slot's row is never above the row of the slot before it");
+    }
 
     /// `TextPx::from_epx` cuts the font size down to a whole pixel and
     /// rounds the 1 epx line gap to a whole pixel; neither goes under 1.

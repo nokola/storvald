@@ -5,7 +5,8 @@
 //! draws the wedge of a dial and checks it against the hit test. Two
 //! more draw one text engine's letters with a second renderer, and a
 //! second engine's letters with the same renderer. A sixth draws letters
-//! new to the atlas and counts the texels of it the renderer sent.
+//! new to the atlas and counts the texels of it the renderer sent. A
+//! seventh draws a page again after the atlas grew.
 //!
 //! Needed because nothing else in this repository runs the shader: the
 //! unit tests cover the gradient tables only, and a renderer whose quads
@@ -441,4 +442,27 @@ fn a_new_letter_sends_only_its_part_of_the_atlas() {
 
     drawn_tile(PAGE_OTHER_LETTERS, &mut ui, &device, &queue, &text);
     assert_eq!(ui.debug_atlas_texels_written(), atlas_texels + texels_of_new_letters, "a frame with no new letter sends nothing");
+}
+
+/// A page drawn again after the letters' atlas grew shows the same
+/// picture: its letters are drawn from the grown atlas, where they kept
+/// their texels.
+///
+/// Needed because the engine keeps the letters and the shaped texts
+/// over a grow and only rewrites their uvs. Red when a kept uv is not
+/// rewritten: the page's letters come out as pieces of other letters,
+/// at half their size.
+#[test]
+#[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
+fn a_page_drawn_after_the_atlas_grew_shows_the_same_letters() {
+    let (device, queue) = device();
+    let mut ui: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
+    let text: RefCell<TextEngine> = engine();
+    let (before, label) = drawn_tile(PAGE, &mut ui, &device, &queue, &text);
+    assert!(white_pixels(&before, label) > 20, "the letters are drawn");
+    let generation: u32 = text.borrow().generation;
+    text.borrow_mut().warm("ABCDEFGHIJKLMNOPQRSTUVWXYZ", 400.0, None);
+    assert!(text.borrow().generation > generation, "the precondition: the atlas grew");
+    let (after, _) = drawn_tile(PAGE, &mut ui, &device, &queue, &text);
+    assert!(after == before, "the same picture from the grown atlas");
 }

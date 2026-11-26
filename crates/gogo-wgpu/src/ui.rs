@@ -874,11 +874,12 @@ impl UiRenderer {
     #[allow(clippy::too_many_arguments)]
     pub fn prepare_pages<L: DrawLists + ?Sized>(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, pages: &L, epx: f32, screen: (u32, u32), text: &mut TextEngine, locale: Option<&Locale>) {
         // A glyph that grows the atlas during the pass leaves every run
-        // shaped before it this frame, the cache's included, with uvs into
-        // the atlas that was: the pass runs again against the grown one.
-        // Needed because the user otherwise sees a button with no letters
-        // until the next redraw. A grow doubles the atlas, a few times in
-        // an app's life; the usual frame pays nothing.
+        // put in this frame's quads before it with uvs into the atlas
+        // that was: the pass runs again against the grown one. Needed
+        // because the user otherwise sees a button with no letters until
+        // the next redraw. The second pass shapes and draws nothing: the
+        // engine keeps both over a grow. A grow doubles the atlas, a few
+        // times in an app's life; the usual frame pays nothing.
         let generation: u32 = text.generation;
         self.stage_begins(PrepareStage::Pass);
         self.prepare_pass(device, pages, epx, screen, text, locale);
