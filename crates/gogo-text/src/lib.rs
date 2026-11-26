@@ -12,6 +12,11 @@
 //! DEVICE pixels: the caller converts epx (`TextPx::from_epx` for the
 //! size of a label's text; `EpxMeasure` does all of it for the layout).
 //!
+//! A BIG glyph, one drawn wider or taller than `ATLAS_GLYPH_MAX_PX`,
+//! goes into neither atlas: the engine keeps its raster by itself
+//! (`BigGlyph`), and a renderer gives it a texture of its own. One
+//! letter of 400 px otherwise fills a sixth of a new atlas.
+//!
 //! Emoji come from a COLOR FACE: one with color palettes or color bitmap
 //! strikes, such as the phone's own emoji font after
 //! `add_fallback_font_file` or the OS scan. A host that installed a
@@ -34,9 +39,10 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::num::NonZeroU32;
 use std::ops::Range;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::Instant;
 
 use cosmic_text::fontdb;
@@ -109,6 +115,24 @@ pub const CACHE_CAP: usize = 4096;
 /// every font size.
 pub const BOLD_GROW_PER_PX: f32 = 0.6 / 24.0;
 
+/// The widest and the tallest a glyph's raster may be, in device pixels,
+/// to go into an atlas. A wider or taller one is a big glyph
+/// (`BigGlyph`).
+///
+/// Needed because an atlas is packed in shelves as tall as their tallest
+/// glyph. One letter of 400 px takes a sixth of an atlas 1024 a side and
+/// leaves the rest of its shelf to small letters, so the atlas fills and
+/// doubles after a few of them.
+pub const ATLAS_GLYPH_MAX_PX: u32 = 128;
+
+/// The bytes of big glyphs' texels an engine keeps before
+/// `TextEngine::drop_unused_big_glyphs` drops some.
+///
+/// Needed because a glyph stretched over a box (`TextEngine::glyph`) is
+/// a new raster at every size of the box: a box resized by a drag leaves
+/// one big glyph behind per frame.
+pub const BIG_GLYPH_KEPT_BYTES: usize = 4 * 1024 * 1024;
+
 /// The font-key style suffix (`"Title#bold"`) is gogo vocabulary: the
 /// app spells it, this engine reads it.
 pub use gogo_ui::font_style::{split_style, styled_key};
@@ -169,9 +193,19 @@ struct Slot {
     height: u32,
     /// In the color atlas (an emoji), not the coverage atlas.
     color: bool,
+    /// The glyph is a big one: its uv is into that glyph's own raster,
+    /// not into an atlas.
+    big_glyph: Option<BigGlyphId>,
 }
 
-/// One glyph to draw: a rect in device pixels and its atlas uv.
+impl Slot {
+    /// The slot of a glyph that draws nothing (a space).
+    fn without_ink(color: bool) -> Slot {
+        Slot { u0: 0.0, v0: 0.0, u1: 0.0, v1: 0.0, left: 0, top: 0, width: 0, height: 0, color, big_glyph: None }
+    }
+}
+
+/// One glyph to draw: a rect in device pixels and the uv of its texels.
 #[derive(Clone, Copy, Debug)]
 pub struct GlyphQuad {
     pub x: f32,
@@ -179,10 +213,89 @@ pub struct GlyphQuad {
     pub w: f32,
     pub h: f32,
     pub uv: [f32; 4],
-    /// The uv is into the COLOR atlas (`color_atlas`): draw the texels as
-    /// they are, the text color's alpha only. False = the coverage atlas,
-    /// tinted by the text color.
+    /// The texels are colors (an emoji): draw them as they are, the text
+    /// color's alpha only. False = coverage, tinted by the text color.
+    ///
+    /// Unless `big_glyph` names one, the uv is into the color atlas
+    /// (`TextEngine::color_atlas`) when true, into the letters' atlas
+    /// (`TextEngine::atlas`) when false.
     pub color: bool,
+    /// The glyph is a big one (`BigGlyph`): the uv is into that glyph's
+    /// own raster (`TextEngine::big_glyph`), not into an atlas.
+    pub big_glyph: Option<BigGlyphId>,
+}
+
+/// Names one big glyph (`BigGlyph`). No two big glyphs of a process have
+/// the same one, and a glyph drawn again after its raster was dropped
+/// gets a new one.
+///
+/// Needed for the whole process, not per engine, so a renderer that drew
+/// with one engine and is handed another never takes the second
+/// engine's glyph for one it has a texture of.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct BigGlyphId(NonZeroU32);
+
+impl BigGlyphId {
+    /// An id no big glyph of this process has had.
+    fn next() -> BigGlyphId {
+        static NEXT_BIG_GLYPH_ID: AtomicU32 = AtomicU32::new(1);
+        loop {
+            // 0 comes up once the counter has gone round: skipped.
+            if let Some(id) = NonZeroU32::new(NEXT_BIG_GLYPH_ID.fetch_add(1, Ordering::Relaxed)) {
+                return BigGlyphId(id);
+            }
+        }
+    }
+}
+
+/// The raster of one big glyph: a glyph drawn wider or taller than
+/// `ATLAS_GLYPH_MAX_PX`, which the engine keeps out of its atlases.
+///
+/// Needed by a renderer: it makes one texture of `width` x `height` for
+/// the glyph, from `texels`, the first time a quad names it
+/// (`GlyphQuad::big_glyph`), and draws the quad's uv from that texture.
+/// It frees the texture once `TextEngine::big_glyph` answers `None` for
+/// the id.
+///
+/// The ink has one empty texel on every side, and a quad's uv leaves
+/// that border out. So a glyph stretched over a box fades out at its
+/// edges into nothing, whatever the texture does outside 0..1.
+#[derive(Clone, Copy, Debug)]
+pub struct BigGlyph<'a> {
+    pub width: u32,
+    pub height: u32,
+    /// The texels are straight RGBA, 4 bytes each (an emoji). False =
+    /// coverage, 1 byte each.
+    pub is_color: bool,
+    /// Rows from the top, `width` texels each.
+    pub texels: &'a [u8],
+}
+
+/// A big glyph as the engine keeps it.
+#[derive(Clone, Debug)]
+struct KeptBigGlyph {
+    width: u32,
+    height: u32,
+    is_color: bool,
+    texels: Vec<u8>,
+    /// `TextEngine::big_glyph_clock` when a text last shaped the glyph.
+    shaped_at: u64,
+}
+
+/// Turns `rgba` texels from premultiplied color to straight color.
+///
+/// Needed because swash hands an emoji's rows premultiplied, and the
+/// engine keeps straight color (a renderer's image quads premultiply on
+/// sample).
+fn straight_from_premultiplied(rgba: &mut [u8]) {
+    for texel in rgba.chunks_exact_mut(4) {
+        let a = texel[3] as u32;
+        if a != 0 && a != 255 {
+            for c in &mut texel[..3] {
+                *c = ((*c as u32 * 255 + a / 2) / a).min(255) as u8;
+            }
+        }
+    }
 }
 
 /// One emoji the host painted (`HostColorGlyphPainter`): straight (not
@@ -363,6 +476,24 @@ struct KeptShape {
     quads: Vec<GlyphQuad>,
     /// See `TextEngine::is_settled`.
     is_settled: bool,
+    /// Whether a quad names a big glyph. Such a shape tells its big
+    /// glyphs each time it is asked for (`note_big_glyphs_shaped`), and
+    /// is dropped with the first of them that is dropped.
+    has_big_glyph: bool,
+}
+
+/// Marks the big glyphs `quads` name as shaped now: they are the last
+/// that `TextEngine::drop_unused_big_glyphs` drops.
+///
+/// A function over the two fields, not a method, so a caller can hold a
+/// kept shape of the same engine while it calls.
+fn note_big_glyphs_shaped(big_glyphs: &mut HashMap<BigGlyphId, KeptBigGlyph>, clock: &mut u64, quads: &[GlyphQuad]) {
+    for id in quads.iter().filter_map(|quad| quad.big_glyph) {
+        if let Some(kept) = big_glyphs.get_mut(&id) {
+            *clock += 1;
+            kept.shaped_at = *clock;
+        }
+    }
 }
 
 /// The engine's costly steps since the last `TextEngine::take_work`:
@@ -455,6 +586,17 @@ pub struct TextEngine {
     measure_cache: HashMap<u64, KeptMeasure>,
     /// Keyed by a hash of (text, size, width, font, box_w, halign).
     shape_cache: HashMap<u64, KeptShape>,
+    /// The big glyphs kept: the ones a slot or a kept shape may name.
+    big_glyphs: HashMap<BigGlyphId, KeptBigGlyph>,
+    /// The bytes of all `big_glyphs`' texels.
+    big_glyph_bytes: usize,
+    /// Goes up by one each time a text shapes a big glyph. The order in
+    /// which big glyphs were last shaped is the order of their
+    /// `shaped_at`.
+    big_glyph_clock: u64,
+    /// `big_glyph_clock` at the last `drop_unused_big_glyphs`: a big
+    /// glyph shaped later was shaped since that call.
+    big_glyphs_checked_at: u64,
     /// What `take_work` returns.
     work: TextWork,
 }
@@ -533,6 +675,10 @@ impl TextEngine {
             generation: 0,
             measure_cache: HashMap::new(),
             shape_cache: HashMap::new(),
+            big_glyphs: HashMap::new(),
+            big_glyph_bytes: 0,
+            big_glyph_clock: 0,
+            big_glyphs_checked_at: 0,
             work: TextWork::default(),
         }
     }
@@ -727,8 +873,67 @@ impl TextEngine {
     /// the old painter drew is painted again by the new one.
     pub fn set_host_color_glyph_painter(&mut self, host: Option<HostColorGlyphPainter>) {
         self.host_color_glyph_painter = host;
+        // A big glyph the old painter drew goes with its slot.
+        for id in self.host_slots.values().filter_map(|slot| slot.and_then(|s| s.big_glyph)) {
+            if let Some(kept) = self.big_glyphs.remove(&id) {
+                self.big_glyph_bytes -= kept.texels.len();
+            }
+        }
         self.host_slots.clear();
         self.shape_cache.clear();
+    }
+
+    /// The raster of the big glyph a quad names (`GlyphQuad::big_glyph`).
+    ///
+    /// Needed by a renderer, to make the glyph's texture the first time
+    /// it draws it, and to free that texture later: see `BigGlyph`.
+    ///
+    /// Returns `None` once the engine dropped the glyph
+    /// (`drop_unused_big_glyphs`), and for another engine's id. An id
+    /// out of a quad shaped since the last `drop_unused_big_glyphs`
+    /// always has its raster.
+    pub fn big_glyph(&self, id: BigGlyphId) -> Option<BigGlyph<'_>> {
+        self.big_glyphs.get(&id).map(|kept| BigGlyph { width: kept.width, height: kept.height, is_color: kept.is_color, texels: &kept.texels })
+    }
+
+    /// Drops big glyphs while their texels hold more than
+    /// `BIG_GLYPH_KEPT_BYTES`: the one shaped longest ago first, and
+    /// never one a text shaped since the call before this one. A
+    /// renderer calls it once a frame, before it shapes the frame's
+    /// texts.
+    ///
+    /// Needed because the engine cannot tell by itself which big glyphs
+    /// are still shown, and a box resized by a drag leaves one behind
+    /// per frame (`BIG_GLYPH_KEPT_BYTES`). Between two calls a renderer
+    /// shapes all it shows, so what the last frame showed is never
+    /// dropped, however much it is: a screen of big letters does not
+    /// have them drawn again every frame.
+    ///
+    /// WARNING: without this call no big glyph is ever dropped.
+    ///
+    /// A dropped glyph's id is dead: the kept shapes that name it are
+    /// dropped with it, and the glyph is drawn again, under a new id,
+    /// when a text next needs it.
+    pub fn drop_unused_big_glyphs(&mut self) {
+        let shaped_since: u64 = std::mem::replace(&mut self.big_glyphs_checked_at, self.big_glyph_clock);
+        let mut is_any_dropped: bool = false;
+        while self.big_glyph_bytes > BIG_GLYPH_KEPT_BYTES {
+            let longest_ago: Option<BigGlyphId> = self.big_glyphs.iter().filter(|(_, kept)| kept.shaped_at <= shaped_since).min_by_key(|(_, kept)| kept.shaped_at).map(|(id, _)| *id);
+            let Some(id) = longest_ago else { break };
+            if let Some(kept) = self.big_glyphs.remove(&id) {
+                self.big_glyph_bytes -= kept.texels.len();
+            }
+            is_any_dropped = true;
+        }
+        if !is_any_dropped {
+            return;
+        }
+        let big_glyphs: &HashMap<BigGlyphId, KeptBigGlyph> = &self.big_glyphs;
+        let is_kept = |slot: &Option<Slot>| slot.and_then(|s| s.big_glyph).is_none_or(|id| big_glyphs.contains_key(&id));
+        self.slots.retain(|_, slot| is_kept(slot));
+        self.color_slots.retain(|_, slot| is_kept(slot));
+        self.host_slots.retain(|_, slot| is_kept(slot));
+        self.shape_cache.retain(|_, kept| !kept.has_big_glyph || kept.quads.iter().all(|quad| quad.big_glyph.is_none_or(|id| big_glyphs.contains_key(&id))));
     }
 
     /// Whether the face `id` carries color glyphs: color palettes (COLR,
@@ -936,6 +1141,9 @@ impl TextEngine {
         let key = cache_key(text, size, max_width, font, box_w, halign);
         if let Some(kept) = self.shape_cache.get(&key) {
             out.extend(kept.quads.iter().map(|q| GlyphQuad { x: q.x + dx, y: q.y + dy, ..*q }));
+            if kept.has_big_glyph {
+                note_big_glyphs_shaped(&mut self.big_glyphs, &mut self.big_glyph_clock, &kept.quads);
+            }
             return;
         }
         let kept: KeptShape = self.shape_uncached(text, size, max_width, font, box_w, halign);
@@ -965,7 +1173,11 @@ impl TextEngine {
             out.clear();
             let is_settled: bool = self.shape_pass(text, size, max_width, font, box_w, halign, &mut out);
             if self.generation == generation {
-                return KeptShape { quads: out, is_settled };
+                // A big glyph this run found drawn is shaped now, like
+                // one it drew.
+                note_big_glyphs_shaped(&mut self.big_glyphs, &mut self.big_glyph_clock, &out);
+                let has_big_glyph: bool = out.iter().any(|quad| quad.big_glyph.is_some());
+                return KeptShape { quads: out, is_settled, has_big_glyph };
             }
         }
     }
@@ -1010,6 +1222,7 @@ impl TextEngine {
                     h: slot.height as f32,
                     uv: [slot.u0, slot.v0, slot.u1, slot.v1],
                     color: slot.color,
+                    big_glyph: slot.big_glyph,
                 });
             }
         }
@@ -1063,7 +1276,10 @@ impl TextEngine {
     fn host_slot(&mut self, cluster: &str, font_size_bits: u32) -> Option<Option<Slot>> {
         let painted: HostColorGlyph = (self.host_color_glyph_painter.as_mut()?)(cluster, f32::from_bits(font_size_bits))?;
         if painted.width == 0 || painted.height == 0 || painted.rgba.len() != (painted.width * painted.height * 4) as usize {
-            return Some(Some(Slot { u0: 0.0, v0: 0.0, u1: 0.0, v1: 0.0, left: 0, top: 0, width: 0, height: 0, color: true }));
+            return Some(Some(Slot::without_ink(true)));
+        }
+        if painted.width.max(painted.height) > ATLAS_GLYPH_MAX_PX {
+            return Some(Some(self.keep_big_glyph(&painted.rgba, painted.width, painted.height, painted.left, painted.top, true)));
         }
         let first = self.pack_color(&painted.rgba, painted.width, painted.height, painted.left, painted.top, false);
         Some(first.or_else(|| self.pack_color(&painted.rgba, painted.width, painted.height, painted.left, painted.top, false)))
@@ -1078,7 +1294,13 @@ impl TextEngine {
                 // A color bitmap or COLRv0 layers (swash hands RGBA rows):
                 // the color atlas, never emboldened.
                 if w == 0 || h == 0 {
-                    return Some(Slot { u0: 0.0, v0: 0.0, u1: 0.0, v1: 0.0, left: 0, top: 0, width: 0, height: 0, color: true });
+                    return Some(Slot::without_ink(true));
+                }
+                if w.max(h) > ATLAS_GLYPH_MAX_PX {
+                    let mut straight: Vec<u8> = img.data;
+                    straight_from_premultiplied(&mut straight);
+                    self.cache.image_cache.remove(&key);
+                    return Some(self.keep_big_glyph(&straight, w, h, left, top, true));
                 }
                 return self.pack_color(&img.data, w, h, left, top, true);
             }
@@ -1086,7 +1308,7 @@ impl TextEngine {
                 return None;
             }
             if w == 0 || h == 0 {
-                return Some(Slot { u0: 0.0, v0: 0.0, u1: 0.0, v1: 0.0, left: 0, top: 0, width: 0, height: 0, color: false });
+                return Some(Slot::without_ink(false));
             }
             let mut data: std::borrow::Cow<[u8]> = std::borrow::Cow::Borrowed(&img.data);
             if bold {
@@ -1097,6 +1319,12 @@ impl TextEngine {
                 left -= grow as i32;
                 top += grow as i32;
             }
+            if w.max(h) > ATLAS_GLYPH_MAX_PX {
+                // The shaper's own copy of the raster goes: the engine
+                // keeps the one of the big glyph.
+                self.cache.image_cache.remove(&key);
+                return Some(self.keep_big_glyph(&data, w, h, left, top, false));
+            }
             let (px, py) = self.pack(w + 1, h + 1)?;
             for row in 0..h {
                 let src = &data[(row * w) as usize..((row + 1) * w) as usize];
@@ -1105,9 +1333,37 @@ impl TextEngine {
             }
             self.atlas_version = next_atlas_version();
             let s = self.atlas_size as f32;
-            Some(Slot { u0: px as f32 / s, v0: py as f32 / s, u1: (px + w) as f32 / s, v1: (py + h) as f32 / s, left, top, width: w, height: h, color: false })
+            Some(Slot { u0: px as f32 / s, v0: py as f32 / s, u1: (px + w) as f32 / s, v1: (py + h) as f32 / s, left, top, width: w, height: h, color: false, big_glyph: None })
         });
         slot
+    }
+
+    /// Keeps `texels`, the `w` x `h` raster of a glyph too big for an
+    /// atlas (`ATLAS_GLYPH_MAX_PX`), as a big glyph of its own: coverage
+    /// bytes, or straight RGBA when `is_color`.
+    ///
+    /// Needed in one place because a letter, a swash-painted emoji and a
+    /// host-painted emoji all end here.
+    ///
+    /// The kept raster is two texels wider and taller: the ink with one
+    /// empty texel on every side (`BigGlyph`).
+    ///
+    /// Returns the glyph's slot, its uv over the ink alone.
+    fn keep_big_glyph(&mut self, texels: &[u8], w: u32, h: u32, left: i32, top: i32, is_color: bool) -> Slot {
+        let texel_bytes: usize = if is_color { 4 } else { 1 };
+        let (width, height): (u32, u32) = (w + 2, h + 2);
+        let (ink_row_bytes, row_bytes): (usize, usize) = (w as usize * texel_bytes, width as usize * texel_bytes);
+        let mut bordered: Vec<u8> = vec![0; row_bytes * height as usize];
+        for row in 0..h as usize {
+            let first: usize = (row + 1) * row_bytes + texel_bytes;
+            bordered[first..first + ink_row_bytes].copy_from_slice(&texels[row * ink_row_bytes..(row + 1) * ink_row_bytes]);
+        }
+        let id: BigGlyphId = BigGlyphId::next();
+        self.big_glyph_clock += 1;
+        self.big_glyph_bytes += bordered.len();
+        self.big_glyphs.insert(id, KeptBigGlyph { width, height, is_color, texels: bordered, shaped_at: self.big_glyph_clock });
+        let (width, height): (f32, f32) = (width as f32, height as f32);
+        Slot { u0: 1.0 / width, v0: 1.0 / height, u1: (w + 1) as f32 / width, v1: (h + 1) as f32 / height, left, top, width: w, height: h, color: is_color, big_glyph: Some(id) }
     }
 
     /// `rgba` (`w` x `h`) into the color atlas, which holds STRAIGHT
@@ -1126,19 +1382,12 @@ impl TextEngine {
             let out = &mut self.color_atlas[dst..dst + (w * 4) as usize];
             out.copy_from_slice(src);
             if premultiplied {
-                for texel in out.chunks_exact_mut(4) {
-                    let a = texel[3] as u32;
-                    if a != 0 && a != 255 {
-                        for c in &mut texel[..3] {
-                            *c = ((*c as u32 * 255 + a / 2) / a).min(255) as u8;
-                        }
-                    }
-                }
+                straight_from_premultiplied(out);
             }
         }
         self.color_atlas_version = next_atlas_version();
         let s = side as f32;
-        Some(Slot { u0: px as f32 / s, v0: py as f32 / s, u1: (px + w) as f32 / s, v1: (py + h) as f32 / s, left, top, width: w, height: h, color: true })
+        Some(Slot { u0: px as f32 / s, v0: py as f32 / s, u1: (px + w) as f32 / s, v1: (py + h) as f32 / s, left, top, width: w, height: h, color: true, big_glyph: None })
     }
 
     /// Shelf packing into the coverage atlas; `None` after a grow (the
@@ -1151,36 +1400,37 @@ impl TextEngine {
         pos
     }
 
-    /// The letters' atlas doubles its side and starts empty: every glyph
-    /// slot and every kept shape is dropped, and a uv handed out before
+    /// The letters' atlas doubles its side and starts empty: every slot
+    /// in it and every kept shape is dropped, and a uv handed out before
     /// is stale (`generation`).
     ///
     /// Needed because the atlas fills up, a few times in a program's
     /// life. A glyph on screen is drawn again when its text is next
-    /// shaped.
+    /// shaped. A big glyph is not in the atlas: its slot stays, and it
+    /// is not drawn again.
     fn grow(&mut self) {
         self.work.texture_grows += 1;
         self.shape_cache.clear();
         self.atlas_size *= 2;
         self.atlas = vec![0; (self.atlas_size * self.atlas_size) as usize];
         self.shelf = Shelf::new(self.atlas_size);
-        self.slots.clear();
+        self.slots.retain(|_, slot| slot.is_some_and(|s| s.big_glyph.is_some()));
         self.generation += 1;
         self.atlas_version = next_atlas_version();
         self.atlas_id = next_atlas_version();
     }
 
-    /// The color atlas doubles: every emoji slot handed out is stale, the
+    /// The color atlas doubles: every emoji slot in it is stale, the
     /// shape cache with them (`generation`, the same stale-uv law as the
-    /// coverage atlas's `grow`).
+    /// coverage atlas's `grow`). A big emoji's slot stays.
     fn grow_color(&mut self) {
         self.work.texture_grows += 1;
         self.shape_cache.clear();
         let side: u32 = self.color_shelf.size * 2;
         self.color_atlas = vec![0; (side * side * 4) as usize];
         self.color_shelf = Shelf::new(side);
-        self.color_slots.clear();
-        self.host_slots.clear();
+        self.color_slots.retain(|_, slot| slot.is_some_and(|s| s.big_glyph.is_some()));
+        self.host_slots.retain(|_, slot| slot.is_some_and(|s| s.big_glyph.is_some()));
         self.generation += 1;
         self.color_atlas_version = next_atlas_version();
         self.color_atlas_id = next_atlas_version();

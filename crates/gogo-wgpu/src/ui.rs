@@ -16,6 +16,7 @@
 
 use crate::textures::{Tex_Image_Straight_Srgb_4xU8_RGBA, Tex_Tile_Premul_Srgb_4xU8_RGBA};
 use crate::timings::{PrepareStage, PrepareTimings};
+use std::collections::HashMap;
 use std::time::Instant;
 
 use gogo_ui::draw::{Draw, Fit, GradientKind, Sampling, TextAlign};
@@ -23,7 +24,7 @@ use gogo_ui::layout::Rect;
 use gogo_ui::locale::Locale;
 use gogo_ui::page::{NO_STR, NodeId, Page};
 use gogo_ui::ImageKey;
-use gogo_text::{AtlasPart, AtlasSent, TextEngine, TextPx};
+use gogo_text::{AtlasPart, AtlasSent, BigGlyph, BigGlyphId, GlyphQuad, TextEngine, TextPx};
 
 /// A frame's draw lists, in draw order, each with the page that owns its
 /// strings. A slice, an array or a `Vec` of `(draws, page)` pairs is one.
@@ -102,7 +103,8 @@ struct Screen {
 }
 
 /// Texture slot: 0 = the glyph coverage atlas, 1 = the emoji color atlas,
-/// 2.. = images in `images` order.
+/// 2.. = images as they were first written, and the text engine's big
+/// glyphs as they were first drawn.
 type TexId = u32;
 const ATLAS: TexId = 0;
 /// The text engine's color atlas (emoji): straight RGBA, drawn as image
@@ -302,6 +304,14 @@ pub struct UiRenderer {
     color_atlas_sent: AtlasSent,
     /// What `debug_atlas_texels_written` returns.
     atlas_texels_written: u64,
+    /// The texture slot of each big glyph of the text engine that this
+    /// renderer has drawn (`gogo_text::BigGlyph`): a texture of its own,
+    /// held until the engine drops the glyph (`free_dropped_big_glyphs`).
+    big_glyphs: HashMap<BigGlyphId, TexId>,
+    /// Big glyphs whose texture the frame's walk made: `sync_atlas`
+    /// writes their texels. Kept between frames so a frame with a new
+    /// big glyph allocates nothing for the list once warm.
+    big_glyphs_to_send: Vec<BigGlyphId>,
     /// Texture slot by `ImageKey` (the `source=` id); `None` = no pixels
     /// yet. Grows as the host interns pictures past the build's table.
     images: Vec<Option<TexId>>,
@@ -456,6 +466,8 @@ impl UiRenderer {
             color_atlas_size: 0,
             color_atlas_sent: AtlasSent::default(),
             atlas_texels_written: 0,
+            big_glyphs: HashMap::new(),
+            big_glyphs_to_send: Vec::new(),
             images: Vec::new(),
             externals: Vec::new(),
             gpu_places: Vec::new(),
@@ -765,11 +777,87 @@ impl UiRenderer {
         if slot == ATLAS || self.externals.iter().any(|e| e.key == key) {
             return false;
         }
+        self.free_slot(device, slot);
+        self.images[key] = None;
+        true
+    }
+
+    /// Frees the texture in `slot` and leaves the slot to the next
+    /// picture or big glyph (`take_slot`).
+    ///
+    /// A 1x1 blank stands in the slot meanwhile, so a batch that still
+    /// names it draws nothing.
+    fn free_slot(&mut self, device: &wgpu::Device, slot: TexId) {
         let (_, blank) = self.make_texture(device, 1, 1, wgpu::TextureFormat::Rgba8Unorm);
         self.textures[slot as usize] = blank;
-        self.images[key] = None;
         self.free_slots.push(slot);
-        true
+    }
+
+    /// The texture slot of the big glyph `id` of `text`, with a texture
+    /// of the glyph's size made in it the first time. `sync_atlas`
+    /// writes the texels, with the atlases, after the walk.
+    ///
+    /// Needed because a big glyph is in neither atlas: the engine keeps
+    /// its raster alone, and each renderer gives it a texture of its
+    /// own (`gogo_text::BigGlyph`).
+    ///
+    /// Returns `None` when the engine does not keep the glyph. That does
+    /// not happen for a quad shaped in this frame: the engine drops big
+    /// glyphs only in `drop_unused_big_glyphs`, which `prepare_pages`
+    /// calls before the walk.
+    fn big_glyph_slot(&mut self, device: &wgpu::Device, text: &TextEngine, id: BigGlyphId) -> Option<TexId> {
+        if let Some(slot) = self.big_glyphs.get(&id) {
+            return Some(*slot);
+        }
+        let glyph: BigGlyph = text.big_glyph(id)?;
+        let format = if glyph.is_color { wgpu::TextureFormat::Rgba8Unorm } else { wgpu::TextureFormat::R8Unorm };
+        let (tex, mut entry) = self.make_texture(device, glyph.width, glyph.height, format);
+        entry.texture = Some(tex);
+        let slot: TexId = self.take_slot(entry);
+        self.big_glyphs.insert(id, slot);
+        self.big_glyphs_to_send.push(id);
+        Some(slot)
+    }
+
+    /// Frees the texture of every big glyph `text` no longer keeps: one
+    /// the engine dropped, or one of another engine this renderer drew
+    /// with before.
+    ///
+    /// Needed because a glyph stretched over a box is a new big glyph
+    /// at every size of the box: without this a box resized by a drag
+    /// leaves a texture behind per frame, for the whole session.
+    fn free_dropped_big_glyphs(&mut self, device: &wgpu::Device, text: &TextEngine) {
+        if self.big_glyphs.is_empty() {
+            return;
+        }
+        // The table steps out of self while its slots are freed.
+        let mut big_glyphs: HashMap<BigGlyphId, TexId> = std::mem::take(&mut self.big_glyphs);
+        big_glyphs.retain(|id, slot| {
+            let is_kept: bool = text.big_glyph(*id).is_some();
+            if !is_kept {
+                self.free_slot(device, *slot);
+            }
+            is_kept
+        });
+        self.big_glyphs = big_glyphs;
+    }
+
+    /// Where one glyph quad draws from: its texture slot, the kind of
+    /// quad, and its tint for text of `color`.
+    ///
+    /// An emoji is an image quad: its own colors, the text's alpha (so a
+    /// label that fades out fades its emoji too). A letter is coverage
+    /// tinted by the text color. Either comes from its atlas, or from
+    /// its own texture when it is a big glyph.
+    ///
+    /// Returns `None` for a big glyph the engine does not keep
+    /// (`big_glyph_slot`): the quad is not drawn.
+    fn glyph_source(&mut self, device: &wgpu::Device, text: &TextEngine, glyph: &GlyphQuad, color: [f32; 4]) -> Option<(TexId, f32, [f32; 4])> {
+        let (atlas, kind, tint) = if glyph.color { (COLOR_ATLAS, KIND_IMAGE, [1.0, 1.0, 1.0, color[3]]) } else { (ATLAS, KIND_GLYPH, color) };
+        match glyph.big_glyph {
+            Some(id) => self.big_glyph_slot(device, text, id).map(|slot| (slot, kind, tint)),
+            None => Some((atlas, kind, tint)),
+        }
     }
 
     /// Writes an image's pixels (straight sRGB RGBA8 rows): the TEXTURE
@@ -814,7 +902,8 @@ impl UiRenderer {
 
     /// Sends the part of each glyph atlas of `text` that this renderer's
     /// texture lacks: the rectangle of the letters new since its last
-    /// send, or the whole of an atlas it has not sent.
+    /// send, or the whole of an atlas it has not sent. Then the texels
+    /// of the big glyphs the frame's walk made a texture for.
     ///
     /// Needed per renderer (`AtlasSent`): a text engine may meet several
     /// renderers (one per picture a host takes, a new one after the GPU
@@ -858,6 +947,17 @@ impl UiRenderer {
                 self.atlas_texels_written += part.texel_count();
             }
         }
+        // The list steps out of self for the loop and goes back empty,
+        // with its capacity.
+        let mut to_send: Vec<BigGlyphId> = std::mem::take(&mut self.big_glyphs_to_send);
+        for id in to_send.drain(..) {
+            let (Some(glyph), Some(slot)) = (text.big_glyph(id), self.big_glyphs.get(&id)) else { continue };
+            if let Some(tex) = &self.textures[*slot as usize].texture {
+                Self::write(queue, tex, glyph.texels, glyph.width, glyph.height, if glyph.is_color { 4 } else { 1 });
+                self.atlas_texels_written += u64::from(glyph.width) * u64::from(glyph.height);
+            }
+        }
+        self.big_glyphs_to_send = to_send;
     }
 
     /// Turns the draw list into instances (epx × `epx` = device px), shapes
@@ -881,6 +981,10 @@ impl UiRenderer {
         // an app's life; the usual frame pays nothing.
         let generation: u32 = text.generation;
         self.stage_begins(PrepareStage::Pass);
+        // Before the walk, never during it: a big glyph a quad of this
+        // frame names keeps its raster until `sync_atlas` has sent it.
+        text.drop_unused_big_glyphs();
+        self.free_dropped_big_glyphs(device, text);
         self.prepare_pass(device, pages, epx, screen, text, locale);
         if text.generation != generation {
             self.prepare_pass(device, pages, epx, screen, text, locale);
@@ -1110,10 +1214,7 @@ impl UiRenderer {
                             self.culled += 1;
                             continue;
                         }
-                        // An emoji is an image quad over the color atlas:
-                        // its own colors, the text's alpha (so that a label
-                        // that fades out fades its emoji too).
-                        let (tex, kind, tint) = if g.color { (COLOR_ATLAS, KIND_IMAGE, [1.0, 1.0, 1.0, color[3]]) } else { (ATLAS, KIND_GLYPH, color) };
+                        let Some((tex, kind, tint)) = self.glyph_source(device, text, g, color) else { continue };
                         if current_tex != tex || current_pixel {
                             self.close_batch(&mut batch_first, current, current_tex, current_pixel);
                             current_tex = tex;
@@ -1131,10 +1232,7 @@ impl UiRenderer {
                     let s = gogo_ui::locale::display(page, locale, *text_id, *key);
                     let font_key = if *font == NO_STR { None } else { Some(page.str(*font)) };
                     let size_px = r[2].max(r[3]).clamp(8.0, STRETCH_RASTER_MAX_PX);
-                    if let Some(g) = text.glyph(s, size_px, font_key) {
-                        let color = color.to_f32();
-                        // A stretched emoji is an image quad like a run's.
-                        let (tex, kind, tint) = if g.color { (COLOR_ATLAS, KIND_IMAGE, [1.0, 1.0, 1.0, color[3]]) } else { (ATLAS, KIND_GLYPH, color) };
+                    if let Some((g, (tex, kind, tint))) = text.glyph(s, size_px, font_key).and_then(|g| Some((g, self.glyph_source(device, text, &g, color.to_f32())?))) {
                         if current_tex != tex || current_pixel {
                             self.close_batch(&mut batch_first, current, current_tex, current_pixel);
                             current_tex = tex;
@@ -1682,8 +1780,9 @@ impl UiRenderer {
     }
 
     /// How many texels of the glyph atlases this renderer sent to the
-    /// GPU so far, both atlases together, for a test that a new letter
-    /// sends its own rectangle and not the whole atlas.
+    /// GPU so far, both atlases and the big glyphs' own textures
+    /// together, for a test that a new letter sends its own rectangle
+    /// and not the whole atlas.
     pub fn debug_atlas_texels_written(&self) -> u64 {
         self.atlas_texels_written
     }

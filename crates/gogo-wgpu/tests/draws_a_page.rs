@@ -5,7 +5,9 @@
 //! draws the wedge of a dial and checks it against the hit test. Two
 //! more draw one text engine's letters with a second renderer, and a
 //! second engine's letters with the same renderer. A sixth draws letters
-//! new to the atlas and counts the texels of it the renderer sent.
+//! new to the atlas and counts the texels of it the renderer sent. Three
+//! more draw letters too big for the atlas, each from a texture of its
+//! own.
 //!
 //! Needed because nothing else in this repository runs the shader: the
 //! unit tests cover the gradient tables only, and a renderer whose quads
@@ -21,7 +23,7 @@ use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use gogo_text::{EpxMeasure, GlyphQuad, TextEngine};
+use gogo_text::{BIG_GLYPH_KEPT_BYTES, BigGlyph, EpxMeasure, GlyphQuad, TextEngine, TextPx};
 use gogo_ui::layout::Rect;
 use gogo_ui::runtime::{Runtime, resolve};
 use gogo_ui::{Compiled, Draw, ImageKey, KeptFrame, Page, compile, draw, has_errors};
@@ -328,16 +330,21 @@ fn engine() -> RefCell<TextEngine> {
 ///
 /// Returns the tile's pixels and the rect of the Label named `hello`.
 fn drawn_tile(source: &str, ui: &mut UiRenderer, device: &wgpu::Device, queue: &wgpu::Queue, text: &RefCell<TextEngine>) -> (Vec<u8>, Rect) {
+    drawn_tile_of(source, TILE, ui, device, queue, text)
+}
+
+/// `drawn_tile`, on a tile of `tile` pixels.
+fn drawn_tile_of(source: &str, tile: (u32, u32), ui: &mut UiRenderer, device: &wgpu::Device, queue: &wgpu::Queue, text: &RefCell<TextEngine>) -> (Vec<u8>, Rect) {
     let compiled: Compiled = compile(source, &|_| None);
     assert!(!has_errors(&compiled.diags), "{:?}", compiled.diags);
     let page: Page = compiled.page;
     let runtime: Runtime = Runtime::new(&page);
-    let screen: Rect = Rect::new(0.0, 0.0, TILE.0 as f32, TILE.1 as f32);
+    let screen: Rect = Rect::new(0.0, 0.0, tile.0 as f32, tile.1 as f32);
     let measure = EpxMeasure { engine: text, epx: 1.0, font: None, images: &[] };
     let kept: KeptFrame = KeptFrame::fresh(&page, resolve(&page, &runtime), screen, &measure);
     let label: Rect = kept.frame().rects()[page.find("hello").expect("the label").index()];
     let draws: Vec<Draw> = draw(&page, kept.frame());
-    let tile: Tex_Tile_Premul_Srgb_4xU8_RGBA = ui.render_to_texture(device, queue, &draws, &page, &mut text.borrow_mut(), None, 1.0, (0.0, 0.0), TILE);
+    let tile: Tex_Tile_Premul_Srgb_4xU8_RGBA = ui.render_to_texture(device, queue, &draws, &page, &mut text.borrow_mut(), None, 1.0, (0.0, 0.0), tile);
     (read_back(device, queue, &tile), label)
 }
 
@@ -441,4 +448,146 @@ fn a_new_letter_sends_only_its_part_of_the_atlas() {
 
     drawn_tile(PAGE_OTHER_LETTERS, &mut ui, &device, &queue, &text);
     assert_eq!(ui.debug_atlas_texels_written(), atlas_texels + texels_of_new_letters, "a frame with no new letter sends nothing");
+}
+
+/// The tile the big letters are drawn on.
+const BIG_TILE: (u32, u32) = (256, 256);
+
+/// One letter of 200 px: its raster is wider and taller than
+/// `gogo_text::ATLAS_GLYPH_MAX_PX`, so it is a big glyph.
+const PAGE_BIG_LETTER: &str = r#"
+View card {
+    Label hello text="W", font_size=200, font_color=#FFFFFF, halign=left, valign=top
+}
+"#;
+
+/// A letter too big for the atlas is drawn from a texture of its own,
+/// texel for texel where the text engine's raster has it; the renderer
+/// sends that raster once, and a second renderer and a second engine
+/// each get the letter too.
+///
+/// Needed because a big glyph is in no atlas (`gogo_text::BigGlyph`).
+/// Red when the renderer draws its quad from the atlas: the user sees
+/// nothing, or a piece of other letters, where the big letter is. Red
+/// when the uv or the texture is off by a texel: the letter is cut at
+/// one edge and has a line of nothing at the other.
+#[test]
+#[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
+fn a_letter_too_big_for_the_atlas_is_drawn_from_a_texture_of_its_own() {
+    let (device, queue) = device();
+    let mut ui: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
+    let text: RefCell<TextEngine> = engine();
+    let (pixels, label) = drawn_tile_of(PAGE_BIG_LETTER, BIG_TILE, &mut ui, &device, &queue, &text);
+    let texels_sent: u64 = ui.debug_atlas_texels_written();
+    {
+        // Where the renderer put the letter: the label's corner.
+        let quad: GlyphQuad = text.borrow_mut().shape("W", TextPx::from_epx(200.0, 1.0), None, None, label.x, label.y, label.w, 0)[0];
+        let engine = text.borrow();
+        let glyph: BigGlyph = engine.big_glyph(quad.big_glyph.expect("the precondition: a big glyph")).expect("the engine keeps it");
+        assert_eq!(texels_sent, 1024 * 1024 + u64::from(glyph.width * glyph.height), "the first frame sends the atlas, with no letter in it, and the big letter's raster");
+        // The texel one right and one down of the raster's corner is
+        // the quad's first pixel: the raster has an empty border.
+        let (mut covered, mut empty): (u32, u32) = (0, 0);
+        for y in 0..BIG_TILE.1 {
+            for x in 0..BIG_TILE.0 {
+                let (column, row): (i32, i32) = (x as i32 - quad.x as i32 + 1, y as i32 - quad.y as i32 + 1);
+                let is_in_raster: bool = (0..glyph.width as i32).contains(&column) && (0..glyph.height as i32).contains(&row);
+                let coverage: u8 = if is_in_raster { glyph.texels[(row as u32 * glyph.width + column as u32) as usize] } else { 0 };
+                let pixel: &[u8] = &pixels[((y * BIG_TILE.0 + x) * 4) as usize..][..4];
+                match coverage {
+                    0 => {
+                        assert_eq!(pixel, [0; 4], "nothing at {x},{y}");
+                        empty += 1;
+                    }
+                    255 => {
+                        assert_eq!(pixel, [255; 4], "the letter's white at {x},{y}");
+                        covered += 1;
+                    }
+                    _ => assert!(pixel[3] > 0, "the letter's edge at {x},{y}: coverage {coverage}"),
+                }
+            }
+        }
+        assert!(covered > 4000 && empty > 20_000, "the precondition: a letter with an inside and an outside, {covered} and {empty} pixels");
+    }
+
+    let (again, _) = drawn_tile_of(PAGE_BIG_LETTER, BIG_TILE, &mut ui, &device, &queue, &text);
+    assert!(again == pixels);
+    assert_eq!(ui.debug_atlas_texels_written(), texels_sent, "a frame with no new letter sends nothing");
+
+    let mut second: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
+    let (pixels_of_second, _) = drawn_tile_of(PAGE_BIG_LETTER, BIG_TILE, &mut second, &device, &queue, &text);
+    assert!(pixels_of_second == pixels, "a second renderer over the same engine draws the big letter");
+
+    // Another engine's big letter has another id: the renderer makes its
+    // texture in the slot of the first engine's letter, which it frees.
+    let slots: usize = ui.debug_texture_slot_count();
+    let other_engine: RefCell<TextEngine> = engine();
+    let (pixels_of_other, _) = drawn_tile_of(PAGE_BIG_LETTER, BIG_TILE, &mut ui, &device, &queue, &other_engine);
+    assert!(pixels_of_other == pixels, "a renderer handed another engine draws that engine's big letter");
+    assert_eq!(ui.debug_texture_slot_count(), slots, "in the slot of the first engine's letter");
+}
+
+/// One letter stretched over a box 200 by 150: the renderer asks for
+/// the glyph at 200 px, a big glyph.
+const PAGE_STRETCHED_LETTER: &str = r#"
+View card {
+    Label hello text="W", text_fit=stretch, font_color=#FFFFFF, width=200, height=150, halign=left, valign=top
+}
+"#;
+
+/// A big glyph stretched over a box (`text_fit=stretch`) covers the box
+/// from edge to edge and draws nothing outside it.
+///
+/// Red when the stretched quad is drawn from the atlas, where a big
+/// glyph is not: the box stays empty.
+#[test]
+#[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
+fn a_big_glyph_stretched_over_a_box_covers_the_box() {
+    let (device, queue) = device();
+    let mut ui: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
+    let text: RefCell<TextEngine> = engine();
+    let (pixels, label) = drawn_tile_of(PAGE_STRETCHED_LETTER, BIG_TILE, &mut ui, &device, &queue, &text);
+    assert_eq!((label.x, label.y, label.w, label.h), (0.0, 0.0, 200.0, 150.0));
+    assert!(text.borrow_mut().glyph("W", 200.0, None).expect("ink").big_glyph.is_some(), "the precondition: a big glyph");
+    let inked: Vec<(u32, u32)> = (0..BIG_TILE.1).flat_map(|y| (0..BIG_TILE.0).map(move |x| (x, y))).filter(|&(x, y)| pixels[((y * BIG_TILE.0 + x) * 4 + 3) as usize] > 0).collect();
+    assert!(inked.len() > 4000, "the letter is drawn: {} pixels", inked.len());
+    let (left, right): (u32, u32) = (inked.iter().map(|p| p.0).min().expect("ink"), inked.iter().map(|p| p.0).max().expect("ink"));
+    let (top, bottom): (u32, u32) = (inked.iter().map(|p| p.1).min().expect("ink"), inked.iter().map(|p| p.1).max().expect("ink"));
+    assert!(left <= 1 && top <= 1 && (198..200).contains(&right) && (148..150).contains(&bottom), "the ink reaches the box's edges and stays inside: {left}..{right} x {top}..{bottom}");
+}
+
+/// The texture of a big glyph is freed once the text engine dropped the
+/// glyph, and its slot serves the next one: a letter shown at a new
+/// size every frame, as in a box resized by a drag, ends with a steady
+/// number of textures.
+///
+/// Red when the renderer keeps every texture it made: half a megabyte
+/// of GPU memory a frame, for the whole session.
+#[test]
+#[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
+fn the_texture_of_a_big_glyph_the_engine_dropped_is_freed() {
+    let (device, queue) = device();
+    let mut ui: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
+    let text: RefCell<TextEngine> = engine();
+    // A letter of 900 px is half a megabyte: the engine keeps eight.
+    let page = |frame: u32| -> String { format!("View card {{\n    Label hello text=\"W\", font_size={}, font_color=#FFFFFF, halign=left, valign=top\n}}\n", 900 + frame) };
+    let mut slots: Vec<usize> = Vec::new();
+    let mut last: Vec<u8> = Vec::new();
+    for frame in 0..24 {
+        (last, _) = drawn_tile_of(&page(frame), BIG_TILE, &mut ui, &device, &queue, &text);
+        slots.push(ui.debug_texture_slot_count());
+    }
+    let raster_bytes: usize = {
+        let quad: GlyphQuad = text.borrow_mut().glyph("W", 923.0, None).expect("ink");
+        text.borrow().big_glyph(quad.big_glyph.expect("a big glyph")).expect("kept").texels.len()
+    };
+    assert!(raster_bytes * 24 > 2 * BIG_GLYPH_KEPT_BYTES, "the precondition: the 24 sizes are more than twice what the engine keeps");
+    assert!(slots[2] > slots[1] && slots[1] > slots[0], "the precondition: each new size takes a slot at first: {slots:?}");
+    assert_eq!(slots[23], slots[16], "then a freed slot serves each new size: {slots:?}");
+    assert!((slots[23] - slots[0]) * raster_bytes <= BIG_GLYPH_KEPT_BYTES + 2 * raster_bytes, "the renderer holds textures for what the engine keeps: {slots:?}");
+
+    let mut fresh: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
+    let (want, _) = drawn_tile_of(&page(23), BIG_TILE, &mut fresh, &device, &queue, &text);
+    assert!(last == want, "a slot used again holds the new size's letter");
+    assert!(last.chunks_exact(4).filter(|pixel| *pixel == [255; 4]).count() > 4000, "and the letter is drawn");
 }

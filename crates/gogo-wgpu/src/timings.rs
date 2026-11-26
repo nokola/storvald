@@ -15,7 +15,8 @@ pub enum PrepareStage {
     /// atlas; both runs are inside one begin / end pair.
     Pass,
     /// The glyph atlases and the gradient tables go to the GPU, when they
-    /// changed.
+    /// changed, and the texels of each big glyph new to the renderer
+    /// (`gogo_text::BigGlyph`).
     Atlas,
     /// The frame's quads and the screen size go to the GPU, when they
     /// changed.

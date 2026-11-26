@@ -8,7 +8,7 @@
 //! file out of the package (`exclude`), so `cargo test` on a downloaded
 //! package runs only what the package can feed.
 
-use gogo_text::{AtlasPart, AtlasSent, EpxMeasure, FaceMetrics, GlyphQuad, HostColorGlyph, TextEngine, TextPx, styled_key};
+use gogo_text::{ATLAS_GLYPH_MAX_PX, AtlasPart, AtlasSent, BIG_GLYPH_KEPT_BYTES, BigGlyph, BigGlyphId, EpxMeasure, FaceMetrics, GlyphQuad, HostColorGlyph, TextEngine, TextPx, TextWork, styled_key};
 use gogo_ui::layout::TextMeasure;
 use std::cell::RefCell;
 use std::path::Path;
@@ -21,15 +21,11 @@ use std::path::Path;
 #[test]
 fn a_run_that_grows_the_atlas_is_shaped_whole_against_the_grown_one() {
     let mut e = engine();
-    let before: u32 = e.generation;
-    // 400-px glyphs: nine fill the 1024 atlas, so the alphabet grows it
-    // inside this one run.
-    let text = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    let shaped: Vec<GlyphQuad> = e.shape(text, px(400.0), None, None, 0.0, 0.0, 100_000.0, 0);
-    assert!(e.generation > before, "the precondition: the run grew the atlas");
+    let (shaped, work, font_size) = run_that_grows_the_letters_atlas(&mut e);
+    assert!(work.letters_drawn > ALPHABET.len() as u32, "the precondition: the atlas grew mid-way, so letters drawn before the grow were drawn again: {work:?}");
     // Shaped again past the cache: the box width is part of the cache
     // key and moves no glyph of a start-aligned line.
-    let again: Vec<GlyphQuad> = e.shape(text, px(400.0), None, None, 0.0, 0.0, 100_001.0, 0);
+    let again: Vec<GlyphQuad> = e.shape(ALPHABET, px(font_size), None, None, 0.0, 0.0, 100_001.0, 0);
     assert_eq!(shaped.len(), again.len());
     for (a, b) in shaped.iter().zip(&again) {
         assert_eq!(a.uv, b.uv, "a glyph of the run that grew the atlas, shaped whole: {a:?} vs {b:?}");
@@ -65,6 +61,30 @@ fn a_right_to_left_line_starts_at_the_left_edge_and_halign_still_moves_it() {
 fn engine() -> TextEngine {
     let bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/Fonts/Roboto Regular.ttf")).expect("font");
     TextEngine::new(&[("assets/Fonts/Roboto Regular.ttf", bytes)])
+}
+
+const ALPHABET: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+/// Shapes the alphabet at 120 px, then a pixel smaller each time, until
+/// one run fills the letters' atlas and it grows.
+///
+/// Needed by the tests of a grow. Letters of 120 px are the biggest that
+/// still go into the atlas: a bigger one is a big glyph and fills
+/// nothing.
+///
+/// Returns the quads of the run that grew the atlas, that run's work,
+/// and its font size.
+fn run_that_grows_the_letters_atlas(e: &mut TextEngine) -> (Vec<GlyphQuad>, TextWork, f32) {
+    for font_size in (40..=120).rev().map(|size| size as f32) {
+        let generation: u32 = e.generation;
+        e.take_work();
+        let quads: Vec<GlyphQuad> = e.shape(ALPHABET, px(font_size), None, None, 0.0, 0.0, 100_000.0, 0);
+        assert!(quads.iter().all(|quad| quad.big_glyph.is_none()), "the precondition: letters of {font_size} px go into the atlas");
+        if e.generation > generation {
+            return (quads, e.take_work(), font_size);
+        }
+    }
+    panic!("the atlas grows before the sizes run out");
 }
 
 /// Text of `font_size` device pixels on a screen with 1 device pixel per
@@ -169,15 +189,17 @@ fn the_host_paints_an_emoji_when_it_has_one() {
 #[ignore = "needs Windows' Segoe UI Emoji font: run with --include-ignored on Windows"]
 fn a_host_emoji_that_fills_the_color_atlas_grows_it() {
     let mut e: TextEngine = engine_with_emoji();
-    e.set_host_color_glyph_painter(Some(Box::new(|_: &str, _: f32| Some(HostColorGlyph { width: 300, height: 300, left: 0, top: 300, rgba: [255, 0, 0, 255].repeat(300 * 300) }))));
+    e.set_host_color_glyph_painter(Some(Box::new(|_: &str, _: f32| Some(HostColorGlyph { width: 120, height: 120, left: 0, top: 120, rgba: [255, 0, 0, 255].repeat(120 * 120) }))));
     let before: u32 = e.generation;
-    // Four 300-px squares do not fit a 512 atlas: it doubles mid-run.
-    let quads: Vec<GlyphQuad> = e.shape("😀😁😂🤣", px(40.0), None, None, 0.0, 0.0, 0.0, 0);
+    // Sixteen 120-px squares fill a 512 atlas, four to a shelf: twenty
+    // double it mid-run. (A bigger square is a big glyph and goes into
+    // no atlas.)
+    let quads: Vec<GlyphQuad> = e.shape("\u{1F600}\u{1F601}\u{1F602}\u{1F603}\u{1F604}\u{1F605}\u{1F606}\u{1F607}\u{1F608}\u{1F609}\u{1F60A}\u{1F60B}\u{1F60C}\u{1F60D}\u{1F60E}\u{1F60F}\u{1F610}\u{1F611}\u{1F612}\u{1F613}", px(40.0), None, None, 0.0, 0.0, 0.0, 0);
     assert!(e.generation > before, "the precondition: the run grew the color atlas");
     assert_eq!(e.color_atlas().1, 1024);
-    assert_eq!(quads.len(), 4, "{quads:?}");
+    assert_eq!(quads.len(), 20, "{quads:?}");
     for q in &quads {
-        assert!(q.color);
+        assert!(q.color && q.big_glyph.is_none());
         assert_eq!(color_texel_of(&e, q), [255, 0, 0, 255], "every slot is into the grown atlas: {q:?}");
     }
 }
@@ -304,12 +326,11 @@ fn the_work_counts_each_shape_and_each_letter_drawn() {
     assert_eq!(e.take_work(), gogo_text::TextWork::default(), "a text seen before costs two lookups");
     e.narrowest_wrap("Hello there", px(24.0), None);
     assert_eq!(counts(e.take_work()), (1, 0, 0, 0), "the narrowest width of a wrapping text is a shape of its own");
-    // 26 letters of 400 px do not fit the letters' texture: it doubles,
-    // the text is shaped again against the grown one, and the letters
-    // drawn before the grow are drawn again.
-    e.shape("ABCDEFGHIJKLMNOPQRSTUVWXYZ", px(400.0), None, None, 0.0, 0.0, 100_000.0, 0);
-    let work = e.take_work();
-    assert!(work.texture_grows >= 1 && work.shapes_to_draw >= 2 && work.letters_drawn > 26, "{work:?}");
+    // The run that fills the letters' texture: it doubles, the text is
+    // shaped again against the grown one, and the letters drawn before
+    // the grow are drawn again.
+    let (_, work, _) = run_that_grows_the_letters_atlas(&mut e);
+    assert!(work.texture_grows == 1 && work.shapes_to_draw == 2 && work.letters_drawn > ALPHABET.len() as u32, "{work:?}");
 }
 
 /// The OS scan runs once, names each family once, and a family can
@@ -586,10 +607,9 @@ fn a_copy_that_takes_only_the_part_to_send_holds_the_whole_atlas() {
     assert_eq!(handed_another_engine.take_letters(&other), whole(1024), "another engine's atlas: the whole of it");
     assert!(handed_another_engine.bytes == other.atlas().0);
 
-    let generation: u32 = e.generation;
-    shape(&mut e, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 400.0);
-    assert!(e.generation > generation, "the precondition: the atlas grew");
+    run_that_grows_the_letters_atlas(&mut e);
     let size: u32 = e.atlas().1;
+    assert_eq!(size, 2048, "the precondition: the atlas grew");
     assert_eq!(copy.take_letters(&e), whole(size), "the grown atlas: the whole of it");
     assert!(copy.bytes == e.atlas().0);
 
@@ -680,4 +700,219 @@ fn a_font_added_later_has_a_text_with_a_fallback_letter_shaped_again() {
     assert!(e.add_fallback_font_file(Path::new("C:/Windows/Fonts/seguiemj.ttf")));
     assert_eq!(work_of_showing(&mut e, "Hi"), (0, 0, 0), "a text of one font is kept");
     assert_eq!(work_of_showing(&mut e, with_a_fallback_letter), (2, 1, 0), "a text with a letter of another font is measured and shaped again");
+}
+
+/// The texel of a big glyph at column `x` of row `y`: its bytes.
+fn big_texel<'a>(glyph: &BigGlyph<'a>, x: u32, y: u32) -> &'a [u8] {
+    let texel_bytes: usize = if glyph.is_color { 4 } else { 1 };
+    &glyph.texels[(y * glyph.width + x) as usize * texel_bytes..][..texel_bytes]
+}
+
+/// Checks the raster of the big glyph `quad` names: the quad's size
+/// plus one texel on every side, that border empty, ink inside it, and
+/// the quad's uv over the ink alone.
+///
+/// Returns the glyph's id.
+fn check_big_glyph(e: &TextEngine, quad: &GlyphQuad) -> BigGlyphId {
+    let id: BigGlyphId = quad.big_glyph.expect("a big glyph");
+    let glyph: BigGlyph = e.big_glyph(id).expect("the engine keeps the big glyph a quad names");
+    assert_eq!(glyph.is_color, quad.color);
+    assert_eq!((glyph.width, glyph.height), (quad.w as u32 + 2, quad.h as u32 + 2), "the ink and one texel on every side");
+    assert_eq!(glyph.texels.len(), (glyph.width * glyph.height) as usize * if glyph.is_color { 4 } else { 1 });
+    let is_empty = |x: u32, y: u32| big_texel(&glyph, x, y).iter().all(|byte| *byte == 0);
+    assert!((0..glyph.width).all(|x| is_empty(x, 0) && is_empty(x, glyph.height - 1)), "the top and the bottom row are empty");
+    assert!((0..glyph.height).all(|y| is_empty(0, y) && is_empty(glyph.width - 1, y)), "the left and the right column are empty");
+    // The ink reaches the border on every side, give or take a texel.
+    assert!((1..glyph.width - 1).any(|x| !is_empty(x, 1) || !is_empty(x, 2)) && (1..glyph.width - 1).any(|x| !is_empty(x, glyph.height - 2) || !is_empty(x, glyph.height - 3)), "ink at the top and at the bottom");
+    assert!((1..glyph.height - 1).any(|y| !is_empty(1, y) || !is_empty(2, y)) && (1..glyph.height - 1).any(|y| !is_empty(glyph.width - 2, y) || !is_empty(glyph.width - 3, y)), "ink at the left and at the right");
+    let (width, height): (f32, f32) = (glyph.width as f32, glyph.height as f32);
+    assert_eq!(quad.uv, [1.0 / width, 1.0 / height, (width - 1.0) / width, (height - 1.0) / height], "the uv leaves the border out");
+    id
+}
+
+/// A glyph drawn wider or taller than `ATLAS_GLYPH_MAX_PX` goes into no
+/// atlas: the engine keeps its raster by itself, and the quad names it.
+/// A smaller one goes into the atlas as before.
+///
+/// Red when a big glyph is packed into the atlas: one letter of 400 px
+/// makes a shelf 400 rows tall, the atlas fills and doubles after a few
+/// of them, and each new shelf sends those rows again.
+#[test]
+fn a_glyph_too_big_for_the_atlas_is_kept_by_itself() {
+    let mut e = engine();
+    let (_, sent): (AtlasPart, AtlasSent) = e.atlas_part_to_send(AtlasSent::default());
+    e.take_work();
+    let quads: Vec<GlyphQuad> = e.shape("Wg", px(400.0), None, None, 0.0, 0.0, 0.0, 0);
+    let work: TextWork = e.take_work();
+    assert_eq!((quads.len(), work.letters_drawn, work.texture_grows), (2, 2, 0));
+    assert!(e.atlas_part_to_send(sent).0.is_empty(), "nothing went into the letters' atlas");
+    let ids: Vec<BigGlyphId> = quads.iter().map(|quad| check_big_glyph(&e, quad)).collect();
+    assert_ne!(ids[0], ids[1], "each big glyph has its own id");
+
+    // The same text again: the kept shape, the same glyphs.
+    let again: Vec<GlyphQuad> = e.shape("Wg", px(400.0), None, None, 0.0, 0.0, 0.0, 0);
+    assert_eq!(e.take_work(), TextWork::default());
+    assert_eq!(again.iter().map(|quad| quad.big_glyph).collect::<Vec<_>>(), ids.iter().map(|id| Some(*id)).collect::<Vec<_>>());
+
+    // 26 letters of 400 px filled and doubled the atlas before.
+    e.shape("ABCDEFGHIJKLMNOPQRSTUVWXYZ", px(400.0), None, None, 0.0, 0.0, 100_000.0, 0);
+    assert_eq!((e.take_work().texture_grows, e.atlas().1), (0, 1024), "big letters fill no atlas");
+
+    // The limit is on the raster's sides, not on the font size.
+    let (mut in_the_atlas, mut big): (u32, u32) = (0, 0);
+    for font_size in [100.0, 130.0, 150.0, 170.0, 190.0, 220.0] {
+        for quad in e.shape("Wi.", px(font_size), None, None, 0.0, 0.0, 0.0, 0) {
+            let is_over: bool = quad.w.max(quad.h) > ATLAS_GLYPH_MAX_PX as f32;
+            assert_eq!(quad.big_glyph.is_some(), is_over, "{font_size} px: {quad:?}");
+            if is_over {
+                check_big_glyph(&e, &quad);
+                big += 1;
+            } else {
+                in_the_atlas += 1;
+            }
+        }
+    }
+    assert!(in_the_atlas >= 5 && big >= 5, "the precondition: glyphs on both sides of the limit, {in_the_atlas} and {big}");
+    assert!(!e.atlas_part_to_send(sent).0.is_empty(), "the small ones went into the atlas");
+
+    // A faux bold big glyph is kept at its grown size: 8 px more on
+    // every side at 320 px.
+    let key: &str = "assets/Fonts/Roboto Regular.ttf";
+    let plain: GlyphQuad = e.glyph("H", 320.0, Some(key)).expect("ink");
+    let bold: GlyphQuad = e.glyph("H", 320.0, Some(&styled_key(key, true, false))).expect("ink");
+    assert_eq!((bold.w - plain.w, bold.h - plain.h), (16.0, 16.0));
+    assert_ne!(check_big_glyph(&e, &plain), check_big_glyph(&e, &bold));
+}
+
+/// A big glyph is not drawn again when the letters' atlas grows: it is
+/// not in the atlas. Red when a grow drops every slot: each big glyph on
+/// screen is drawn again in the frame of the grow, 10 ms or more for one
+/// of 400 px on an old phone.
+#[test]
+fn a_big_glyph_is_not_drawn_again_when_the_letters_atlas_grows() {
+    let mut e = engine();
+    let before: Vec<GlyphQuad> = e.shape("W", px(400.0), None, None, 0.0, 0.0, 0.0, 0);
+    let id: BigGlyphId = check_big_glyph(&e, &before[0]);
+    run_that_grows_the_letters_atlas(&mut e);
+    e.take_work();
+    let after: Vec<GlyphQuad> = e.shape("W", px(400.0), None, None, 0.0, 0.0, 0.0, 0);
+    let work: TextWork = e.take_work();
+    assert_eq!((work.shapes_to_draw, work.letters_drawn), (1, 0), "shaped anew, since a grow drops every kept shape; its glyph is found drawn");
+    assert_eq!(after[0].big_glyph, Some(id));
+    assert_eq!((after[0].uv, after[0].w, after[0].h), (before[0].uv, before[0].w, before[0].h));
+    check_big_glyph(&e, &after[0]);
+}
+
+/// The bytes of the big glyphs of `ids` that `e` still keeps.
+fn kept_bytes(e: &TextEngine, ids: &[BigGlyphId]) -> usize {
+    ids.iter().filter_map(|id| e.big_glyph(*id)).map(|glyph| glyph.texels.len()).sum()
+}
+
+/// A box resized by a drag shapes its glyph at a new size every frame.
+/// The engine drops the sizes of earlier frames once they hold more than
+/// `BIG_GLYPH_KEPT_BYTES`, the oldest first, and keeps the glyph that
+/// every frame shows.
+///
+/// Red when nothing is dropped: a drag of a few seconds leaves hundreds
+/// of megabytes of rasters behind. Red too when the drop takes a glyph
+/// still shown: it is drawn again in the next frame.
+#[test]
+fn big_glyphs_of_earlier_frames_are_dropped_over_the_kept_bytes() {
+    let mut e = engine();
+    let shown: BigGlyphId = e.shape("S", px(300.0), None, None, 0.0, 0.0, 0.0, 0)[0].big_glyph.expect("a big glyph");
+    let shown_in_a_moving_box: BigGlyphId = e.shape("O", px(300.0), None, None, 0.0, 0.0, 0.0, 0)[0].big_glyph.expect("a big glyph");
+    let mut resized: Vec<BigGlyphId> = Vec::new();
+    for frame in 0..40 {
+        e.drop_unused_big_glyphs();
+        e.take_work();
+        assert_eq!(e.shape("S", px(300.0), None, None, 0.0, 0.0, 0.0, 0)[0].big_glyph, Some(shown), "frame {frame}: the glyph shown every frame is kept");
+        assert_eq!(e.take_work(), TextWork::default(), "frame {frame}: and costs nothing");
+        // A box of another width each frame: the text is shaped anew,
+        // and finds its glyph drawn.
+        assert_eq!(e.shape("O", px(300.0), None, None, 0.0, 0.0, 1.0 + frame as f32, 0)[0].big_glyph, Some(shown_in_a_moving_box), "frame {frame}: so is the glyph of a text shaped anew every frame");
+        let work: TextWork = e.take_work();
+        assert_eq!((work.shapes_to_draw, work.letters_drawn), (1, 0), "frame {frame}: and it is not drawn again");
+        let quads: Vec<GlyphQuad> = e.shape("W", px(600.0 + frame as f32), None, None, 0.0, 0.0, 0.0, 0);
+        resized.push(quads[0].big_glyph.expect("a big glyph"));
+        assert!(e.big_glyph(resized[frame]).is_some(), "frame {frame}: the glyph just shaped is kept");
+        if frame > 0 {
+            assert!(e.big_glyph(resized[frame - 1]).is_some(), "frame {frame}: so is the one the frame before showed");
+        }
+    }
+    let newest: usize = e.big_glyph(resized[39]).expect("kept").texels.len();
+    assert!(newest * 40 > 2 * BIG_GLYPH_KEPT_BYTES, "the precondition: the 40 sizes are more than twice the kept bytes");
+    let kept: Vec<bool> = resized.iter().map(|id| e.big_glyph(*id).is_some()).collect();
+    assert!(!kept[0] && kept[39], "the first size is dropped, the last is kept");
+    assert!(kept.windows(2).all(|pair| pair[0] <= pair[1]), "the oldest are dropped first: {kept:?}");
+    // The last drop left no more than the kept bytes; one size came
+    // after it.
+    assert!(kept_bytes(&e, &resized) + kept_bytes(&e, &[shown, shown_in_a_moving_box]) <= BIG_GLYPH_KEPT_BYTES + newest, "{} bytes kept", kept_bytes(&e, &resized));
+    assert!(kept_bytes(&e, &resized) > BIG_GLYPH_KEPT_BYTES / 2, "and not everything was dropped: {} bytes kept", kept_bytes(&e, &resized));
+
+    // A dropped size is drawn again when a text needs it, under a new id.
+    e.take_work();
+    let again: Vec<GlyphQuad> = e.shape("W", px(600.0), None, None, 0.0, 0.0, 0.0, 0);
+    let work: TextWork = e.take_work();
+    assert_eq!((work.shapes_to_draw, work.letters_drawn), (1, 1), "the kept shape went with its glyph");
+    assert_ne!(again[0].big_glyph, Some(resized[0]));
+    check_big_glyph(&e, &again[0]);
+}
+
+/// What the last frame showed is never dropped, however much it is: a
+/// screen whose big glyphs hold more than `BIG_GLYPH_KEPT_BYTES` keeps
+/// them all from frame to frame. Once no frame shapes them, they go.
+///
+/// Red when the drop looks at the bytes alone: every frame draws some
+/// of the screen's big letters again, 10 ms or more each on an old
+/// phone.
+#[test]
+fn the_big_glyphs_a_frame_shows_are_kept_however_many() {
+    let mut e = engine();
+    let screen = |e: &mut TextEngine| -> Vec<BigGlyphId> { e.shape("ABCDEFGHIJKLMNOPQRSTUVWXYZ", px(700.0), None, None, 0.0, 0.0, 100_000.0, 0).iter().map(|quad| quad.big_glyph.expect("a big glyph")).collect() };
+    e.drop_unused_big_glyphs();
+    let first: Vec<BigGlyphId> = screen(&mut e);
+    assert!(kept_bytes(&e, &first) > BIG_GLYPH_KEPT_BYTES, "the precondition: one frame's big glyphs are more than the kept bytes, {}", kept_bytes(&e, &first));
+    for frame in 1..4 {
+        e.drop_unused_big_glyphs();
+        e.take_work();
+        assert_eq!(screen(&mut e), first, "frame {frame}: the same glyphs");
+        assert_eq!(e.take_work(), TextWork::default(), "frame {frame}: nothing shaped, no letter drawn");
+    }
+    // Two frames that show something else: the first of them still
+    // keeps what the frame before it showed.
+    e.drop_unused_big_glyphs();
+    e.shape("x", px(20.0), None, None, 0.0, 0.0, 0.0, 0);
+    assert_eq!(first.iter().filter(|id| e.big_glyph(**id).is_some()).count(), first.len());
+    e.drop_unused_big_glyphs();
+    assert!(kept_bytes(&e, &first) <= BIG_GLYPH_KEPT_BYTES, "no frame shapes them: dropped down to the kept bytes, {}", kept_bytes(&e, &first));
+}
+
+/// An emoji too big for the color atlas is a big glyph too: straight
+/// RGBA of its own, whether swash painted it or the host. A new host
+/// painter drops the big glyphs the old one painted.
+#[test]
+#[ignore = "needs Windows' Segoe UI Emoji font: run with --include-ignored on Windows"]
+fn a_big_emoji_is_kept_by_itself_in_color() {
+    let mut e: TextEngine = engine_with_emoji();
+    let quads: Vec<GlyphQuad> = e.shape("a\u{1F600}", px(300.0), None, None, 0.0, 0.0, 0.0, 0);
+    assert!(quads.len() == 2 && !quads[0].color && quads[1].color, "{quads:?}");
+    assert!(e.color_atlas_part_to_send(AtlasSent::default()).0.is_empty(), "nothing went into the color atlas");
+    check_big_glyph(&e, &quads[0]);
+    let emoji: BigGlyph = e.big_glyph(check_big_glyph(&e, &quads[1])).expect("kept");
+    assert!(emoji.texels.chunks_exact(4).any(|texel| texel[3] >= 250 && (texel[0] != texel[1] || texel[1] != texel[2])), "the emoji's own colors");
+    // Straight color: a half-covered yellow texel still has a strong
+    // red; premultiplied, no color is above the alpha.
+    assert!(emoji.texels.chunks_exact(4).any(|texel| (1..200).contains(&texel[3]) && texel[..3].iter().any(|color| *color > texel[3])), "straight color, not premultiplied");
+
+    e.set_host_color_glyph_painter(Some(Box::new(|_: &str, _: f32| Some(HostColorGlyph { width: 300, height: 200, left: 0, top: 200, rgba: [0, 255, 0, 255].repeat(300 * 200) }))));
+    let host: Vec<GlyphQuad> = e.shape("a\u{1F600}", px(40.0), None, None, 0.0, 0.0, 0.0, 0);
+    assert!(host[0].big_glyph.is_none(), "the letter of 40 px is in the atlas");
+    assert_eq!((host[1].w, host[1].h, host[1].color), (300.0, 200.0, true));
+    let id: BigGlyphId = check_big_glyph(&e, &host[1]);
+    let painted: BigGlyph = e.big_glyph(id).expect("kept");
+    assert_eq!((big_texel(&painted, 1, 1), big_texel(&painted, 300, 200)), (&[0u8, 255, 0, 255][..], &[0u8, 255, 0, 255][..]), "the host's pixels, inside the border");
+    assert!(e.color_atlas_part_to_send(AtlasSent::default()).0.is_empty(), "nothing went into the color atlas");
+
+    e.set_host_color_glyph_painter(None);
+    assert!(e.big_glyph(id).is_none(), "the old painter's big glyph went with it");
 }

@@ -129,7 +129,7 @@ Source, [examples/window/src/main.rs](examples/window/src/main.rs), contains the
 | Path | What |
 |---|---|
 | `crates/gogo-ui` | the language: lexer, parser, compiler, layout, input, draw list, hot reload. Pure Rust, no dependencies. |
-| `crates/gogo-text` | text for a gogo UI: measures and shapes it and rasterizes glyphs into two atlases (cosmic-text + swash). No GPU, no window. |
+| `crates/gogo-text` | text for a gogo UI: measures and shapes it and rasterizes glyphs into two atlases, each big glyph by itself (cosmic-text + swash). No GPU, no window. |
 | `crates/gogo-wgpu` | draws a gogo draw list with wgpu, into a render pass the host began. No window. |
 | `examples/window` | a page in a window, reloaded when its file is saved: the three crates together |
 | `assets/Fonts` | Roboto, for the tests and the example. gogo itself ships no font. |
