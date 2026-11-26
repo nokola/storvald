@@ -280,6 +280,38 @@ fn a_face_added_later_shapes_under_its_key() {
     assert!(!e.add_face("junk", vec![0, 1, 2, 3]), "no face in those bytes");
 }
 
+/// `take_work` counts each costly step when it ran, and nothing for a
+/// text the engine has seen: a new text is shaped once to measure it and
+/// once more to draw it, and each of its letters is drawn once.
+///
+/// Needed so a host can see a text shaped more often than that: every
+/// count here is a lookup that found nothing.
+#[test]
+fn the_work_counts_each_shape_and_each_letter_drawn() {
+    let counts = |work: gogo_text::TextWork| (work.shapes_to_measure, work.shapes_to_draw, work.letters_drawn, work.texture_grows);
+    let mut e = engine();
+    assert_eq!(e.take_work(), gogo_text::TextWork::default(), "a new engine did nothing");
+    e.measure("Hello", px(24.0), None, None);
+    let work = e.take_work();
+    assert_eq!(counts(work), (1, 0, 0, 0), "a measure shapes the text and draws no letter");
+    assert!(work.seconds_shaping_to_measure > 0.0);
+    e.shape("Hello", px(24.0), None, None, 0.0, 0.0, 0.0, 0);
+    let work = e.take_work();
+    assert_eq!((work.shapes_to_measure, work.shapes_to_draw, work.texture_grows), (0, 1, 0), "the draw shapes the same text once more");
+    assert!((4..=5).contains(&work.letters_drawn), "H, e, l, o, and the second l when it sits at another part of a pixel: {}", work.letters_drawn);
+    e.measure("Hello", px(24.0), None, None);
+    e.shape("Hello", px(24.0), None, None, 0.0, 0.0, 0.0, 0);
+    assert_eq!(e.take_work(), gogo_text::TextWork::default(), "a text seen before costs two lookups");
+    e.narrowest_wrap("Hello there", px(24.0), None);
+    assert_eq!(counts(e.take_work()), (1, 0, 0, 0), "the narrowest width of a wrapping text is a shape of its own");
+    // 26 letters of 400 px do not fit the letters' texture: it doubles,
+    // the text is shaped again against the grown one, and the letters
+    // drawn before the grow are drawn again.
+    e.shape("ABCDEFGHIJKLMNOPQRSTUVWXYZ", px(400.0), None, None, 0.0, 0.0, 100_000.0, 0);
+    let work = e.take_work();
+    assert!(work.texture_grows >= 1 && work.shapes_to_draw >= 2 && work.letters_drawn > 26, "{work:?}");
+}
+
 /// The OS scan runs once, names each family once, and a family can
 /// become a face. Skips its OS-specific half where the folders are
 /// empty (a bare CI box).

@@ -36,6 +36,7 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
 use cosmic_text::fontdb;
 use cosmic_text::{Align, Attrs, Buffer, CacheKey, CacheKeyFlags, Family, FontSystem, Metrics, Shaping, SwashCache, SwashContent, Weight, Wrap};
@@ -261,6 +262,38 @@ struct Face {
     metrics: FaceMetrics,
 }
 
+/// The engine's costly steps since the last `TextEngine::take_work`:
+/// how often each ran, and for how long.
+///
+/// Needed to see where a slow frame's text time goes, and whether a text
+/// is shaped more than once. A text is shaped when it is measured and
+/// again when it is drawn, and every text again when a letters' texture
+/// grew: each shows here as a count.
+///
+/// A step is counted only when it ran. A text the engine has measured or
+/// shaped before costs a lookup and counts nothing, so a frame that
+/// shows nothing new reads all zeros.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct TextWork {
+    /// Texts shaped to measure them (`measure`, `narrowest_wrap`): each
+    /// a text, size, width and font not measured before.
+    pub shapes_to_measure: u32,
+    pub seconds_shaping_to_measure: f32,
+    /// Texts shaped to draw them (`shape`, `shape_into`): one a text not
+    /// shaped before, and one more each time a letters' texture grew
+    /// while it was shaped.
+    pub shapes_to_draw: u32,
+    /// Time of those shapes, without the letters they drew.
+    pub seconds_shaping_to_draw: f32,
+    /// Letters drawn into a letters' texture: at first sight, and again
+    /// after the texture grew.
+    pub letters_drawn: u32,
+    pub seconds_drawing_letters: f32,
+    /// Times a letters' texture filled and doubled. Each drops every
+    /// kept shape and every letter's place: all are made again.
+    pub texture_grows: u32,
+}
+
 pub struct TextEngine {
     fs: FontSystem,
     cache: SwashCache,
@@ -306,6 +339,8 @@ pub struct TextEngine {
     /// font, box_w, halign), with the atlas generation they were shaped
     /// against.
     shape_cache: HashMap<u64, (u32, Vec<GlyphQuad>)>,
+    /// What `take_work` returns.
+    work: TextWork,
 }
 
 /// Stands where the text alignment goes in the cache key of a
@@ -380,7 +415,17 @@ impl TextEngine {
             generation: 0,
             measure_cache: HashMap::new(),
             shape_cache: HashMap::new(),
+            work: TextWork::default(),
         }
+    }
+
+    /// Returns what the engine's costly steps did since the last call,
+    /// and starts counting anew.
+    ///
+    /// Needed by a host that prints where a slow frame went: it takes
+    /// the work once a frame, after the frame's text was drawn.
+    pub fn take_work(&mut self) -> TextWork {
+        std::mem::take(&mut self.work)
     }
 
     /// Adds a face that `font=` or a draw can name by `key`; `bytes` is a
@@ -667,7 +712,10 @@ impl TextEngine {
         if let Some(v) = self.measure_cache.get(&key) {
             return *v;
         }
+        let started: Instant = Instant::now();
         let buffer = self.buffer(text, size, max_width, font);
+        self.work.shapes_to_measure += 1;
+        self.work.seconds_shaping_to_measure += started.elapsed().as_secs_f32();
         let mut w: f32 = 0.0;
         let mut lines: f32 = 0.0;
         for run in buffer.layout_runs() {
@@ -696,7 +744,10 @@ impl TextEngine {
         if let Some(v) = self.measure_cache.get(&key) {
             return v.0;
         }
+        let started: Instant = Instant::now();
         let buffer = self.buffer_wrapped(text, size, Some(0.0), font, Wrap::Word);
+        self.work.shapes_to_measure += 1;
+        self.work.seconds_shaping_to_measure += started.elapsed().as_secs_f32();
         let mut w: f32 = 0.0;
         for run in buffer.layout_runs() {
             // The ink of the line: from its first letter to its last, so
@@ -780,7 +831,10 @@ impl TextEngine {
     fn shape_pass(&mut self, text: &str, size: TextPx, max_width: Option<f32>, font: Option<&str>, box_w: f32, halign: u8, out: &mut Vec<GlyphQuad>) {
         let (x, y) = (0.0f32, 0.0f32);
         let (bold, _) = Self::style(font);
+        let started: Instant = Instant::now();
         let buffer = self.buffer(text, size, max_width, font);
+        self.work.shapes_to_draw += 1;
+        self.work.seconds_shaping_to_draw += started.elapsed().as_secs_f32();
         // Per glyph: its raster key, its face, and the bytes of its line it
         // covers (the cluster an emoji painter is asked for).
         let lines: Vec<&str> = buffer.lines.iter().map(|l| l.text()).collect();
@@ -837,6 +891,7 @@ impl TextEngine {
             return *s;
         }
         let generation = self.generation;
+        let started: Instant = Instant::now();
         let slot = self.rasterize(key, bold);
         let slot = if slot.is_none() && self.generation != generation {
             // An atlas grew under this glyph: pack it again into the new one.
@@ -844,6 +899,8 @@ impl TextEngine {
         } else {
             slot
         };
+        self.work.letters_drawn += 1;
+        self.work.seconds_drawing_letters += started.elapsed().as_secs_f32();
         if slot.is_some_and(|s| s.color) {
             self.color_slots.insert(key, slot);
         } else {
@@ -947,6 +1004,7 @@ impl TextEngine {
     }
 
     fn grow(&mut self) {
+        self.work.texture_grows += 1;
         self.shape_cache.clear();
         self.atlas_size *= 2;
         self.atlas = vec![0; (self.atlas_size * self.atlas_size) as usize];
@@ -960,6 +1018,7 @@ impl TextEngine {
     /// shape cache with them (`generation`, the same stale-uv law as the
     /// coverage atlas's `grow`).
     fn grow_color(&mut self) {
+        self.work.texture_grows += 1;
         self.shape_cache.clear();
         let side: u32 = self.color_shelf.size * 2;
         self.color_atlas = vec![0; (side * side * 4) as usize];
