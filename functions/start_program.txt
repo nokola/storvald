@@ -1,4 +1,4 @@
-# `start_program` at commit 3222203fafaaa1814e2ffac10f7107d21660e288: instructions by function, 1173901 in all.
+# `start_program` at commit 02068f68857d839f619de7862fae25252552f369: instructions by function, 1173901 in all.
 # A function's own code only: what it calls is counted at the called function.
 368525 __memcpy_avx_unaligned_erms
 117720 __memset_avx2_unaligned_erms
