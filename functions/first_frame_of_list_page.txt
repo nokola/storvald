@@ -1,9 +1,9 @@
-# `first_frame_of_list_page` at commit 3c33d57c893f96a79fd698256f5e52ca36d0cf3d: instructions by function, 21551969 in all.
+# `first_frame_of_list_page` at commit cf3dc5434b6c5189f0af76af7dc64c88e2ce02e9: instructions by function, 21704622 in all.
 # A function's own code only: what it calls is counted at the called function.
 1547203 <gogo_ui::page::Page>::kind_default::{closure#0}
 1280270 <gogo_ui::runtime::Resolved>::override_of_by_id
 1054173 <gogo_ui::page::Page>::prop_by_id
-989983 __memcpy_avx_unaligned_erms
+999814 __memcpy_avx_unaligned_erms
 897070 harfrust::hb::ot_shape::shape_internal
 874740 <gogo_ui::runtime::Resolved>::prop_by_id
 779318 <cosmic_text::attrs::AttrsList>::get_span
@@ -11,7 +11,7 @@
 662842 gogo_ui::draw::walk'2
 498538 harfrust::hb::ot_layout::apply_layout_table::<harfrust::hb::ot::GsubTable>
 462794 harfrust::hb::ot_layout::apply_forward
-384481 <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as core::hash::Hasher>::write
+418215 <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as core::hash::Hasher>::write
 354800 <harfrust::hb::ot::lookup::LookupInfo>::apply
 353902 <cosmic_text::font::fallback::FontFallbackIter as core::iter::traits::iterator::Iterator>::next
 295336 <cosmic_text::shape::Shaping>::run
@@ -21,7 +21,7 @@
 272468 <gogo_ui::runtime::Resolved>::written_from
 261264 <cosmic_text::shape::ShapeLine>::build
 236208 harfrust::hb::ot_layout::apply_layout_table::<harfrust::hb::ot::GposTable>
-222924 _int_malloc
+229619 _int_malloc
 210496 <char as unicode_script::UnicodeScript>::script
 200717 <read_fonts::table_ref::TableRef<read_fonts::tables::gpos::PairPosFormat2Marker> as harfrust::hb::ot_layout_gsubgpos::Apply>::apply_with_external_cache
 198468 <harfrust::hb::buffer::hb_buffer_t>::push_str
@@ -29,10 +29,10 @@
 170138 <cosmic_text::shape::ShapeLine>::layout_to_buffer
 169286 <hashbrown::map::HashMap<cosmic_text::attrs::FontMatchAttrs, alloc::sync::Arc<alloc::vec::Vec<cosmic_text::font::system::FontMatchKey>>, core::hash::BuildHasherDefault<rustc_hash::FxHasher>>>::rustc_entry
 169280 <unicode_bidi::BidiInfo>::new_with_data_source::<unicode_bidi::char_data::HardcodedBidiData>
-163118 free
+163112 free
 161028 unicode_bidi::char_data::bsearch_range_value_table
 152600 <alloc::raw_vec::RawVecInner>::finish_grow
-151155 malloc
+151131 malloc
 149370 <cosmic_text::shape::ShapeSpan>::build
 145425 <harfrust::hb::buffer::hb_buffer_t>::next_glyphs
 132026 harfrust::hb::ot::coverage_index_cached::<<read_fonts::table_ref::TableRef<read_fonts::tables::gpos::PairPosFormat2Marker> as harfrust::hb::ot_layout_gsubgpos::Apply>::apply_with_external_cache::{closure#0}>
@@ -55,11 +55,13 @@
 89728 <harfrust::hb::glyph_metrics::GlyphMetrics>::populate_advance_widths
 87014 <core::iter::adapters::map::Map<core::str::iter::CharIndices, unicode_linebreak::linebreaks::{closure#0}> as core::iter::traits::iterator::Iterator>::try_fold::<(), &mut <core::iter::adapters::scan::Scan<_, _, _> as core::iter::traits::iterator::Iterator>::try_fold::scan<(usize, u8), (u8, bool), (usize, bool, bool), (), core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>, unicode_linebreak::linebreaks::{closure#1}, core::iter::traits::iterator::Iterator::find_map::check<(usize, bool, bool), (usize, unicode_linebreak::BreakOpportunity), &mut unicode_linebreak::linebreaks::{closure#2}>::{closure#0}>::{closure#0}, core::ops::control_flow::ControlFlow<core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>>>
 86922 <gogo_ui::tree::Children as core::iter::traits::iterator::Iterator>::next
+86162 <gogo_text::TextEngine>::measure
 85160 <cosmic_text::font::system::FontSystem>::get_font_matches
 83880 <harfrust::hb::buffer::GlyphInfo>::init_unicode_props
 80362 harfrust::hb::ot::lookup::pair_pos1_cached
 77636 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::alloc
 76450 <gogo_ui::runtime::Resolved>::inherited
+72720 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&str>
 70839 <gogo_ui::layout::Lay>::stack_min'2
 70778 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&u64>
 70300 <smallvec::SmallVec<[u32; 8]>>::from_elem
@@ -76,19 +78,18 @@
 65350 <harfrust::hb::ot_layout_gsubgpos::skipping_iterator_t<for<'a> fn(&'a mut harfrust::hb::buffer::GlyphInfo, u16) -> bool>>::match_at
 63428 gogo_text::cache_key
 61880 <gogo_ui::layout::Lay>::stack_min
+59792 <gogo_text::TextEngine>::face
 59496 <smol_str::Repr>::new
 57825 <gogo_ui::layout::Lay>::content_min
 55904 <read_fonts::table_ref::TableRef<read_fonts::tables::cmap::Cmap6Marker> as read_fonts::read::FontRead>::read
 55752 <cosmic_text::buffer::Buffer>::set_text
 55717 <gogo_ui::layout::Lay>::place_children'2
-55280 <gogo_text::TextEngine>::measure
 55016 harfrust::hb::ot::lookup::pair_pos2_cached
-54540 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&str>
+53823 _int_free_merge_chunk
 52444 <cosmic_text::line_ending::LineIter as core::iter::traits::iterator::Iterator>::next
-52290 _int_free_merge_chunk
 51980 roundf
-48295 __memcmp_avx2_movbe
-44844 <gogo_text::TextEngine>::face
+51718 __memcmp_avx2_movbe
+48480 <cosmic_text::buffer::LayoutRunIter as core::iter::traits::iterator::Iterator>::next
 44844 <unicode_segmentation::grapheme::GraphemeCursor>::grapheme_category
 43711 <gogo_ui::tree::PlacedTree>::build
 43652 harfrust::hb::ot::coverage_index_cached::<<read_fonts::table_ref::TableRef<read_fonts::tables::gsub::LigatureSubstFormat1Marker> as harfrust::hb::ot_layout_gsubgpos::Apply>::apply_with_external_cache::{closure#0}>
@@ -103,8 +104,9 @@
 33712 <smol_str::SmolStr as core::hash::Hash>::hash::<rustc_hash::FxHasher>
 33694 gogo_ui::runtime::ladder_motion_and_seat
 33220 harfrust::hb::ot::gpos::apply_value
+32320 gogo_ui::font_style::split_style
 32240 <fontdb::Database>::face
-31636 _int_realloc
+32078 _int_realloc
 30704 <cosmic_text::buffer_line::BufferLine>::layout
 30084 harfrust::hb::ot::lookup::ligature_subst1
 30002 core::ptr::drop_glue::<cosmic_text::shape::ShapeLine>
@@ -116,16 +118,14 @@
 26714 <harfrust::hb::buffer::hb_buffer_t>::clear
 26108 <cosmic_text::font::fallback::FontFallbackIter>::check_missing
 25888 <gogo_ui::layout::Lay>::seat
-25856 gogo_ui::font_style::split_style
 25308 <alloc::collections::btree::map::BTreeMap<cosmic_text::font::fallback::MonospaceFallbackInfo, alloc::collections::btree::set_val::SetValZST> as core::ops::drop::Drop>::drop
 24852 <read_fonts::table_ref::TableRef<read_fonts::tables::gsub::LigatureSetMarker>>::ligatures
 24852 <read_fonts::table_ref::TableRef<read_fonts::tables::gsub::LigatureSubstFormat1Marker>>::ligature_sets
 24770 <gogo_ui::tree::Subtree as core::iter::traits::iterator::Iterator>::next
 24635 gogo_ui::runtime::resolve_into::{closure#46}
-24240 <cosmic_text::buffer::LayoutRunIter as core::iter::traits::iterator::Iterator>::next
 23902 harfrust::hb::ot_layout_gpos_table::GPOS::position_finish_offsets
 22952 <read_fonts::table_ref::TableRef<read_fonts::tables::gsub::LigatureMarker> as read_fonts::read::FontRead>::read
-22724 __libc_malloc2
+22793 __libc_malloc2
 22624 <gogo_text::EpxMeasure as gogo_ui::layout::TextMeasure>::measure
 22220 <cosmic_text::buffer_line::BufferLine>::reset_new::<alloc::string::String>
 22220 ceilf
@@ -135,17 +135,17 @@
 20928 <read_fonts::table_ref::TableRef<read_fonts::tables::gdef::LigGlyphMarker> as read_fonts::read::FontRead>::read
 20650 <gogo_ui::layout::Lay>::reveal
 20188 __rustc::__rust_dealloc
+19420 unlink_chunk.isra.0
 19190 <cosmic_text::shape::ShapeLine>::layout_line
-18588 _int_free_maybe_trim
+18986 _int_free_maybe_trim
 18278 <alloc::collections::btree::map::BTreeMap<cosmic_text::font::fallback::MonospaceFallbackInfo, alloc::collections::btree::set_val::SetValZST>>::pop_first
 18180 harfrust::hb::ot_layout_gsubgpos::match_lookahead::<<read_fonts::table_ref::TableRef<read_fonts::tables::layout::ChainedSequenceContextFormat3Marker> as harfrust::hb::ot_layout_gsubgpos::Apply>::apply::{closure#1}>
-17603 unlink_chunk.isra.0
 17372 <core::iter::adapters::rev::Rev<alloc::vec::drain::Drain<cosmic_text::layout::LayoutLine>> as core::iter::traits::iterator::Iterator>::fold::<(), core::iter::adapters::map::map_fold<cosmic_text::layout::LayoutLine, alloc::vec::Vec<cosmic_text::layout::LayoutGlyph>, (), <cosmic_text::shape::ShapeLine>::layout_to_buffer::{closure#1}, core::iter::traits::iterator::Iterator::for_each::call<alloc::vec::Vec<cosmic_text::layout::LayoutGlyph>, <alloc::vec::Vec<alloc::vec::Vec<cosmic_text::layout::LayoutGlyph>>>::extend_trusted<core::iter::adapters::map::Map<core::iter::adapters::rev::Rev<alloc::vec::drain::Drain<cosmic_text::layout::LayoutLine>>, <cosmic_text::shape::ShapeLine>::layout_to_buffer::{closure#1}>>::{closure#0}>::{closure#0}>::{closure#0}>
 17136 gogo_ui::layout::free_axis
 16872 <harfrust::hb::ot_shape_plan::ShapePlanKey>::instance
 16629 __rustc::__rust_alloc
-16512 <hashbrown::map::HashMap<u64, (f32, f32), std::hash::random::RandomState>>::insert
 16405 gogo_ui::runtime::own_word
+16189 <hashbrown::map::HashMap<u64, gogo_text::KeptMeasure, std::hash::random::RandomState>>::insert
 15704 <read_fonts::table_ref::TableRef<read_fonts::tables::gsub::LigatureMarker>>::component_glyph_ids
 15352 <alloc::vec::Vec<cosmic_text::shape::ShapeSpan> as core::ops::drop::Drop>::drop
 14751 <read_fonts::tables::layout::CoverageTable as read_fonts::read::FontRead>::read
@@ -153,8 +153,8 @@
 14175 gogo_ui::layout::star_split
 13838 gogo_ui::draw::own_opacity
 13736 <cosmic_text::buffer::Buffer>::new
+13328 _int_free_chunk
 13160 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::realloc
-13039 _int_free_chunk
 12928 <alloc::vec::Vec<cosmic_text::shape::ShapeSpan>>::extend_trusted::<core::iter::adapters::rev::Rev<alloc::vec::drain::Drain<cosmic_text::shape::ShapeSpan>>>
 12928 <gogo_ui::layout::Lay>::text_of
 12575 <gogo_ui::layout::Lay>::list_fixed_min
@@ -168,7 +168,7 @@
 10504 <alloc::vec::drain::Drain<cosmic_text::layout::LayoutLine> as core::ops::drop::Drop>::drop
 10100 <alloc::vec::drain::Drain<cosmic_text::shape::ShapeSpan> as core::ops::drop::Drop>::drop
 10100 <read_fonts::table_ref::TableRef<read_fonts::tables::layout::ChainedSequenceContextFormat3Marker> as harfrust::hb::ot_layout_gsubgpos::Apply>::apply
-10058 <hashbrown::raw::RawTable<(u64, (f32, f32))>>::reserve_rehash::<hashbrown::map::make_hasher<u64, (f32, f32), std::hash::random::RandomState>::{closure#0}>
+10076 <hashbrown::raw::RawTable<(u64, gogo_text::KeptMeasure)>>::reserve_rehash::<hashbrown::map::make_hasher<u64, gogo_text::KeptMeasure, std::hash::random::RandomState>::{closure#0}>
 9760 <gogo_ui::runtime::Resolved>::color_by_id
 9744 <alloc::raw_vec::RawVec<gogo_ui::layout::Memo>>::grow_one
 9139 <read_fonts::table_ref::TableRef<read_fonts::tables::gpos::PairPosFormat1Marker>>::pair_set_offsets
@@ -226,11 +226,11 @@
 1604 <gogo_ui::draw::DrawCache>::emit
 1505 gogo_ui::runtime::settle_seats
 1045 <alloc::vec::Vec<gogo_ui::page::NodeId> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<gogo_ui::page::NodeId, core::iter::adapters::map::Map<core::slice::iter::Iter<u32>, gogo_ui::runtime::resolve_into::{closure#9}>>>::from_iter
-1010 alloc_perturb
+1045 alloc_perturb
 741 <gogo_ui::layout::Lay>::place_stack
 728 <read_fonts::table_ref::TableRef<read_fonts::tables::cmap::Cmap4Marker>>::lookup_glyph_id
 720 <alloc::raw_vec::RawVec<char>>::grow_one
-458 0x0000000004d21680
+466 0x0000000004d21680
 404 <std::time::Instant>::now
 384 <alloc::raw_vec::RawVec<(f32, f32)>>::grow_one
 384 <alloc::raw_vec::RawVec<gogo_ui::anim::Motion>>::grow_one

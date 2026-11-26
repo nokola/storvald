@@ -1,10 +1,10 @@
-# `leave_and_come_back` at commit 3c33d57c893f96a79fd698256f5e52ca36d0cf3d: instructions by function, 118987 in all.
+# `leave_and_come_back` at commit cf3dc5434b6c5189f0af76af7dc64c88e2ce02e9: instructions by function, 118935 in all.
 # A function's own code only: what it calls is counted at the called function.
 22314 <gogo_ui::runtime::Runtime>::set_screen
-10843 _int_free_merge_chunk
+10814 _int_free_merge_chunk
 7802 free
 6478 <gogo_ui::runtime::Runtime>::tick
-5800 __memcmp_avx2_movbe
+5792 __memcmp_avx2_movbe
 4909 <gogo_ui::runtime::Runtime>::is_hook_playing_by_id
 4504 gogo_ui::runtime::resolve_into
 3761 <turbodot::program::Program<storvald_perf::AppState>>::frame
@@ -13,11 +13,11 @@
 3284 <gogo_ui::anim::Player>::apply_at
 2432 <turbodot::pages::PageUi>::frame
 2346 _int_free_chunk
-2326 __memcpy_avx_unaligned_erms
+2330 __memcpy_avx_unaligned_erms
 2033 gogo_ui::layout::follow_table::<[f32; 2]>
 1855 <gogo_ui::runtime::Runtime>::root_pose
 1779 <turbodot::program::Program<storvald_perf::AppState>>::frame_pages
-1778 unlink_chunk.isra.0
+1759 unlink_chunk.isra.0
 1682 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::dealloc
 1652 <gogo_ui::input::Input>::tick
 1322 core::ptr::drop_glue::<gogo_ui::layout::Tables>

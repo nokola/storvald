@@ -1,4 +1,4 @@
-# `text_change` at commit 3c33d57c893f96a79fd698256f5e52ca36d0cf3d: instructions by function, 68979 in all.
+# `text_change` at commit cf3dc5434b6c5189f0af76af7dc64c88e2ce02e9: instructions by function, 68989 in all.
 # A function's own code only: what it calls is counted at the called function.
 14178 gogo_ui::draw::walk'2
 8150 <gogo_ui::page::Page>::kind_default::{closure#0}
@@ -6,7 +6,7 @@
 5585 <gogo_ui::page::Page>::prop_by_id
 5535 <gogo_ui::tree::Children as core::iter::traits::iterator::Iterator>::next
 5267 <gogo_ui::runtime::Resolved>::prop_by_id
-2985 __memcpy_avx_unaligned_erms
+2987 __memcpy_avx_unaligned_erms
 2057 gogo_ui::runtime::resolve_into
 1758 gogo_ui::layout::follow_table::<gogo_ui::layout::Rect>
 1668 <gogo_ui::runtime::Runtime>::set_screen
@@ -22,7 +22,7 @@
 438 gogo_ui::runtime::settle_seats
 379 <gogo_ui::runtime::Resolved>::inherited
 360 _int_malloc
-337 __memcmp_avx2_movbe
+343 __memcmp_avx2_movbe
 314 gogo_text::cache_key
 283 <gogo_ui::layout::Lay>::size_at_flag
 258 <gogo_ui::runtime::Runtime>::tick
@@ -39,7 +39,7 @@
 162 <turbodot::program::Program<storvald_perf::AppState>>::frame
 160 <gogo_ui::runtime::Resolved>::color_by_id
 140 roundf
-134 <gogo_text::TextEngine>::measure
+136 <gogo_text::TextEngine>::measure
 126 gogo_ui::runtime::resolve_into::{closure#46}
 125 <gogo_ui::layout::LayoutCache>::run
 123 <turbodot::program::Program<storvald_perf::AppState>>::frame_pages

@@ -1,4 +1,4 @@
-# `draw_list_of_list_page` at commit 3c33d57c893f96a79fd698256f5e52ca36d0cf3d: instructions by function, 2702056 in all.
+# `draw_list_of_list_page` at commit cf3dc5434b6c5189f0af76af7dc64c88e2ce02e9: instructions by function, 2702037 in all.
 # A function's own code only: what it calls is counted at the called function.
 632676 gogo_ui::draw::walk'2
 557058 <gogo_ui::page::Page>::kind_default::{closure#0}
@@ -26,7 +26,7 @@
 280 <alloc::raw_vec::RawVecInner>::finish_grow
 168 <alloc::raw_vec::RawVec<gogo_ui::draw::Draw>>::grow_one
 162 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::realloc
-141 _int_malloc
+122 _int_malloc
 106 gogo_ui::draw::walk::{closure#2}
 54 _int_free_merge_chunk
 52 storvald_perf::counts::counted::<storvald_perf::scenarios::draw_list_of_list_page::{closure#0}>::{closure#0}

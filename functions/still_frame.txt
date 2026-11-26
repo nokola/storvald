@@ -1,4 +1,4 @@
-# `still_frame` at commit 3c33d57c893f96a79fd698256f5e52ca36d0cf3d: instructions by function, 3173 in all.
+# `still_frame` at commit cf3dc5434b6c5189f0af76af7dc64c88e2ce02e9: instructions by function, 3173 in all.
 # A function's own code only: what it calls is counted at the called function.
 1656 <gogo_ui::runtime::Runtime>::set_screen
 286 __memcmp_avx2_movbe
