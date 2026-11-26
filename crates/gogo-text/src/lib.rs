@@ -329,11 +329,14 @@ struct Shelf {
     /// Whether the lower half of the atlas is still to be packed, after
     /// the region being packed.
     is_lower_half_free: bool,
+    /// The side of the atlas this one grew from, which it holds in its
+    /// top left quarter; 0 for an atlas that has not grown.
+    quarter: u32,
 }
 
 impl Shelf {
     fn new(size: u32) -> Shelf {
-        Shelf { size, left: 0, bottom: size, x: 0, y: 0, h: 0, is_lower_half_free: false }
+        Shelf { size, left: 0, bottom: size, x: 0, y: 0, h: 0, is_lower_half_free: false, quarter: 0 }
     }
 
     /// The packer of this shelf's atlas grown to twice the side, with
@@ -343,7 +346,7 @@ impl Shelf {
     /// grows. What was left free of the top left quarter is not packed
     /// again: a strip under the last shelf, less than one slot tall.
     fn grown(self) -> Shelf {
-        Shelf { size: self.size * 2, left: self.size, bottom: self.size, x: self.size, y: 0, h: 0, is_lower_half_free: true }
+        Shelf { size: self.size * 2, left: self.size, bottom: self.size, x: self.size, y: 0, h: 0, is_lower_half_free: true, quarter: self.size }
     }
 
     /// The top-left of a `w` × `h` slot, or `None` when the atlas is full.
@@ -382,25 +385,34 @@ impl Shelf {
     /// the earlier slots of the shelf above included: once per shelf,
     /// not per letter.
     ///
-    /// Returns the part, and what the renderer has sent once it sent
-    /// it. Nothing when the version is the one sent. The whole atlas
-    /// when it is another than the one sent. The new slots' columns of
-    /// the shelf when that shelf is still being filled. Else the rows
-    /// from that shelf down to the last one used, across the region
-    /// being packed: the top right quarter of a grown atlas while it
-    /// fills, the whole width once the packer is in the lower half (the
-    /// region's left edge only ever moves to 0).
+    /// Returns a part, and what the renderer has sent once it sent it.
+    /// The caller asks again with that until the part is empty: slots
+    /// packed in two regions since `sent` are two parts.
+    /// - Nothing when the version is the one sent.
+    /// - The whole atlas when it is another than the one sent.
+    /// - The new slots' columns of the shelf when that shelf is still
+    ///   being filled.
+    /// - The rest of the top right quarter of a grown atlas, when the
+    ///   packer has gone on to the lower half since: the lower half's
+    ///   rows are the next part. One part for both would cover the left
+    ///   half of the quarter's rows, the atlas that was.
+    /// - Else the rows from that shelf down to the last one used, across
+    ///   the region being packed.
     fn part_to_send(&self, atlas_id: u64, version: u64, sent: AtlasSent) -> (AtlasPart, AtlasSent) {
-        let part: AtlasPart = if sent.version == version {
-            AtlasPart { columns: 0..0, rows: 0..0 }
+        let sent_all = AtlasSent { version, atlas_id, open_row: self.y, open_x: self.x };
+        if sent.version == version {
+            (AtlasPart { columns: 0..0, rows: 0..0 }, sent_all)
         } else if sent.atlas_id != atlas_id {
-            AtlasPart { columns: 0..self.size, rows: 0..self.size }
+            (AtlasPart { columns: 0..self.size, rows: 0..self.size }, sent_all)
         } else if sent.open_row == self.y {
-            AtlasPart { columns: sent.open_x..self.x.min(self.size), rows: self.y..self.y + self.h }
+            (AtlasPart { columns: sent.open_x..self.x.min(self.size), rows: self.y..self.y + self.h }, sent_all)
+        } else if self.left == 0 && sent.open_row < self.quarter {
+            // The version stays the one sent: the lower half is still to
+            // send, from its first row and its left edge.
+            (AtlasPart { columns: self.quarter..self.size, rows: sent.open_row..self.quarter }, AtlasSent { version: sent.version, atlas_id, open_row: self.quarter, open_x: 0 })
         } else {
-            AtlasPart { columns: self.left..self.size, rows: sent.open_row..self.y + self.h }
-        };
-        (part, AtlasSent { version, atlas_id, open_row: self.y, open_x: self.x })
+            (AtlasPart { columns: self.left..self.size, rows: sent.open_row..self.y + self.h }, sent_all)
+        }
     }
 }
 
@@ -798,10 +810,13 @@ impl TextEngine {
         self.shape_cache.clear();
     }
 
-    /// The part of the letters' atlas that a renderer at `sent` has not
-    /// sent to its GPU. A renderer calls it once a frame, after the
+    /// A part of the letters' atlas that a renderer at `sent` has not
+    /// sent to its GPU. A renderer calls it each frame, after the
     /// frame's texts are shaped, and writes that rectangle of `atlas`
-    /// into its texture: all the frame's new letters in one write.
+    /// into its texture; it asks again with the `AtlasSent` it got back
+    /// until the part is empty. All the frame's new letters are one
+    /// part, or two when they went on from the top right quarter of a
+    /// grown atlas to its lower half.
     ///
     /// Needed because a frame that draws one new letter otherwise sends
     /// the whole atlas: the largest part of such a frame's text time.

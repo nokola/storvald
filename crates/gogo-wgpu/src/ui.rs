@@ -821,9 +821,14 @@ impl UiRenderer {
     /// was lost), and a renderer may be handed another engine. Each of
     /// them must end up with the atlas its glyph quads point into.
     fn sync_atlas(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &TextEngine) {
-        let (part, sent): (AtlasPart, AtlasSent) = text.atlas_part_to_send(self.atlas_sent);
-        self.atlas_sent = sent;
-        if !part.is_empty() {
+        // Until the part is empty: letters packed in two regions of a
+        // grown atlas since the last send are two parts.
+        loop {
+            let (part, sent): (AtlasPart, AtlasSent) = text.atlas_part_to_send(self.atlas_sent);
+            self.atlas_sent = sent;
+            if part.is_empty() {
+                break;
+            }
             let (data, size) = text.atlas();
             // A texture made here holds nothing: it takes the whole atlas.
             let part: AtlasPart = if size != self.atlas_size {
@@ -840,9 +845,12 @@ impl UiRenderer {
                 self.atlas_texels_written += part.texel_count();
             }
         }
-        let (part, sent): (AtlasPart, AtlasSent) = text.color_atlas_part_to_send(self.color_atlas_sent);
-        self.color_atlas_sent = sent;
-        if !part.is_empty() {
+        loop {
+            let (part, sent): (AtlasPart, AtlasSent) = text.color_atlas_part_to_send(self.color_atlas_sent);
+            self.color_atlas_sent = sent;
+            if part.is_empty() {
+                break;
+            }
             let (data, size) = text.color_atlas();
             let part: AtlasPart = if size != self.color_atlas_size {
                 let (tex, entry) = self.make_texture(device, size, size, wgpu::TextureFormat::Rgba8Unorm);

@@ -511,14 +511,31 @@ impl AtlasCopy {
         }
     }
 
-    /// Takes the part of `e`'s letters' atlas this copy lacks.
+    /// Takes every part of `e`'s letters' atlas this copy lacks, asking
+    /// until the engine names an empty one, as a renderer does.
     ///
-    /// Returns the part the engine named.
+    /// Returns the parts the engine named, without the empty one.
+    fn take_all_letters(&mut self, e: &TextEngine) -> Vec<AtlasPart> {
+        let mut parts: Vec<AtlasPart> = Vec::new();
+        loop {
+            let (part, sent) = e.atlas_part_to_send(self.sent);
+            let (atlas, size) = e.atlas();
+            self.take(atlas, size, 1, &part, sent);
+            if part.is_empty() {
+                return parts;
+            }
+            assert!(parts.len() < 2, "more than two parts for one send: {parts:?} and {part:?}");
+            parts.push(part);
+        }
+    }
+
+    /// `take_all_letters` where one part is expected, or none.
+    ///
+    /// Returns that part; an empty one for none.
     fn take_letters(&mut self, e: &TextEngine) -> AtlasPart {
-        let (part, sent) = e.atlas_part_to_send(self.sent);
-        let (atlas, size) = e.atlas();
-        self.take(atlas, size, 1, &part, sent);
-        part
+        let mut parts: Vec<AtlasPart> = self.take_all_letters(e);
+        assert!(parts.len() <= 1, "one part was expected: {parts:?}");
+        parts.pop().unwrap_or(AtlasPart { columns: 0..0, rows: 0..0 })
     }
 
     /// `take_letters`, for the emoji atlas.
@@ -727,33 +744,66 @@ fn a_grow_of_the_letters_atlas_leaves_a_kept_emoji_alone() {
 }
 
 /// A copy stays whole while letters fill a grown atlas: its top right
-/// quarter first, where a send is that quarter's columns only, then its
-/// lower half. Red when a send in the quarter is whole rows (twice the
-/// bytes: the quarter's shelves are half as wide), or when the send
-/// that goes on to the lower half leaves out the atlas's left half.
+/// quarter first, then its lower half. No part sent after the grow
+/// covers a texel of the top left quarter, which holds the atlas that
+/// was: a part is in the top right quarter or in the lower half, and
+/// the letters that go on from the one to the other are two parts.
+/// Red when such a part is whole rows of the atlas: twice the bytes or
+/// more for the same letters.
 #[test]
 fn a_copy_stays_whole_while_letters_fill_a_grown_atlas() {
     let mut e = engine();
     let mut copy = AtlasCopy::default();
     let generation: u32 = e.generation;
-    let (mut sends_in_the_quarter, mut sends_in_the_lower_half): (u32, u32) = (0, 0);
+    let (mut parts_in_the_quarter, mut parts_in_the_lower_half, mut sends_of_two_parts): (u32, u32, u32) = (0, 0, 0);
     // The alphabet at 45 sizes fills the atlas of 1024 a side more than
     // twice: it grows once, and the letters go on into the lower half.
     for font_size in (20..=64).rev() {
         e.shape("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", px(font_size as f32), None, None, 0.0, 0.0, 100_000.0, 0);
-        let part: AtlasPart = copy.take_letters(&e);
-        assert!(copy.bytes == e.atlas().0, "the copy after the letters of {font_size} px, sent {part:?}");
-        if e.generation == generation || part == whole(2048) {
+        let parts: Vec<AtlasPart> = copy.take_all_letters(&e);
+        assert!(copy.bytes == e.atlas().0, "the copy after the letters of {font_size} px, sent {parts:?}");
+        if e.generation == generation || parts == [whole(2048)] {
             continue;
         }
-        if sends_in_the_lower_half == 0 && part.columns.start >= 1024 {
-            sends_in_the_quarter += 1;
-            assert!(part.rows.end <= 1024, "a send in the top right quarter: {part:?}");
-        } else {
-            sends_in_the_lower_half += 1;
-            assert!(part.rows.end > 1024, "a send after the top right quarter is full: {part:?}");
+        sends_of_two_parts += (parts.len() == 2) as u32;
+        for part in &parts {
+            if part.rows.end <= 1024 {
+                parts_in_the_quarter += 1;
+                assert!(part.columns.start >= 1024, "a part above the lower half is in the top right quarter: {part:?}");
+            } else {
+                parts_in_the_lower_half += 1;
+                assert!(part.rows.start >= 1024, "a part that reaches the lower half starts in it: {part:?}");
+            }
         }
     }
     assert_eq!(e.generation, generation + 1, "the precondition: one grow");
-    assert!(sends_in_the_quarter >= 2 && sends_in_the_lower_half >= 2, "the precondition: letters in both: {sends_in_the_quarter} sends in the quarter, {sends_in_the_lower_half} in the lower half");
+    assert!(parts_in_the_quarter >= 2 && parts_in_the_lower_half >= 2 && sends_of_two_parts == 1, "the precondition: letters in both, and one send that went on from the quarter to the lower half: {parts_in_the_quarter} parts in the quarter, {parts_in_the_lower_half} in the lower half, {sends_of_two_parts} sends of two parts");
+}
+
+/// Letters that fill the rest of a grown atlas's top right quarter and
+/// several shelves of its lower half between two sends are two parts,
+/// and the second is every one of those shelves. Red when the second
+/// part starts at the shelf being filled: the letters of the shelves
+/// above it are never sent, and the user sees empty boxes for them.
+#[test]
+fn one_send_takes_the_rest_of_the_quarter_and_several_shelves_of_the_lower_half() {
+    const ALPHABET: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    let mut e = engine();
+    let mut copy = AtlasCopy::default();
+    let generation: u32 = e.generation;
+    let mut sizes = (20..=64).rev().map(|size| px(size as f32));
+    while e.generation == generation {
+        e.shape(ALPHABET, sizes.next().expect("the atlas grows before the sizes run out"), None, None, 0.0, 0.0, 100_000.0, 0);
+        copy.take_all_letters(&e);
+    }
+    // Every size left, with no send between them.
+    for size in sizes {
+        e.shape(ALPHABET, size, None, None, 0.0, 0.0, 100_000.0, 0);
+    }
+    assert_eq!(e.generation, generation + 1, "the precondition: one grow");
+    let parts: Vec<AtlasPart> = copy.take_all_letters(&e);
+    assert_eq!(parts.len(), 2, "{parts:?}");
+    assert!(parts[0].columns == (1024..2048) && parts[0].rows.end == 1024, "the rest of the top right quarter: {:?}", parts[0]);
+    assert!(parts[1].columns == (0..2048) && parts[1].rows.start == 1024 && parts[1].rows.end > 1024 + 60, "then the lower half's rows, several shelves of them: {:?}", parts[1]);
+    assert!(copy.bytes == e.atlas().0, "the copy after both parts");
 }
