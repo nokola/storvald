@@ -1,6 +1,6 @@
-# `open_controls_page` at commit 02068f68857d839f619de7862fae25252552f369: instructions by function, 121459 in all.
+# `open_controls_page` at commit 9b0ea717d29f032d1a9c12fcf9dea2f547e3ea5a: instructions by function, 121499 in all.
 # A function's own code only: what it calls is counted at the called function.
-27019 __memcpy_avx_unaligned_erms
+27031 __memcpy_avx_unaligned_erms
 11820 <gogo_ui::tree::PlacedTree>::build
 8560 gogo_ui::runtime::ladder_node
 7840 <core::iter::adapters::map::Map<core::ops::range::Range<usize>, gogo_ui::runtime::static_nodes::{closure#0}> as core::iter::traits::iterator::Iterator>::fold::<(), core::iter::traits::iterator::Iterator::for_each::call<bool, <alloc::vec::Vec<bool>>::extend_trusted<core::iter::adapters::map::Map<core::ops::range::Range<usize>, gogo_ui::runtime::static_nodes::{closure#0}>>::{closure#0}>::{closure#0}>
@@ -23,7 +23,7 @@
 1245 <gogo_ui::page::Page>::from_static
 1140 gogo_ui::input::event_action
 868 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::alloc
-752 __memcmp_avx2_movbe
+780 __memcmp_avx2_movbe
 717 <gogo_ui::input::Input>::touch
 612 <alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global>
 599 <gogo_ui::anim::Player>::new
