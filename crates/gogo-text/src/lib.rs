@@ -378,15 +378,18 @@ impl Shelf {
     /// changed, and in that shelf nothing to the left of where it was
     /// filled to.
     ///
-    /// A send that starts a new shelf sends whole rows, the earlier
-    /// slots of the shelf above included: once per shelf, not per
-    /// letter.
+    /// A send that starts a new shelf sends the region's whole rows,
+    /// the earlier slots of the shelf above included: once per shelf,
+    /// not per letter.
     ///
     /// Returns the part, and what the renderer has sent once it sent
     /// it. Nothing when the version is the one sent. The whole atlas
     /// when it is another than the one sent. The new slots' columns of
-    /// the shelf when that shelf is still being filled. Else whole rows,
-    /// from that shelf down to the last one used.
+    /// the shelf when that shelf is still being filled. Else the rows
+    /// from that shelf down to the last one used, across the region
+    /// being packed: the top right quarter of a grown atlas while it
+    /// fills, the whole width once the packer is in the lower half (the
+    /// region's left edge only ever moves to 0).
     fn part_to_send(&self, atlas_id: u64, version: u64, sent: AtlasSent) -> (AtlasPart, AtlasSent) {
         let part: AtlasPart = if sent.version == version {
             AtlasPart { columns: 0..0, rows: 0..0 }
@@ -395,7 +398,7 @@ impl Shelf {
         } else if sent.open_row == self.y {
             AtlasPart { columns: sent.open_x..self.x.min(self.size), rows: self.y..self.y + self.h }
         } else {
-            AtlasPart { columns: 0..self.size, rows: sent.open_row..self.y + self.h }
+            AtlasPart { columns: self.left..self.size, rows: sent.open_row..self.y + self.h }
         };
         (part, AtlasSent { version, atlas_id, open_row: self.y, open_x: self.x })
     }

@@ -725,3 +725,35 @@ fn a_grow_of_the_letters_atlas_leaves_a_kept_emoji_alone() {
     assert_eq!(after[0].uv, before[0].uv.map(|coordinate| coordinate * 0.5), "the letter: a half");
     assert_eq!(after[1].uv, before[1].uv, "the emoji: as it was");
 }
+
+/// A copy stays whole while letters fill a grown atlas: its top right
+/// quarter first, where a send is that quarter's columns only, then its
+/// lower half. Red when a send in the quarter is whole rows (twice the
+/// bytes: the quarter's shelves are half as wide), or when the send
+/// that goes on to the lower half leaves out the atlas's left half.
+#[test]
+fn a_copy_stays_whole_while_letters_fill_a_grown_atlas() {
+    let mut e = engine();
+    let mut copy = AtlasCopy::default();
+    let generation: u32 = e.generation;
+    let (mut sends_in_the_quarter, mut sends_in_the_lower_half): (u32, u32) = (0, 0);
+    // The alphabet at 45 sizes fills the atlas of 1024 a side more than
+    // twice: it grows once, and the letters go on into the lower half.
+    for font_size in (20..=64).rev() {
+        e.shape("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", px(font_size as f32), None, None, 0.0, 0.0, 100_000.0, 0);
+        let part: AtlasPart = copy.take_letters(&e);
+        assert!(copy.bytes == e.atlas().0, "the copy after the letters of {font_size} px, sent {part:?}");
+        if e.generation == generation || part == whole(2048) {
+            continue;
+        }
+        if sends_in_the_lower_half == 0 && part.columns.start >= 1024 {
+            sends_in_the_quarter += 1;
+            assert!(part.rows.end <= 1024, "a send in the top right quarter: {part:?}");
+        } else {
+            sends_in_the_lower_half += 1;
+            assert!(part.rows.end > 1024, "a send after the top right quarter is full: {part:?}");
+        }
+    }
+    assert_eq!(e.generation, generation + 1, "the precondition: one grow");
+    assert!(sends_in_the_quarter >= 2 && sends_in_the_lower_half >= 2, "the precondition: letters in both: {sends_in_the_quarter} sends in the quarter, {sends_in_the_lower_half} in the lower half");
+}
