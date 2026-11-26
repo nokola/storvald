@@ -1,13 +1,13 @@
-# `open_list_page` at commit 8e8a986aa61212bc215eb21cbcb390df287f01e1: instructions by function, 1812974 in all.
+# `open_list_page` at commit 22dc0da1fd192f4e1a15c85390e33cf5408e406e: instructions by function, 1815117 in all.
 # A function's own code only: what it calls is counted at the called function.
 246849 _int_malloc
 159222 <gogo_ui::runtime::Watchers>::extend
-130271 __memcpy_avx_unaligned_erms
+130283 __memcpy_avx_unaligned_erms
 116221 <gogo_ui::runtime::Runtime>::set_prop_by_id
 106320 <gogo_ui::runtime::Runtime>::set_items::{closure#1}
 76650 <gogo_ui::runtime::Runtime>::grow_pool
 74074 <gogo_ui::page::Page>::clone_subtree
-71535 __memcmp_avx2_movbe
+73633 __memcmp_avx2_movbe
 62139 _int_free_merge_chunk
 49441 malloc
 43148 __libc_malloc2
@@ -137,12 +137,12 @@
 50 sbrk
 49 <turbodot::pages::PageUi>::covers
 48 __cxa_thread_atexit_impl
+44 <turbodot::pages::PageUi>::handler_name_id_with::<<turbodot::page::HandlerTable<storvald_perf::ui::first_page::Handler>>::handler_of::{closure#0}>
 40 <alloc::vec::Vec<gogo_ui::page::NodeId> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<gogo_ui::page::NodeId, core::iter::adapters::filter::Filter<core::iter::adapters::map::Map<core::ops::range::Range<u32>, <gogo_ui::page::NodeId>::new>, gogo_ui::runtime::new_pool::{closure#0}>>>::from_iter
 38 <gogo_ui::runtime::Resolved>::hidden_by_id
 38 pthread_mutex_lock@@GLIBC_2.2.5
 37 <turbodot::page::Nav<storvald_perf::AppState>>::go::<storvald_perf::pages::ListPage, turbodot::page::AsPage>
 37 _dl_find_dso_for_object
-36 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::handle
 36 <turbodot::program::Program<storvald_perf::AppState>>::order_top_with_placed
 35 <turbodot::pages::PagePlatform>::apply
 34 <gogo_ui::input::EventList as core::ops::drop::Drop>::drop
@@ -153,6 +153,7 @@
 27 calloc
 26 <alloc::vec::Vec<gogo_ui::page::NodeId> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<gogo_ui::page::NodeId, core::iter::adapters::filter::Filter<core::iter::adapters::map::Map<core::ops::range::Range<usize>, <gogo_ui::page::NodeId>::from_index>, <gogo_ui::runtime::Runtime>::new::{closure#5}>>>::from_iter
 25 <alloc::vec::Vec<(gogo_ui::page::NodeId, f32)> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<(gogo_ui::page::NodeId, f32), core::iter::adapters::map::Map<core::iter::adapters::filter::Filter<core::slice::iter::Iter<gogo_ui::page::AutoDriver>, <gogo_ui::runtime::Runtime>::new::{closure#1}>, <gogo_ui::runtime::Runtime>::new::{closure#2}>>>::from_iter
+25 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::handle
 24 <alloc::raw_vec::RawVec<(f32, f32)>>::grow_one
 24 <alloc::raw_vec::RawVec<(u64, turbodot::pages::PageId)>>::grow_one
 24 <alloc::raw_vec::RawVec<core::option::Option<turbodot::pages::PageUi>>>::grow_one

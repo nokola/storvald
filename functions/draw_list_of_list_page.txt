@@ -1,4 +1,4 @@
-# `draw_list_of_list_page` at commit 8e8a986aa61212bc215eb21cbcb390df287f01e1: instructions by function, 2702056 in all.
+# `draw_list_of_list_page` at commit 22dc0da1fd192f4e1a15c85390e33cf5408e406e: instructions by function, 2702056 in all.
 # A function's own code only: what it calls is counted at the called function.
 632676 gogo_ui::draw::walk'2
 557058 <gogo_ui::page::Page>::kind_default::{closure#0}

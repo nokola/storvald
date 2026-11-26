@@ -1,4 +1,4 @@
-# `slider_drag_step` at commit 8e8a986aa61212bc215eb21cbcb390df287f01e1: instructions by function, 62929 in all.
+# `slider_drag_step` at commit 22dc0da1fd192f4e1a15c85390e33cf5408e406e: instructions by function, 62954 in all.
 # A function's own code only: what it calls is counted at the called function.
 14228 gogo_ui::draw::walk'2
 5988 <gogo_ui::page::Page>::kind_default::{closure#0}
@@ -17,7 +17,7 @@
 680 gogo_ui::runtime::deref
 617 gogo_ui::draw::clips
 605 gogo_ui::draw::walk
-542 __memcmp_avx2_movbe
+535 __memcmp_avx2_movbe
 529 <gogo_ui::input::Input>::touch
 438 gogo_ui::runtime::settle_seats
 342 <gogo_ui::runtime::Runtime>::tick
@@ -73,8 +73,8 @@
 50 <turbodot::program::Program<storvald_perf::AppState>>::place_code_pictures
 50 gogo_ui::draw::walk::{closure#2}
 44 <gogo_ui::frame::KeptFrame>::frame_retained
+44 <turbodot::pages::PageUi>::handler_name_id_with::<<turbodot::page::HandlerTable<storvald_perf::ui::first_page::Handler>>::handler_of::{closure#0}>
 42 gogo_ui::layout::diff_pairs::<bool>
-41 <turbodot::page::Plain<storvald_perf::pages::ControlsPage, storvald_perf::ui::controls_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::handle
 40 <alloc::vec::Vec<gogo_ui::anim::Player> as core::ops::drop::Drop>::drop
 40 <gogo_ui::runtime::Resolved>::slider_value
 39 storvald_perf::counts::counted::<storvald_perf::scenarios::slider_drag_step::{closure#1}>::{closure#0}
@@ -84,6 +84,7 @@
 31 core::ptr::drop_glue::<gogo_ui::tree::PlacedTree>
 31 gogo_ui::runtime::push_tail
 30 gogo_ui::input::value_of
+29 <turbodot::page::Plain<storvald_perf::pages::ControlsPage, storvald_perf::ui::controls_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::handle
 24 gogo_ui::layout::sym_diff_nodes
 22 <turbodot::pages::PageStack>::get
 21 <gogo_ui::runtime::Runtime>::follow_value_with
