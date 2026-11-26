@@ -1,9 +1,9 @@
-# `first_frame_of_list_page` at commit 22dc0da1fd192f4e1a15c85390e33cf5408e406e: instructions by function, 21525036 in all.
+# `first_frame_of_list_page` at commit d196abf48a6a4ae44a6a1aac012294f03c7733d5: instructions by function, 21551750 in all.
 # A function's own code only: what it calls is counted at the called function.
 1547203 <gogo_ui::page::Page>::kind_default::{closure#0}
 1280270 <gogo_ui::runtime::Resolved>::override_of_by_id
 1054173 <gogo_ui::page::Page>::prop_by_id
-990013 __memcpy_avx_unaligned_erms
+989983 __memcpy_avx_unaligned_erms
 897070 harfrust::hb::ot_shape::shape_internal
 874740 <gogo_ui::runtime::Resolved>::prop_by_id
 779318 <cosmic_text::attrs::AttrsList>::get_span
@@ -82,11 +82,11 @@
 55752 <cosmic_text::buffer::Buffer>::set_text
 55717 <gogo_ui::layout::Lay>::place_children'2
 55016 harfrust::hb::ot::lookup::pair_pos2_cached
+54995 <gogo_text::TextEngine>::measure
 54540 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&str>
 52444 <cosmic_text::line_ending::LineIter as core::iter::traits::iterator::Iterator>::next
 52290 _int_free_merge_chunk
 51980 roundf
-51955 <gogo_text::TextEngine>::measure
 48296 __memcmp_avx2_movbe
 44844 <gogo_text::TextEngine>::face
 44844 <unicode_segmentation::grapheme::GraphemeCursor>::grapheme_category
@@ -144,8 +144,8 @@
 17136 gogo_ui::layout::free_axis
 16872 <harfrust::hb::ot_shape_plan::ShapePlanKey>::instance
 16629 __rustc::__rust_alloc
-16507 <hashbrown::map::HashMap<u64, (f32, f32), std::hash::random::RandomState>>::insert
 16405 gogo_ui::runtime::own_word
+16375 <hashbrown::map::HashMap<u64, (f32, f32), std::hash::random::RandomState>>::insert
 15704 <read_fonts::table_ref::TableRef<read_fonts::tables::gsub::LigatureMarker>>::component_glyph_ids
 15352 <alloc::vec::Vec<cosmic_text::shape::ShapeSpan> as core::ops::drop::Drop>::drop
 14751 <read_fonts::tables::layout::CoverageTable as read_fonts::read::FontRead>::read
@@ -178,22 +178,26 @@
 8360 <read_fonts::table_ref::TableRef<read_fonts::tables::gpos::PairPosFormat2Marker>>::coverage
 8306 <alloc::vec::Vec<gogo_ui::layout::Rect>>::extend_trusted::<core::iter::adapters::map::Map<core::iter::adapters::map::Map<core::ops::range::Range<usize>, <gogo_ui::page::NodeId>::from_index>, <gogo_ui::layout::Lay>::show_all::{closure#0}>>
 7714 <gogo_ui::layout::Lay>::aspect_ratio
+7272 <std::sys::pal::unix::time::Timespec>::sub_timespec
 7272 gogo_ui::draw::walk::{closure#3}
 7248 <alloc::raw_vec::RawVec<cosmic_text::shape::ShapeWord>>::grow_one
 7095 gogo_ui::draw::push_shown
 6902 <gogo_ui::layout::Lay>::aspect_drive
 6786 <read_fonts::table_ref::TableRef<read_fonts::tables::layout::CoverageFormat1Marker>>::glyph_array
+6464 <std::sys::pal::unix::time::Timespec>::now
 5656 floorf
 5628 gogo_ui::runtime::push_tail
 5543 __rustc::__rust_no_alloc_shim_is_unstable_v2
 5454 <core::iter::adapters::rev::Rev<alloc::vec::drain::Drain<cosmic_text::shape::ShapeWord>> as core::iter::traits::iterator::Iterator>::fold::<(), core::iter::traits::iterator::Iterator::for_each::call<cosmic_text::shape::ShapeWord, <alloc::vec::Vec<cosmic_text::shape::ShapeWord>>::extend_trusted<core::iter::adapters::rev::Rev<alloc::vec::drain::Drain<cosmic_text::shape::ShapeWord>>>::{closure#0}>::{closure#0}>
 5252 <alloc::vec::Vec<cosmic_text::shape::ShapeWord>>::extend_trusted::<core::iter::adapters::rev::Rev<alloc::vec::drain::Drain<cosmic_text::shape::ShapeWord>>>
+5252 <std::time::Instant>::elapsed
 4848 <alloc::raw_vec::RawVec<cosmic_text::buffer_line::BufferLine>>::grow_one
 4848 <alloc::raw_vec::RawVec<unicode_bidi::ParagraphInfo>>::grow_one
 4848 <alloc::raw_vec::RawVec<unicode_bidi::ParagraphInfoFlags>>::grow_one
 4779 <gogo_ui::runtime::Runtime>::state_active_by_id
 4642 <gogo_ui::layout::Lay>::show_all
 4444 <gogo_ui::runtime::Resolved>::font
+4444 clock_gettime@@GLIBC_2.17
 4242 <read_fonts::table_ref::TableRef<read_fonts::tables::layout::ChainedSequenceContextFormat3Marker> as read_fonts::read::FontRead>::read
 3976 <unicode_bidi::char_data::HardcodedBidiData as unicode_bidi::data_source::BidiDataSource>::bidi_class
 3976 compiler_builtins::math::libm_math::arch::x86::fma::fmaf_with_fma
@@ -227,6 +231,7 @@
 728 <read_fonts::table_ref::TableRef<read_fonts::tables::cmap::Cmap4Marker>>::lookup_glyph_id
 720 <alloc::raw_vec::RawVec<char>>::grow_one
 458 0x0000000004d21680
+404 <std::time::Instant>::now
 384 <alloc::raw_vec::RawVec<(f32, f32)>>::grow_one
 384 <alloc::raw_vec::RawVec<gogo_ui::anim::Motion>>::grow_one
 384 <alloc::raw_vec::RawVec<gogo_ui::page::Placement>>::grow_one

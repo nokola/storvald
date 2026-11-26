@@ -1,6 +1,6 @@
-# `start_program` at commit 22dc0da1fd192f4e1a15c85390e33cf5408e406e: instructions by function, 1173441 in all.
+# `start_program` at commit d196abf48a6a4ae44a6a1aac012294f03c7733d5: instructions by function, 1173866 in all.
 # A function's own code only: what it calls is counted at the called function.
-368617 __memcpy_avx_unaligned_erms
+368499 __memcpy_avx_unaligned_erms
 117720 __memset_avx2_unaligned_erms
 32164 _int_malloc
 25534 harfrust::hb::ot_shape::shape_internal
@@ -135,12 +135,12 @@
 840 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::dealloc
 816 <alloc::string::String>::from_utf16
 801 <read_fonts::tables::layout::ClassDef as read_fonts::read::FontRead>::read
+788 <gogo_text::TextEngine>::measure
 786 <gogo_ui::runtime::Runtime>::set_screen
 784 <smol_str::SmolStr as core::hash::Hash>::hash::<rustc_hash::FxHasher>
 760 <read_fonts::table_ref::TableRef<read_fonts::tables::gpos::PairPosFormat1Marker>>::coverage
 741 <read_fonts::table_ref::TableRef<read_fonts::tables::layout::CoverageFormat1Marker>>::glyph_array
 724 <harfrust::hb::ot_map::hb_ot_map_builder_t>::new
-720 <gogo_text::TextEngine>::measure
 697 <read_fonts::table_ref::TableRef<read_fonts::tables::layout::ClassDefFormat2Marker>>::class_range_records
 690 <fontdb::Database>::face
 680 <read_fonts::table_ref::TableRef<read_fonts::tables::gpos::PairPosFormat2Marker>>::coverage
@@ -182,8 +182,8 @@
 468 __rustc::__rust_dealloc
 465 fontdb::name_to_unicode
 456 core::slice::sort::shared::smallsort::insert_tail::<harfrust::hb::ot_map::lookup_map_t, <harfrust::hb::ot_map::lookup_map_t as core::cmp::PartialOrd>::lt>
+450 <gogo_text::TextEngine>::new
 448 <gogo_ui::layout::Lay>::bare_image_in_column
-447 <gogo_text::TextEngine>::new
 440 <cosmic_text::buffer_line::BufferLine>::reset_new::<alloc::string::String>
 440 ceilf
 437 <gogo_ui::runtime::Watchers>::extend
@@ -236,6 +236,7 @@
 221 <read_fonts::table_ref::TableRef<read_fonts::tables::layout::ClassDefFormat1Marker>>::class_value_array
 220 <read_fonts::table_ref::TableRef<read_fonts::tables::gpos::PairPosFormat2Marker>>::value_format1
 220 <read_fonts::table_ref::TableRef<read_fonts::tables::gpos::PairPosFormat2Marker>>::value_format2
+216 <std::sys::pal::unix::time::Timespec>::sub_timespec
 216 core::ptr::drop_glue::<cosmic_text::cached::Cached<cosmic_text::shape::ShapeLine>>
 215 <read_fonts::table_ref::TableRef<read_fonts::tables::gpos::PairPosFormat1Marker>>::value_format1
 215 <read_fonts::table_ref::TableRef<read_fonts::tables::gpos::PairPosFormat1Marker>>::value_format2
@@ -250,6 +251,7 @@
 198 <harfrust::hb::ot::OtTables>::new
 192 <alloc::raw_vec::RawVec<harfrust::hb::ot_map::StageMap>>::grow_one
 192 <alloc::raw_vec::RawVec<harfrust::hb::ot_map::feature_info_t>>::grow_one
+192 <std::sys::pal::unix::time::Timespec>::now
 190 <harfrust::hb::ot_shape::hb_ot_shape_planner_t>::new
 189 <read_fonts::table_ref::TableRef<read_fonts::tables::layout::ChainedSequenceContextFormat3Marker>>::input_coverages
 189 gogo_ui::layout::star_split
@@ -280,6 +282,7 @@
 158 <read_fonts::table_ref::TableRef<read_fonts::tables::layout::ScriptListMarker>>::select
 156 <alloc::vec::Vec<cosmic_text::font::system::FontMatchKey> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<cosmic_text::font::system::FontMatchKey, core::iter::adapters::map::Map<core::iter::adapters::map::Map<slotmap::basic::Iter<fontdb::InnerId, fontdb::FaceInfo>, <fontdb::Database>::faces::{closure#0}>, <cosmic_text::font::system::FontSystem>::get_font_matches::{closure#0}::{closure#0}>>>::from_iter
 156 <read_fonts::table_ref::TableRef<read_fonts::tables::cmap::Cmap4Marker>>::seg_count_x2
+156 <std::time::Instant>::elapsed
 156 gogo_ui::draw::walk::{closure#2}
 148 <harfrust::hb::ot::LayoutTable>::langsys_index
 147 <cosmic_text::font::system::FontSystem>::new_with_locale_and_db_and_fallback::<cosmic_text::font::fallback::platform::PlatformFallback>
@@ -292,6 +295,7 @@
 139 <read_fonts::table_ref::TableRef<read_fonts::tables::layout::ScriptMarker>>::lang_sys_index_for_tag
 136 fontdb::find_best_match
 133 <read_fonts::offset_array::ArrayOfOffsets<read_fonts::tables::layout::CoverageTable>>::get
+132 clock_gettime@@GLIBC_2.17
 129 <gogo_ui::runtime::Runtime>::tick
 128 <gogo_ui::layout::Lay>::text_of
 125 <fontdb::Database>::load_font_source::{closure#0}
@@ -346,7 +350,6 @@
 75 <read_fonts::tables::cmap::EncodingRecord>::subtable
 72 <alloc::raw_vec::RawVec<(f32, f32)>>::grow_one
 72 <harfrust::hb::ot_shape_plan::hb_ot_shape_plan_t>::new
-72 <std::sys::pal::unix::time::Timespec>::sub_timespec
 72 core::ptr::drop_glue::<gogo_ui::runtime::Resolved>
 72 harfrust::hb::ot_layout_gsubgpos::match_input::<<read_fonts::table_ref::TableRef<read_fonts::tables::layout::SequenceContextFormat3Marker> as harfrust::hb::ot_layout_gsubgpos::Apply>::apply::{closure#0}>
 70 <harfrust::hb::aat::AatCache>::new
@@ -356,7 +359,6 @@
 66 <alloc::string::String as core::clone::Clone>::clone
 64 <gogo_ui::runtime::Runtime>::state_active_by_id
 64 <read_fonts::table_ref::TableRef<read_fonts::tables::gdef::GdefMarker> as read_fonts::read::FontRead>::read
-64 <std::sys::pal::unix::time::Timespec>::now
 63 <slotmap::basic::SlotMap<fontdb::InnerId, fontdb::FaceInfo>>::try_insert_with_key::<<slotmap::basic::SlotMap<fontdb::InnerId, fontdb::FaceInfo>>::insert_with_key<<fontdb::Database>::push_face_info::{closure#0}>::{closure#0}, slotmap::util::Never>
 63 <turbodot::pages::ImageTable>::new
 62 gogo_ui::runtime::compose_anim
@@ -373,7 +375,6 @@
 55 <gogo_ui::runtime::Resolved>::font_size
 54 <read_fonts::table_ref::TableRef<read_fonts::tables::gsub::GsubMarker>>::lookup_list_offset
 53 harfrust::hb::ot_shaper::hb_ot_shape_complex_categorize
-52 <std::time::Instant>::elapsed
 49 <turbodot::pages::PageStack>::add
 48 <alloc::raw_vec::RawVec<bool>>::grow_one
 48 <alloc::raw_vec::RawVec<gogo_ui::draw::Draw>>::grow_one
@@ -384,7 +385,6 @@
 46 <read_fonts::table_ref::TableRef<read_fonts::tables::layout::ChainedSequenceContextFormat3Marker>>::lookahead_coverages
 46 gogo_text::metrics_of
 44 <alloc::vec::Vec<fontdb::ID> as alloc::vec::spec_from_iter::SpecFromIter<fontdb::ID, core::iter::adapters::map::Map<core::iter::adapters::filter::Filter<core::iter::adapters::map::Map<slotmap::basic::Iter<fontdb::InnerId, fontdb::FaceInfo>, <fontdb::Database>::faces::{closure#0}>, <cosmic_text::font::system::FontSystem>::new_with_locale_and_db_and_fallback<cosmic_text::font::fallback::platform::PlatformFallback>::{closure#0}>, <cosmic_text::font::system::FontSystem>::new_with_locale_and_db_and_fallback<cosmic_text::font::fallback::platform::PlatformFallback>::{closure#1}>>>::from_iter
-44 clock_gettime@@GLIBC_2.17
 42 <harfrust::hb::face::ShaperData>::new
 42 getrandom_vdso
 42 harfrust::hb::ot::lookup::chained_context3
@@ -469,6 +469,7 @@
 12 <read_fonts::table_ref::TableRef<read_fonts::tables::head::HeadMarker>>::units_per_em
 12 <read_fonts::table_ref::TableRef<read_fonts::tables::os2::Os2Marker>>::fs_selection
 12 <read_fonts::tables::loca::Loca>::read
+12 <std::time::Instant>::now
 11 <read_fonts::table_ref::TableRef<read_fonts::tables::os2::Os2Marker>>::s_typo_ascender
 11 <read_fonts::table_ref::TableRef<read_fonts::tables::os2::Os2Marker>>::s_typo_descender
 10 <alloc::vec::Vec<gogo_ui::layout::StackLists> as core::ops::drop::Drop>::drop
@@ -499,7 +500,6 @@
 5 <read_fonts::table_ref::TableRef<read_fonts::tables::glyf::GlyfMarker> as read_fonts::read::FontRead>::read
 5 core::core_arch::x86::xsave::_xgetbv
 4 <skrifa::variation::AxisCollection>::len
-4 <std::time::Instant>::now
 4 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::left
 4 <turbodot::page::Plain<storvald_perf::pages::ListPage, storvald_perf::ui::list_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::kind
 3 <<turbodot::program::Program<storvald_perf::AppState>>::open::{closure#5} as core::ops::function::FnOnce<(&mut dyn turbodot::page::PageObject<storvald_perf::AppState>, &mut turbodot::page::Host<storvald_perf::AppState>)>>::call_once
