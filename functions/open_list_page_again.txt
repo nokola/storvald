@@ -1,4 +1,4 @@
-# `open_list_page_again` at commit efffb1ff5d7db64370f7c8a0850e6532429bab1e: instructions by function, 1826878 in all.
+# `open_list_page_again` at commit 8e8a986aa61212bc215eb21cbcb390df287f01e1: instructions by function, 1825993 in all.
 # A function's own code only: what it calls is counted at the called function.
 255704 _int_malloc
 159222 <gogo_ui::runtime::Watchers>::extend
@@ -7,7 +7,7 @@
 106320 <gogo_ui::runtime::Runtime>::set_items::{closure#1}
 76650 <gogo_ui::runtime::Runtime>::grow_pool
 74074 <gogo_ui::page::Page>::clone_subtree
-71661 __memcmp_avx2_movbe
+70770 __memcmp_avx2_movbe
 63607 _int_free_merge_chunk
 49897 malloc
 42250 free
@@ -98,8 +98,8 @@
 163 <gogo_ui::runtime::Runtime>::play_action
 161 <turbodot::pages::PageStack>::pointer_to
 144 <alloc::raw_vec::RawVec<gogo_ui::lexer::Token>>::grow_one
+134 <turbodot::program::Program<storvald_perf::AppState>>::make
 133 <gogo_ui::runtime::Runtime>::pool_of
-132 <turbodot::program::Program<storvald_perf::AppState>>::make
 131 core::slice::sort::unstable::ipnsort::<u32, <[u32]>::sort_unstable_by<<gogo_ui::runtime::Runtime>::set_items::{closure#4}>::{closure#0}>
 125 <alloc::raw_vec::RawVec<u8>>::grow_one
 125 <turbodot::program::Program<storvald_perf::AppState>>::pointer
@@ -115,7 +115,7 @@
 100 <turbodot::pages::PageStack>::order_top
 99 <alloc::vec::Vec<(gogo_ui::page::NodeId, gogo_ui::page::PropKey, bool)> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<(gogo_ui::page::NodeId, gogo_ui::page::PropKey, bool), core::iter::adapters::filter_map::FilterMap<core::iter::adapters::filter::Filter<core::slice::iter::Iter<gogo_ui::page::AnimTrack>, <gogo_ui::runtime::Runtime>::play_id::{closure#1}>, <gogo_ui::runtime::Runtime>::play_id::{closure#2}>>>::from_iter
 94 <gogo_ui::anim::Channel>::parse
-91 <turbodot::program::Program<storvald_perf::AppState>>::hand_events
+93 <turbodot::program::Program<storvald_perf::AppState>>::hand_events
 79 <gogo_ui::runtime::Runtime>::show_empties
 79 <gogo_ui::runtime::Runtime>::state_active_by_id
 72 <alloc::raw_vec::RawVec<(u32, usize, usize)>>::grow_one
@@ -126,9 +126,9 @@
 63 <gogo_ui::runtime::Runtime>::disabled::<gogo_ui::page::NodeId>
 63 <turbodot::program::Program<storvald_perf::AppState>>::page_that_takes
 62 <alloc::vec::Vec<gogo_ui::runtime::Item> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<gogo_ui::runtime::Item, core::iter::adapters::map::Map<core::ops::range::Range<usize>, <storvald_perf::pages::ListPage as turbodot::page::Page<storvald_perf::AppState>>::show::{closure#0}>>>::from_iter
+62 <turbodot::program::Program<storvald_perf::AppState>>::call_with_placed
 62 core::ptr::drop_glue::<gogo_ui::tree::PlacedTree>
 62 gogo_ui::runtime::compose_anim
-60 <turbodot::program::Program<storvald_perf::AppState>>::call_with_placed
 57 <turbodot::program::Program<storvald_perf::AppState>>::tap::<gogo_ui::page::NodeId>
 55 <turbodot::pages::PageStack>::get
 55 gogo_ui::input::scroll_ancestor

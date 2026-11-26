@@ -1,4 +1,4 @@
-# `first_frame_of_controls_page` at commit efffb1ff5d7db64370f7c8a0850e6532429bab1e: instructions by function, 4896925 in all.
+# `first_frame_of_controls_page` at commit 8e8a986aa61212bc215eb21cbcb390df287f01e1: instructions by function, 4896896 in all.
 # A function's own code only: what it calls is counted at the called function.
 403474 <gogo_ui::page::Page>::kind_default::{closure#0}
 315542 <gogo_ui::page::Page>::prop_by_id
@@ -65,7 +65,7 @@
 16376 <harfrust::hb::glyph_metrics::GlyphMetrics>::populate_advance_widths
 16366 <core::iter::adapters::map::Map<core::str::iter::CharIndices, unicode_linebreak::linebreaks::{closure#0}> as core::iter::traits::iterator::Iterator>::try_fold::<(), &mut <core::iter::adapters::scan::Scan<_, _, _> as core::iter::traits::iterator::Iterator>::try_fold::scan<(usize, u8), (u8, bool), (usize, bool, bool), (), core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>, unicode_linebreak::linebreaks::{closure#1}, core::iter::traits::iterator::Iterator::find_map::check<(usize, bool, bool), (usize, unicode_linebreak::BreakOpportunity), &mut unicode_linebreak::linebreaks::{closure#2}>::{closure#0}>::{closure#0}, core::ops::control_flow::ControlFlow<core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>>>
 16188 <harfrust::hb::buffer::hb_buffer_t>::guess_segment_properties
-15890 <gogo_text::TextEngine>::measure
+15860 <gogo_text::TextEngine>::measure
 15778 harfrust::hb::ot::lookup::pair_pos1_cached
 15264 <alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global>
 15221 <gogo_ui::runtime::Resolved>::gone_by_id
@@ -135,7 +135,7 @@
 5276 gogo_ui::draw::push_shown
 5060 <hashbrown::raw::RawTable<(u64, (f32, f32))>>::reserve_rehash::<hashbrown::map::make_hasher<u64, (f32, f32), std::hash::random::RandomState>::{closure#0}>
 5052 <core::iter::adapters::chain::Chain<core::iter::adapters::map::Map<core::str::iter::CharIndices, unicode_linebreak::linebreaks::{closure#0}>, core::iter::sources::once::Once<(usize, u8)>> as core::iter::traits::iterator::Iterator>::try_fold::<(), <core::iter::adapters::scan::Scan<_, _, _> as core::iter::traits::iterator::Iterator>::try_fold::scan<(usize, u8), (u8, bool), (usize, bool, bool), (), core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>, unicode_linebreak::linebreaks::{closure#1}, core::iter::traits::iterator::Iterator::find_map::check<(usize, bool, bool), (usize, unicode_linebreak::BreakOpportunity), &mut unicode_linebreak::linebreaks::{closure#2}>::{closure#0}>::{closure#0}, core::ops::control_flow::ControlFlow<core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>>>
-5046 <hashbrown::map::HashMap<u64, (f32, f32), std::hash::random::RandomState>>::insert
+5037 <hashbrown::map::HashMap<u64, (f32, f32), std::hash::random::RandomState>>::insert
 4978 <read_fonts::table_ref::TableRef<read_fonts::tables::gsub::LigatureMarker> as read_fonts::read::FontRead>::read
 4712 <alloc::vec::Vec<cosmic_text::shape::ShapeSpan> as core::ops::drop::Drop>::drop
 4672 _int_free_maybe_trim
@@ -237,8 +237,8 @@
 288 <alloc::raw_vec::RawVec<gogo_ui::anim::Motion>>::grow_one
 288 <alloc::raw_vec::RawVec<gogo_ui::page::Placement>>::grow_one
 280 <read_fonts::table_ref::TableRef<read_fonts::tables::gpos::PairPosFormat2Marker>>::class_def1
+255 <turbodot::program::Program<storvald_perf::AppState>>::frame
 255 alloc_perturb
-249 <turbodot::program::Program<storvald_perf::AppState>>::frame
 242 <gogo_text::EpxMeasure as gogo_ui::layout::TextMeasure>::identity
 240 <alloc::raw_vec::RawVec<bool>>::grow_one
 224 <gogo_ui::runtime::Runtime>::state_active_by_id
@@ -259,7 +259,7 @@
 157 gogo_ui::layout::follow_table::<gogo_ui::layout::Rect>
 144 core::ptr::drop_glue::<gogo_ui::runtime::Resolved>
 142 0x0000000004d21680
-134 <turbodot::program::Program<storvald_perf::AppState>>::tell_page_laid_out
+138 <turbodot::program::Program<storvald_perf::AppState>>::tell_page_laid_out
 131 gogo_ui::layout::follow_table::<[f32; 2]>
 127 <gogo_ui::runtime::Runtime>::glide_in_place
 125 <gogo_ui::anim::Player>::apply_at

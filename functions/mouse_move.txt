@@ -1,4 +1,4 @@
-# `mouse_move` at commit efffb1ff5d7db64370f7c8a0850e6532429bab1e: instructions by function, 113718 in all.
+# `mouse_move` at commit 8e8a986aa61212bc215eb21cbcb390df287f01e1: instructions by function, 113724 in all.
 # A function's own code only: what it calls is counted at the called function.
 16093 gogo_ui::runtime::resolve_into
 15435 gogo_ui::draw::walk'2
@@ -39,8 +39,8 @@
 183 <gogo_ui::layout::LayoutCache>::patch
 172 <gogo_ui::runtime::Runtime>::frame_retained
 167 <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as core::hash::Hasher>::write
+162 <turbodot::program::Program<storvald_perf::AppState>>::frame
 160 <gogo_ui::runtime::Resolved>::snap_slider
-158 <turbodot::program::Program<storvald_perf::AppState>>::frame
 156 core::ptr::drop_glue::<alloc::vec::drain::Drain<(gogo_ui::page::NodeId, gogo_ui::page::State, gogo_ui::page::StrId, alloc::vec::Vec<(gogo_ui::page::NodeId, gogo_ui::anim::Channel, f32, bool)>, alloc::vec::Vec<(gogo_ui::page::NodeId, gogo_ui::page::PropKey, gogo_ui::page::Value, bool)>)>>
 150 <alloc::vec::Vec<&gogo_ui::page::Transition> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<&gogo_ui::page::Transition, core::iter::adapters::filter::Filter<core::slice::iter::Iter<gogo_ui::page::Transition>, gogo_ui::runtime::find_rule::{closure#3}>>>::from_iter
 125 <gogo_ui::layout::LayoutCache>::run
@@ -60,7 +60,7 @@
 74 <gogo_ui::input::Input>::hover_sample
 74 gogo_ui::runtime::compose_anim::{closure#0}
 72 core::ptr::drop_glue::<gogo_ui::runtime::Resolved>
-67 <turbodot::program::Program<storvald_perf::AppState>>::tell_page_laid_out
+69 <turbodot::program::Program<storvald_perf::AppState>>::tell_page_laid_out
 66 <gogo_ui::runtime::Runtime>::compose_motion
 64 <gogo_ui::runtime::Resolved>::num_by_id
 63 <turbodot::program::Program<storvald_perf::AppState>>::page_that_takes

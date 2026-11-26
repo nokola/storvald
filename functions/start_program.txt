@@ -1,6 +1,6 @@
-# `start_program` at commit efffb1ff5d7db64370f7c8a0850e6532429bab1e: instructions by function, 1173322 in all.
+# `start_program` at commit 8e8a986aa61212bc215eb21cbcb390df287f01e1: instructions by function, 1173325 in all.
 # A function's own code only: what it calls is counted at the called function.
-368485 __memcpy_avx_unaligned_erms
+368473 __memcpy_avx_unaligned_erms
 117720 __memset_avx2_unaligned_erms
 32164 _int_malloc
 25534 harfrust::hb::ot_shape::shape_internal
@@ -125,9 +125,9 @@
 906 _int_free_maybe_trim
 902 <gogo_ui::layout::Lay>::size_at_flag
 895 <gogo_ui::tree::PlacedTree>::build
+890 turbodot::pictures::image_table
 888 <gogo_text::TextEngine>::face
 888 <unicode_segmentation::grapheme::GraphemeCursor>::grapheme_category
-887 turbodot::pictures::image_table
 871 <gogo_ui::page::Page>::from_static
 861 __rustc::__rust_alloc
 860 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&u64>
@@ -228,8 +228,8 @@
 252 <read_fonts::tables::layout::ChainedSequenceContext as read_fonts::read::FontRead>::read
 248 core::ptr::drop_glue::<cosmic_text::attrs::AttrsList>
 247 <read_fonts::table_ref::TableRef<read_fonts::TableDirectoryMarker>>::table_records
+241 <turbodot::program::Program<storvald_perf::AppState>>::make
 240 sysmalloc_mmap
-239 <turbodot::program::Program<storvald_perf::AppState>>::make
 229 <gogo_ui::runtime::Runtime>::frame_retained
 225 core::slice::memchr::memchr_aligned
 224 <gogo_text::EpxMeasure as gogo_ui::layout::TextMeasure>::measure
@@ -256,8 +256,8 @@
 186 <gogo_ui::draw::DrawCache>::remember
 180 <std::sync::once_lock::OnceLock<core::option::Option<alloc::boxed::Box<harfrust::hb::ot::lookup::LookupInfo>>>>::initialize::<<std::sync::once_lock::OnceLock<core::option::Option<alloc::boxed::Box<harfrust::hb::ot::lookup::LookupInfo>>>>::get_or_init<<harfrust::hb::ot::lookup::cache::LookupCache>::get<read_fonts::table_ref::TableRef<read_fonts::tables::gsub::GsubMarker>>::{closure#0}>::{closure#0}, !>
 178 <read_fonts::tables::cmap::CmapSubtable as read_fonts::read::FontRead>::read
+177 <turbodot::program::Program<storvald_perf::AppState>>::frame
 175 <alloc::vec::Vec<std::sync::once_lock::OnceLock<core::option::Option<alloc::boxed::Box<harfrust::hb::ot::lookup::LookupInfo>>>>>::resize_with::<<std::sync::once_lock::OnceLock<core::option::Option<alloc::boxed::Box<harfrust::hb::ot::lookup::LookupInfo>>> as core::default::Default>::default>
-173 <turbodot::program::Program<storvald_perf::AppState>>::frame
 172 <cosmic_text::font::system::FontMatchKey>::new
 171 gogo_ui::runtime::own_word
 169 <hashbrown::raw::RawTableInner>::fallible_with_capacity::<alloc::alloc::Global>
@@ -295,11 +295,11 @@
 129 <gogo_ui::runtime::Runtime>::tick
 128 <gogo_ui::layout::Lay>::text_of
 125 <fontdb::Database>::load_font_source::{closure#0}
+124 <turbodot::program::Program<storvald_perf::AppState>>::call_with_placed
 123 <read_fonts::table_ref::TableRef<read_fonts::tables::post::PostMarker> as read_fonts::read::FontRead>::read
 123 compiler_builtins::math::libm_math::arch::x86::detect::load_x86_features
 121 <gogo_text::EpxMeasure as gogo_ui::layout::TextMeasure>::identity
 120 <read_fonts::table_ref::TableRef<read_fonts::tables::gsub::LigatureSubstFormat1Marker> as harfrust::hb::ot_layout_gsubgpos::Apply>::external_cache_create
-120 <turbodot::program::Program<storvald_perf::AppState>>::call_with_placed
 117 <turbodot::pages::PageUi>::new
 114 <gogo_ui::layout::Lay>::aspect_ratio
 112 <read_fonts::table_ref::TableRef<read_fonts::tables::gpos::GposMarker>>::lookup_list
@@ -351,8 +351,8 @@
 72 harfrust::hb::ot_layout_gsubgpos::match_input::<<read_fonts::table_ref::TableRef<read_fonts::tables::layout::SequenceContextFormat3Marker> as harfrust::hb::ot_layout_gsubgpos::Apply>::apply::{closure#0}>
 70 <harfrust::hb::aat::AatCache>::new
 69 <std::sync::once::Once>::call_once_force::<<std::sync::once_lock::OnceLock<core::option::Option<alloc::boxed::Box<harfrust::hb::ot::lookup::LookupInfo>>>>::initialize<<std::sync::once_lock::OnceLock<core::option::Option<alloc::boxed::Box<harfrust::hb::ot::lookup::LookupInfo>>>>::get_or_init<<harfrust::hb::ot::lookup::cache::LookupCache>::get<read_fonts::table_ref::TableRef<read_fonts::tables::gpos::GposMarker>>::{closure#0}>::{closure#0}, !>::{closure#0}>::{closure#0}
+69 <turbodot::program::Program<storvald_perf::AppState>>::tell_page_laid_out
 67 <gogo_ui::layout::LookCopy>::take
-67 <turbodot::program::Program<storvald_perf::AppState>>::tell_page_laid_out
 66 <alloc::string::String as core::clone::Clone>::clone
 64 <gogo_ui::runtime::Runtime>::state_active_by_id
 64 <read_fonts::table_ref::TableRef<read_fonts::tables::gdef::GdefMarker> as read_fonts::read::FontRead>::read
