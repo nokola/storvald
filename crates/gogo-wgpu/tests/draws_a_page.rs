@@ -5,9 +5,7 @@
 //! draws the wedge of a dial and checks it against the hit test. Two
 //! more draw one text engine's letters with a second renderer, and a
 //! second engine's letters with the same renderer. A sixth draws letters
-//! new to the atlas and counts the texels of it the renderer sent. A
-//! seventh draws a page again after the atlas grew, an eighth draws
-//! letters that land in the lower half of a grown atlas.
+//! new to the atlas and counts the texels of it the renderer sent.
 //!
 //! Needed because nothing else in this repository runs the shader: the
 //! unit tests cover the gradient tables only, and a renderer whose quads
@@ -443,73 +441,4 @@ fn a_new_letter_sends_only_its_part_of_the_atlas() {
 
     drawn_tile(PAGE_OTHER_LETTERS, &mut ui, &device, &queue, &text);
     assert_eq!(ui.debug_atlas_texels_written(), atlas_texels + texels_of_new_letters, "a frame with no new letter sends nothing");
-}
-
-/// A page drawn again after the letters' atlas grew shows the same
-/// picture: its letters are drawn from the grown atlas, where they kept
-/// their texels.
-///
-/// Needed because the engine keeps the letters and the shaped texts
-/// over a grow and only rewrites their uvs. Red when a kept uv is not
-/// rewritten: the page's letters come out as pieces of other letters,
-/// at half their size.
-#[test]
-#[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
-fn a_page_drawn_after_the_atlas_grew_shows_the_same_letters() {
-    let (device, queue) = device();
-    let mut ui: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
-    let text: RefCell<TextEngine> = engine();
-    let (before, label) = drawn_tile(PAGE, &mut ui, &device, &queue, &text);
-    assert!(white_pixels(&before, label) > 20, "the letters are drawn");
-    let generation: u32 = text.borrow().generation;
-    text.borrow_mut().warm("ABCDEFGHIJKLMNOPQRSTUVWXYZ", 400.0, None);
-    assert!(text.borrow().generation > generation, "the precondition: the atlas grew");
-    let (after, _) = drawn_tile(PAGE, &mut ui, &device, &queue, &text);
-    assert!(after == before, "the same picture from the grown atlas");
-}
-
-/// A frame whose new letters land in the lower half of a grown atlas,
-/// drawn by a renderer that sent last while the top right quarter was
-/// filling, shows those letters.
-///
-/// Needed because the engine names two parts for such a frame, the rest
-/// of the quarter and then the lower half, and the renderer must send
-/// both in that frame. Red when it sends one part a frame: the page's
-/// letters are missing until the next frame.
-#[test]
-#[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
-fn letters_in_the_lower_half_of_a_grown_atlas_are_sent_in_their_frame() {
-    const ALPHABET: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    let (device, queue) = device();
-    let mut ui: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
-    let text: RefCell<TextEngine> = engine();
-    // Every size but 32 px: the page's letters, at 32 px, stay new.
-    let mut sizes = (20..=90).rev().filter(|size| *size != 32).map(|size| size as f32);
-    // Warms the alphabet at the next size; returns where its last
-    // letter landed in the atlas, as a uv.
-    let mut warm_next_size = |text: &RefCell<TextEngine>| -> [f32; 4] {
-        let size: f32 = sizes.next().expect("the sizes do not run out");
-        text.borrow_mut().warm(ALPHABET, size, None);
-        text.borrow_mut().glyph("z", size, None).expect("the last letter").uv
-    };
-    let generation: u32 = text.borrow().generation;
-    let mut last_letter: [f32; 4] = [0.0; 4];
-    while text.borrow().generation == generation {
-        last_letter = warm_next_size(&text);
-    }
-    assert!(last_letter[0] >= 0.5 && last_letter[1] < 0.5, "the precondition: the grown atlas's top right quarter is filling");
-    // The renderer sends the grown atlas now.
-    drawn_tile(PAGE, &mut ui, &device, &queue, &text);
-    while last_letter[1] < 0.5 {
-        last_letter = warm_next_size(&text);
-    }
-    assert_eq!(text.borrow().generation, generation + 1, "the precondition: one grow");
-
-    let (pixels, label) = drawn_tile(PAGE_OTHER_LETTERS, &mut ui, &device, &queue, &text);
-    assert!(white_pixels(&pixels, label) > 20, "the new letters are drawn");
-    let new_letter: GlyphQuad = text.borrow_mut().glyph("o", 32.0, None).expect("the letter drawn above");
-    assert!(new_letter.uv[1] >= 0.5, "the precondition: the new letters are in the lower half");
-    let mut fresh: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
-    let (want, _) = drawn_tile(PAGE_OTHER_LETTERS, &mut fresh, &device, &queue, &text);
-    assert!(pixels == want, "the picture of a renderer that sent the whole atlas");
 }

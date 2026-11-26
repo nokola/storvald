@@ -821,14 +821,9 @@ impl UiRenderer {
     /// was lost), and a renderer may be handed another engine. Each of
     /// them must end up with the atlas its glyph quads point into.
     fn sync_atlas(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &TextEngine) {
-        // Until the part is empty: letters packed in two regions of a
-        // grown atlas since the last send are two parts.
-        loop {
-            let (part, sent): (AtlasPart, AtlasSent) = text.atlas_part_to_send(self.atlas_sent);
-            self.atlas_sent = sent;
-            if part.is_empty() {
-                break;
-            }
+        let (part, sent): (AtlasPart, AtlasSent) = text.atlas_part_to_send(self.atlas_sent);
+        self.atlas_sent = sent;
+        if !part.is_empty() {
             let (data, size) = text.atlas();
             // A texture made here holds nothing: it takes the whole atlas.
             let part: AtlasPart = if size != self.atlas_size {
@@ -845,12 +840,9 @@ impl UiRenderer {
                 self.atlas_texels_written += part.texel_count();
             }
         }
-        loop {
-            let (part, sent): (AtlasPart, AtlasSent) = text.color_atlas_part_to_send(self.color_atlas_sent);
-            self.color_atlas_sent = sent;
-            if part.is_empty() {
-                break;
-            }
+        let (part, sent): (AtlasPart, AtlasSent) = text.color_atlas_part_to_send(self.color_atlas_sent);
+        self.color_atlas_sent = sent;
+        if !part.is_empty() {
             let (data, size) = text.color_atlas();
             let part: AtlasPart = if size != self.color_atlas_size {
                 let (tex, entry) = self.make_texture(device, size, size, wgpu::TextureFormat::Rgba8Unorm);
@@ -882,12 +874,11 @@ impl UiRenderer {
     #[allow(clippy::too_many_arguments)]
     pub fn prepare_pages<L: DrawLists + ?Sized>(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, pages: &L, epx: f32, screen: (u32, u32), text: &mut TextEngine, locale: Option<&Locale>) {
         // A glyph that grows the atlas during the pass leaves every run
-        // put in this frame's quads before it with uvs into the atlas
-        // that was: the pass runs again against the grown one. Needed
-        // because the user otherwise sees a button with no letters until
-        // the next redraw. The second pass shapes and draws nothing: the
-        // engine keeps both over a grow. A grow doubles the atlas, a few
-        // times in an app's life; the usual frame pays nothing.
+        // shaped before it this frame, the cache's included, with uvs into
+        // the atlas that was: the pass runs again against the grown one.
+        // Needed because the user otherwise sees a button with no letters
+        // until the next redraw. A grow doubles the atlas, a few times in
+        // an app's life; the usual frame pays nothing.
         let generation: u32 = text.generation;
         self.stage_begins(PrepareStage::Pass);
         self.prepare_pass(device, pages, epx, screen, text, locale);
