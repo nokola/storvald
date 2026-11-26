@@ -807,3 +807,65 @@ fn one_send_takes_the_rest_of_the_quarter_and_several_shelves_of_the_lower_half(
     assert!(parts[1].columns == (0..2048) && parts[1].rows.start == 1024 && parts[1].rows.end > 1024 + 60, "then the lower half's rows, several shelves of them: {:?}", parts[1]);
     assert!(copy.bytes == e.atlas().0, "the copy after both parts");
 }
+
+/// Measures `text` both ways and shapes it, as a layout and a renderer
+/// do for a label.
+///
+/// Returns what that cost: texts shaped to measure, texts shaped to
+/// draw, letters drawn.
+fn work_of_showing(e: &mut TextEngine, text: &str) -> (u32, u32, u32) {
+    e.take_work();
+    e.measure(text, px(20.0), None, None);
+    e.narrowest_wrap(text, px(20.0), None);
+    e.shape(text, px(20.0), None, None, 0.0, 0.0, 0.0, 0);
+    let work = e.take_work();
+    (work.shapes_to_measure, work.shapes_to_draw, work.letters_drawn)
+}
+
+/// A font added later, as a fallback file or with the device's fonts,
+/// leaves alone a text its own font drew whole: shown again, it is
+/// neither measured nor shaped. A text with a letter no font had is
+/// measured and shaped again, since the new font may have that letter.
+///
+/// Red when a font added drops every kept text: the frame after the
+/// device's fonts were read measured and shaped the whole screen again,
+/// 80 texts in 35 ms on an old phone, and none came out different. Red
+/// too when it drops none: a label shown as boxes stays boxes.
+#[test]
+fn a_font_added_later_leaves_alone_the_texts_their_own_font_drew_whole() {
+    let mut e = engine();
+    let own: &str = "Save changes?";
+    let with_a_missing_letter: &str = "Hi \u{0633}";
+    assert!(!e.has_glyph('\u{0633}'), "the precondition: Roboto has no Arabic");
+    assert_eq!(work_of_showing(&mut e, own).0, 2, "the precondition: a new text is measured twice, as a size and as its narrowest width");
+    work_of_showing(&mut e, with_a_missing_letter);
+
+    // Another Roboto file as a fallback: it has no Arabic either.
+    assert!(e.add_fallback_font_file(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/Fonts/Roboto Bold.ttf"))));
+    assert_eq!(work_of_showing(&mut e, own), (0, 0, 0), "a text of one font is kept over a font added");
+    assert_eq!(work_of_showing(&mut e, with_a_missing_letter), (2, 1, 0), "a text with a missing letter is measured and shaped again; its letters are in the atlas");
+    assert_eq!(work_of_showing(&mut e, with_a_missing_letter), (0, 0, 0), "and kept from then on");
+
+    e.load_system_fonts();
+    assert_eq!(work_of_showing(&mut e, own), (0, 0, 0), "a text of one font is kept over the device's fonts");
+    let (measured, shaped, _) = work_of_showing(&mut e, with_a_missing_letter);
+    assert_eq!((measured, shaped), (2, 1), "a text with a missing letter is measured and shaped again after the device's fonts");
+}
+
+/// A text with a letter another font drew is measured and shaped again
+/// when a font is added: the new font may be the one asked first for
+/// that letter. Ignored unless asked for: Arial and Segoe UI Emoji are
+/// Windows files (see `engine_with_emoji`).
+#[test]
+#[ignore = "needs Windows' Arial and Segoe UI Emoji fonts: run with --include-ignored on Windows"]
+fn a_font_added_later_has_a_text_with_a_fallback_letter_shaped_again() {
+    let mut e = engine();
+    assert!(e.add_fallback_font_file(Path::new("C:/Windows/Fonts/arial.ttf")));
+    let with_a_fallback_letter: &str = "Hi \u{0633}";
+    assert!(e.has_glyph('\u{0633}'), "the precondition: Arial has the Arabic letter");
+    work_of_showing(&mut e, "Hi");
+    work_of_showing(&mut e, with_a_fallback_letter);
+    assert!(e.add_fallback_font_file(Path::new("C:/Windows/Fonts/seguiemj.ttf")));
+    assert_eq!(work_of_showing(&mut e, "Hi"), (0, 0, 0), "a text of one font is kept");
+    assert_eq!(work_of_showing(&mut e, with_a_fallback_letter), (2, 1, 0), "a text with a letter of another font is measured and shaped again");
+}

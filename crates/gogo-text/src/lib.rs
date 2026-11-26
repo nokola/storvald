@@ -420,9 +420,30 @@ impl Shelf {
 /// vertical metrics.
 #[derive(Clone, Debug)]
 struct Face {
+    /// The face in the font database: a glyph the shaper took from
+    /// another face carries another id (`is_settled`).
+    id: fontdb::ID,
     family: String,
     weight: Weight,
     metrics: FaceMetrics,
+}
+
+/// A text's measured size as the engine keeps it.
+#[derive(Clone, Copy, Debug)]
+struct KeptMeasure {
+    size: (f32, f32),
+    /// See `TextEngine::is_settled`.
+    is_settled: bool,
+}
+
+/// A text's shaped quads as the engine keeps them, the pen at the
+/// origin. Their uvs are into the atlases as they are now: a grow
+/// rewrites them.
+#[derive(Clone, Debug)]
+struct KeptShape {
+    quads: Vec<GlyphQuad>,
+    /// See `TextEngine::is_settled`.
+    is_settled: bool,
 }
 
 /// The engine's costly steps since the last `TextEngine::take_work`:
@@ -515,11 +536,9 @@ pub struct TextEngine {
     /// engine serves every page, and their `StrId`s overlap, so the text
     /// itself is hashed, not its id. A 64-bit collision would return a
     /// wrong size for one string in ~10^19; accepted.
-    measure_cache: HashMap<u64, (f32, f32)>,
-    /// Shaped quads at the origin, keyed by a hash of (text, size, width,
-    /// font, box_w, halign). Their uvs are into the atlases as they are
-    /// now: a grow rewrites them.
-    shape_cache: HashMap<u64, Vec<GlyphQuad>>,
+    measure_cache: HashMap<u64, KeptMeasure>,
+    /// Keyed by a hash of (text, size, width, font, box_w, halign).
+    shape_cache: HashMap<u64, KeptShape>,
     /// What `take_work` returns.
     work: TextWork,
 }
@@ -564,7 +583,7 @@ impl TextEngine {
         let mut default_face = None;
         for (key, id, family, weight) in loaded {
             let metrics = metrics_of(&mut fs, id, weight);
-            let f = Face { family, weight, metrics };
+            let f = Face { id, family, weight, metrics };
             if default_face.is_none() {
                 default_face = Some(f.clone());
             }
@@ -633,7 +652,7 @@ impl TextEngine {
             return false;
         };
         let metrics = metrics_of(&mut self.fs, id, weight);
-        self.faces.insert(key.to_string(), Face { family, weight, metrics });
+        self.faces.insert(key.to_string(), Face { id, family, weight, metrics });
         true
     }
 
@@ -680,9 +699,7 @@ impl TextEngine {
         names.sort();
         names.dedup();
         self.system_families = names;
-        // Fallback can now find glyphs it could not before.
-        self.measure_cache.clear();
-        self.shape_cache.clear();
+        self.forget_unsettled_texts();
         self.system_families.len()
     }
 
@@ -700,9 +717,10 @@ impl TextEngine {
     /// draws every label as a row of boxes until the phone's Arabic font
     /// (Noto Naskh Arabic) is added here.
     ///
-    /// The face gets no key, so `font=` cannot name it. The measure and
-    /// shape caches are dropped, because a label measured as boxes is
-    /// wrong now; the atlas and its glyphs stay.
+    /// The face gets no key, so `font=` cannot name it. The kept measure
+    /// and shape of a label measured as boxes are dropped, because they
+    /// are wrong now (`forget_unsettled_texts`); the atlas and its
+    /// glyphs stay.
     ///
     /// Returns false when the file is missing, unreadable, or holds no
     /// face.
@@ -712,9 +730,32 @@ impl TextEngine {
         if db.load_font_file(path).is_err() || db.faces().count() == before {
             return false;
         }
-        self.measure_cache.clear();
-        self.shape_cache.clear();
+        self.forget_unsettled_texts();
         true
+    }
+
+    /// Whether `buffer`, a text laid out in the face `font` names, is
+    /// settled: every glyph of it is a glyph of that face.
+    ///
+    /// Needed when a font is added later. The shaper asks the text's own
+    /// face first, so a text that face drew whole comes out the same
+    /// with any number of fonts added. A glyph from another face, or the
+    /// box of a letter no face had, may come out of the new font.
+    fn is_settled(&self, buffer: &Buffer, font: Option<&str>) -> bool {
+        let Some(face) = self.face(font) else { return false };
+        buffer.layout_runs().all(|run| run.glyphs.iter().all(|glyph| glyph.font_id == face.id && glyph.glyph_id != 0))
+    }
+
+    /// Drops the kept measure and shape of every text that is not
+    /// settled (`is_settled`). Called when a font joins the database.
+    ///
+    /// Needed in place of dropping them all: the frame after the
+    /// device's fonts were read measured and shaped every text on
+    /// screen again, 80 texts in 35 ms on an old phone, and none came
+    /// out different.
+    fn forget_unsettled_texts(&mut self) {
+        self.measure_cache.retain(|_, kept| kept.is_settled);
+        self.shape_cache.retain(|_, kept| kept.is_settled);
     }
 
     /// Whether any loaded face (page fonts, fallback files, the OS scan)
@@ -745,7 +786,7 @@ impl TextEngine {
             return false;
         };
         let metrics = metrics_of(&mut self.fs, id, weight);
-        self.faces.insert(key.to_string(), Face { family: family.to_string(), weight, metrics });
+        self.faces.insert(key.to_string(), Face { id, family: family.to_string(), weight, metrics });
         true
     }
 
@@ -899,8 +940,8 @@ impl TextEngine {
     /// Width and height in device pixels.
     pub fn measure(&mut self, text: &str, size: TextPx, max_width: Option<f32>, font: Option<&str>) -> (f32, f32) {
         let key = cache_key(text, size, max_width, font, 0.0, 0);
-        if let Some(v) = self.measure_cache.get(&key) {
-            return *v;
+        if let Some(kept) = self.measure_cache.get(&key) {
+            return kept.size;
         }
         let started: Instant = Instant::now();
         let buffer = self.buffer(text, size, max_width, font);
@@ -917,7 +958,8 @@ impl TextEngine {
         if self.measure_cache.len() >= CACHE_CAP {
             self.measure_cache.clear();
         }
-        self.measure_cache.insert(key, v);
+        let is_settled: bool = self.is_settled(&buffer, font);
+        self.measure_cache.insert(key, KeptMeasure { size: v, is_settled });
         v
     }
 
@@ -931,8 +973,8 @@ impl TextEngine {
         // The answer shares the measure cache under a key of its own: a
         // text alignment no `measure` asks with (it asks with 0).
         let key = cache_key(text, size, None, font, 0.0, NARROWEST_WRAP_KEY);
-        if let Some(v) = self.measure_cache.get(&key) {
-            return v.0;
+        if let Some(kept) = self.measure_cache.get(&key) {
+            return kept.size.0;
         }
         let started: Instant = Instant::now();
         let buffer = self.buffer_wrapped(text, size, Some(0.0), font, Wrap::Word);
@@ -956,7 +998,8 @@ impl TextEngine {
         if self.measure_cache.len() >= CACHE_CAP {
             self.measure_cache.clear();
         }
-        self.measure_cache.insert(key, (w, 0.0));
+        let is_settled: bool = self.is_settled(&buffer, font);
+        self.measure_cache.insert(key, KeptMeasure { size: (w, 0.0), is_settled });
         w
     }
 
@@ -978,16 +1021,16 @@ impl TextEngine {
     pub fn shape_into(&mut self, text: &str, size: TextPx, max_width: Option<f32>, font: Option<&str>, x: f32, y: f32, box_w: f32, halign: u8, out: &mut Vec<GlyphQuad>) {
         let (dx, dy) = (x.round(), y.round());
         let key = cache_key(text, size, max_width, font, box_w, halign);
-        if let Some(quads) = self.shape_cache.get(&key) {
-            out.extend(quads.iter().map(|q| GlyphQuad { x: q.x + dx, y: q.y + dy, ..*q }));
+        if let Some(kept) = self.shape_cache.get(&key) {
+            out.extend(kept.quads.iter().map(|q| GlyphQuad { x: q.x + dx, y: q.y + dy, ..*q }));
             return;
         }
-        let quads = self.shape_uncached(text, size, max_width, font, box_w, halign);
+        let kept: KeptShape = self.shape_uncached(text, size, max_width, font, box_w, halign);
         if self.shape_cache.len() >= CACHE_CAP {
             self.shape_cache.clear();
         }
-        out.extend(quads.iter().map(|q| GlyphQuad { x: q.x + dx, y: q.y + dy, ..*q }));
-        self.shape_cache.insert(key, quads);
+        out.extend(kept.quads.iter().map(|q| GlyphQuad { x: q.x + dx, y: q.y + dy, ..*q }));
+        self.shape_cache.insert(key, kept);
     }
 
     /// Shapes `text` into quads with the pen at the origin, every uv into
@@ -1004,27 +1047,30 @@ impl TextEngine {
     /// buffer: its glyphs are all in the atlas by then, so none is
     /// drawn again. A run that grows nothing (the usual one) is shaped
     /// once.
-    fn shape_uncached(&mut self, text: &str, size: TextPx, max_width: Option<f32>, font: Option<&str>, box_w: f32, halign: u8) -> Vec<GlyphQuad> {
+    fn shape_uncached(&mut self, text: &str, size: TextPx, max_width: Option<f32>, font: Option<&str>, box_w: f32, halign: u8) -> KeptShape {
         let mut out: Vec<GlyphQuad> = Vec::new();
         loop {
             let generation: u32 = self.generation;
             out.clear();
-            self.shape_pass(text, size, max_width, font, box_w, halign, &mut out);
+            let is_settled: bool = self.shape_pass(text, size, max_width, font, box_w, halign, &mut out);
             if self.generation == generation {
-                return out;
+                return KeptShape { quads: out, is_settled };
             }
         }
     }
 
     /// One shaping pass into `out`; its uvs are good only if neither atlas
     /// grew during it (`shape_uncached` checks and runs it again).
-    fn shape_pass(&mut self, text: &str, size: TextPx, max_width: Option<f32>, font: Option<&str>, box_w: f32, halign: u8, out: &mut Vec<GlyphQuad>) {
+    ///
+    /// Returns whether the text is settled (`is_settled`).
+    fn shape_pass(&mut self, text: &str, size: TextPx, max_width: Option<f32>, font: Option<&str>, box_w: f32, halign: u8, out: &mut Vec<GlyphQuad>) -> bool {
         let (x, y) = (0.0f32, 0.0f32);
         let (bold, _) = Self::style(font);
         let started: Instant = Instant::now();
         let buffer = self.buffer(text, size, max_width, font);
         self.work.shapes_to_draw += 1;
         self.work.seconds_shaping_to_draw += started.elapsed().as_secs_f32();
+        let is_settled: bool = self.is_settled(&buffer, font);
         // Per glyph: its raster key, its face, and the bytes of its line it
         // covers (the cluster an emoji painter is asked for).
         let lines: Vec<&str> = buffer.lines.iter().map(|l| l.text()).collect();
@@ -1056,6 +1102,7 @@ impl TextEngine {
                 });
             }
         }
+        is_settled
     }
 
     /// The slot of one glyph, rasterizing it on first sight. An emoji (a
@@ -1238,7 +1285,7 @@ impl TextEngine {
     /// Needed so a text shaped before a grow is not shaped again after
     /// it: its glyphs are where they were.
     fn kept_shapes_into_doubled_atlas(&mut self, is_color: bool) {
-        for quad in self.shape_cache.values_mut().flatten().filter(|quad| quad.color == is_color) {
+        for quad in self.shape_cache.values_mut().flat_map(|kept| kept.quads.iter_mut()).filter(|quad| quad.color == is_color) {
             uv_in_doubled_atlas(&mut quad.uv);
         }
     }
