@@ -1,4 +1,4 @@
-# `first_frame_of_controls_page` at commit cf3dc5434b6c5189f0af76af7dc64c88e2ce02e9: instructions by function, 4942394 in all.
+# `first_frame_of_controls_page` at commit d2160d496d0b1714c90b213936c89d9ffe39381d: instructions by function, 4942387 in all.
 # A function's own code only: what it calls is counted at the called function.
 403474 <gogo_ui::page::Page>::kind_default::{closure#0}
 315542 <gogo_ui::page::Page>::prop_by_id
@@ -92,7 +92,7 @@
 10930 <harfrust::hb::ot_shape_plan::ShapePlanKey>::matches
 10656 <smol_str::Repr>::new
 10382 gogo_ui::draw::clips
-10275 __memcmp_avx2_movbe
+10268 __memcmp_avx2_movbe
 9920 gogo_ui::font_style::split_style
 9683 <harfrust::hb::buffer::hb_buffer_t>::sync
 9424 <cosmic_text::buffer_line::BufferLine>::layout
