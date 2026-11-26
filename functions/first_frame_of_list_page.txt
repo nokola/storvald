@@ -1,4 +1,4 @@
-# `first_frame_of_list_page` at commit efffb1ff5d7db64370f7c8a0850e6532429bab1e: instructions by function, 21524505 in all.
+# `first_frame_of_list_page` at commit efffb1ff5d7db64370f7c8a0850e6532429bab1e: instructions by function, 21525575 in all.
 # A function's own code only: what it calls is counted at the called function.
 1547203 <gogo_ui::page::Page>::kind_default::{closure#0}
 1280270 <gogo_ui::runtime::Resolved>::override_of_by_id
@@ -85,8 +85,8 @@
 54540 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&str>
 52444 <cosmic_text::line_ending::LineIter as core::iter::traits::iterator::Iterator>::next
 52290 _int_free_merge_chunk
+52257 <gogo_text::TextEngine>::measure
 51980 roundf
-51664 <gogo_text::TextEngine>::measure
 48304 __memcmp_avx2_movbe
 44844 <gogo_text::TextEngine>::face
 44844 <unicode_segmentation::grapheme::GraphemeCursor>::grapheme_category
@@ -143,9 +143,9 @@
 17372 <core::iter::adapters::rev::Rev<alloc::vec::drain::Drain<cosmic_text::layout::LayoutLine>> as core::iter::traits::iterator::Iterator>::fold::<(), core::iter::adapters::map::map_fold<cosmic_text::layout::LayoutLine, alloc::vec::Vec<cosmic_text::layout::LayoutGlyph>, (), <cosmic_text::shape::ShapeLine>::layout_to_buffer::{closure#1}, core::iter::traits::iterator::Iterator::for_each::call<alloc::vec::Vec<cosmic_text::layout::LayoutGlyph>, <alloc::vec::Vec<alloc::vec::Vec<cosmic_text::layout::LayoutGlyph>>>::extend_trusted<core::iter::adapters::map::Map<core::iter::adapters::rev::Rev<alloc::vec::drain::Drain<cosmic_text::layout::LayoutLine>>, <cosmic_text::shape::ShapeLine>::layout_to_buffer::{closure#1}>>::{closure#0}>::{closure#0}>::{closure#0}>
 17136 gogo_ui::layout::free_axis
 16872 <harfrust::hb::ot_shape_plan::ShapePlanKey>::instance
+16746 <hashbrown::map::HashMap<u64, (f32, f32), std::hash::random::RandomState>>::insert
 16629 __rustc::__rust_alloc
 16405 gogo_ui::runtime::own_word
-16269 <hashbrown::map::HashMap<u64, (f32, f32), std::hash::random::RandomState>>::insert
 15704 <read_fonts::table_ref::TableRef<read_fonts::tables::gsub::LigatureMarker>>::component_glyph_ids
 15352 <alloc::vec::Vec<cosmic_text::shape::ShapeSpan> as core::ops::drop::Drop>::drop
 14751 <read_fonts::tables::layout::CoverageTable as read_fonts::read::FontRead>::read

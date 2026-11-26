@@ -1,6 +1,6 @@
-# `start_program` at commit efffb1ff5d7db64370f7c8a0850e6532429bab1e: instructions by function, 1173324 in all.
+# `start_program` at commit efffb1ff5d7db64370f7c8a0850e6532429bab1e: instructions by function, 1173322 in all.
 # A function's own code only: what it calls is counted at the called function.
-368487 __memcpy_avx_unaligned_erms
+368485 __memcpy_avx_unaligned_erms
 117720 __memset_avx2_unaligned_erms
 32164 _int_malloc
 25534 harfrust::hb::ot_shape::shape_internal
