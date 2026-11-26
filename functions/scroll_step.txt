@@ -1,4 +1,4 @@
-# `scroll_step` at commit a44cc70e3422e9e45ecf394c4f8f66508e4952a4: instructions by function, 3347788 in all.
+# `scroll_step` at commit efffb1ff5d7db64370f7c8a0850e6532429bab1e: instructions by function, 3347788 in all.
 # A function's own code only: what it calls is counted at the called function.
 662840 gogo_ui::draw::walk'2
 636741 <gogo_ui::page::Page>::kind_default::{closure#0}
