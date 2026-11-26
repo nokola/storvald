@@ -345,7 +345,11 @@ pub fn build_pages(dir: &Path, out: &Path, options: BuildOptions<'_>) -> Result<
     if let Some(name) = options.default_font {
         fonts.sort_by_key(|f| !f.contains(name));
     }
-    source.push_str("/// (key, TTF bytes) for every font a page names; the first is the default face.\npub const FONTS: &[(&str, &[u8])] = &[\n");
+    // A `static`, not a `const`: a const is copied into every crate that
+    // names it, and with it the bytes of every file it points at. A
+    // program that named `IMAGES` from four crates held each of its
+    // pictures four times.
+    source.push_str("/// (key, TTF bytes) for every font a page names; the first is the default face. A `static`: the program holds each font's bytes once, however many crates name this.\npub static FONTS: &[(&str, &[u8])] = &[\n");
     for key in &fonts {
         match asset_file(key) {
             Ok(abs) => source.push_str(&format!("    ({key:?}, include_bytes!({abs:?})),\n")),
@@ -369,7 +373,7 @@ pub fn build_pages(dir: &Path, out: &Path, options: BuildOptions<'_>) -> Result<
     // the host shows at runtime (`preview://brush`).
     {
         let images = options.compile.images.expect("set above").borrow();
-        source.push_str("/// (path, encoded bytes) for every image a page names, by `ImageKey`; `None` = the host shows it.\npub const IMAGES: &[(&str, Option<&[u8]>)] = &[\n");
+        source.push_str("/// (path, encoded bytes) for every image a page names, by `ImageKey`; `None` = the host shows it. A `static`: the program holds each picture's bytes once, however many crates name this.\npub static IMAGES: &[(&str, Option<&[u8]>)] = &[\n");
         for key in &images.names {
             if !key.starts_with("res://") {
                 source.push_str(&format!("    ({key:?}, None),\n"));

@@ -188,6 +188,27 @@ pub struct Program<A = ()> {
     kept_off_screen: Vec<KeptOffScreen>,
 }
 
+/// Takes off `renderer` the pictures `page_ui`'s code took off their
+/// Surfaces since the last GPU frame (`PageUi::clear_picture`).
+///
+/// Needed because the renderer holds each picture too: a texture a page
+/// let go of stays on the GPU until its place there is emptied.
+///
+/// Out of line: a frame in which no page took a picture off does not
+/// run it.
+#[cfg(feature = "gpu")]
+#[cold]
+#[inline(never)]
+fn release_cleared_pictures(page_ui: &mut PageUi, renderer: &mut gogo_wgpu::UiRenderer, device: &wgpu::Device) {
+    for key in page_ui.cleared_pictures.0.drain(..) {
+        renderer.release_image(device, key);
+    }
+    for key in page_ui.cleared_pictures.1.drain(..) {
+        let external: gogo_wgpu::ExternalImage = renderer.external_image(key);
+        renderer.release_external_image(device, external);
+    }
+}
+
 impl<A: 'static> Program<A> {
     /// Program that opens on `first`. `built`: `&ui::BUILT`. `app`:
     /// program-wide state, every page's `Host::app`.
@@ -1453,6 +1474,11 @@ impl<A: 'static> Program<A> {
         // Pixels pages made in code since last GPU frame.
         let Program { stack, assets, .. } = self;
         for (_, page_ui) in stack.iter_mut() {
+            // Before the uploads below: a picture set on a Surface right
+            // after one was taken off it has the same key.
+            if !page_ui.cleared_pictures.0.is_empty() || !page_ui.cleared_pictures.1.is_empty() {
+                release_cleared_pictures(page_ui, renderer, &gpu.device);
+            }
             for picture in page_ui.code_pictures.iter_mut() {
                 let Some(key) = picture.key else { continue };
                 if !picture.is_uploaded {
@@ -1668,7 +1694,13 @@ impl<A: 'static> Program<A> {
         self.on_their_way.retain(|moving| moving.page != id);
         self.code_pictures_to_release.extend(self.stack.get(id).code_pictures.iter().filter_map(|picture| picture.key));
         #[cfg(feature = "gpu")]
-        self.pictures_to_release.extend(self.stack.get(id).picture_textures.iter().filter_map(|picture| picture.key));
+        {
+            // With the ones page took off its Surfaces since the last
+            // GPU frame: nobody else knows their keys.
+            let page_ui: &PageUi = self.stack.get(id);
+            self.pictures_to_release.extend(page_ui.picture_textures.iter().filter_map(|picture| picture.key).chain(page_ui.cleared_pictures.1.iter().copied()));
+            self.code_pictures_to_release.extend(page_ui.cleared_pictures.0.iter().copied());
+        }
         self.stack.remove(id);
         self.objects[id.index()] = None;
         self.has_freed_a_page = true;

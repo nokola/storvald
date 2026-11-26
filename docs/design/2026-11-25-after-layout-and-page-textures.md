@@ -197,6 +197,54 @@ buffer, so the screen's next frame writes its quads again).
 - **Only the page that keeps a page may draw it.** The name is enough:
   who was handed it may draw.
 
+## Added the same day: a picture taken off its Surface (RULED)
+
+`host.ui.clear_picture(NAMES.photo)` takes the picture off a `Surface
+draw=picture`: pixels (`set_picture`) or a texture
+(`set_picture_texture`).
+
+- **Why.** A Surface held its picture until its page was freed. A page
+  that slides out for 0.2 s kept its photos that long, and a page opened
+  in that time added its own on top: tens of megabytes more for a moment
+  on a phone. The first page to draw its own pictures (a collage of
+  photos) met it.
+- **What it does.** The Surface shows nothing from the next frame on
+  and keeps the size its file gives it. The page lets go at the call: it
+  frees the pixels' buffer and drops its handle to the texture. The
+  renderer lets go at the next frame drawn on a GPU. A texture is freed
+  once the page's own code holds no handle to it either.
+- **One call for both kinds of picture.** A page does not have to
+  remember which of the two set calls it used.
+- **A picture set after** shows as a first one does, under the
+  Surface's own key, also when no GPU frame came between the two calls.
+- **Cost.** A frame in which no page took a picture off: two compares a
+  live page in the GPU step. The work itself is out of line.
+
+Tests, in the notes example and in `page_ui.rs`:
+`a_picture_taken_off_its_surface_is_not_drawn`,
+`a_picture_taken_off_its_surface_leaves_the_gpu` (needs a GPU),
+`a_cleared_picture_is_gone_from_its_page`.
+
+## Added the same day: `IMAGES` and `FONTS` are statics (RULED)
+
+The build writes the two tables that point at file bytes as `pub
+static`, not `pub const`.
+
+- **Why.** A const is copied into every crate that names it, and with it
+  what it points at: here the bytes of every picture, or every font. A
+  program that named `IMAGES` from four of its crates held each of its
+  255 pictures four times, 13 MB too many in each of its two libraries.
+  Nothing said so; the program's size did.
+- **What changes for a program.** Reading the tables is as before
+  (`IMAGES.iter()`, `IMAGES[key.index()]`, `fonts: FONTS` in a
+  `static`). A `const` of the program's own that is made from one of the
+  tables no longer builds: make it a `static`.
+- `KEYS`, `SLICES` and the pages' own tables stay as they are: they
+  point at no file.
+
+Test: `a_build_writes_down_what_a_reload_needs` (`crates/gogo-ui/tests/reload.rs`)
+reads the two lines of the generated file.
+
 ## What breaks for a program that builds these crates
 
 | Was | Is |

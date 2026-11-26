@@ -1753,6 +1753,118 @@ mod tests {
         assert!(shows_a_picture(&program));
     }
 
+    /// Picture taken off its Surface (`PageUi::clear_picture`) is not
+    /// drawn any more, and one set after shows again. No GPU needed.
+    #[test]
+    fn a_picture_taken_off_its_surface_is_not_drawn() {
+        let mut program: Program<AppState> = started(AppState::default());
+        open_settings(&mut program, 1.0);
+        let shows_a_picture = |program: &Program<AppState>| -> bool {
+            let ui = program.ui();
+            let rect: Rect = ui.rect(SETTINGS.made_in_code);
+            ui.draws.iter().any(|draw| matches!(draw, turbodot::gogo::Draw::Image { rect: drawn, .. } if *drawn == rect))
+        };
+        assert!(shows_a_picture(&program));
+        program.ui_mut().clear_picture(SETTINGS.made_in_code);
+        frame(&mut program, 0.016);
+        assert!(!shows_a_picture(&program), "the Surface draws no picture");
+        let side: f32 = MADE_PICTURE_SIDE_PX as f32;
+        let made: Rect = program.ui().rect(SETTINGS.made_in_code);
+        assert_eq!((made.w, made.h), (side, side), "the Surface keeps the size its file gives it");
+        program.ui_mut().set_picture(SETTINGS.made_in_code, 4, 4, vec![0xFF; 4 * 4 * 4]);
+        frame(&mut program, 0.016);
+        assert!(shows_a_picture(&program), "a picture set after shows again");
+    }
+
+    /// Texture and pixels taken off their Surfaces leave the renderer at
+    /// the next GPU frame, and the texture is freed once the page's code
+    /// holds it no more; a texture set after shows again. A page freed
+    /// right after it took its picture off leaves nothing behind.
+    ///
+    /// Needed for a page that lets go of a big picture before it is
+    /// gone (a photo, while the page slides out): without the call the
+    /// picture stays on the GPU until the page is freed.
+    ///
+    /// Ignored unless asked for: needs a GPU adapter.
+    #[test]
+    #[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
+    fn a_picture_taken_off_its_surface_leaves_the_gpu() {
+        use turbodot::wgpu;
+        let paper_surface = crate::ui::paper_page::NAMES.paper;
+        let mut program: Program<AppState> = started(AppState::default());
+        let gpu: turbodot::Gpu = turbodot::Gpu::new().expect("this test needs a GPU adapter");
+        let mut renderer: gogo_wgpu::UiRenderer = gogo_wgpu::UiRenderer::new(&gpu.device, wgpu::TextureFormat::Rgba8Unorm, None);
+
+        // Pixels (`set_picture`): the settings page's picture.
+        open_settings(&mut program, 1.0);
+        let made: Rect = program.ui().rect(SETTINGS.made_in_code);
+        let pixels_key = program.ui().draws.iter().find_map(|draw| match draw {
+            turbodot::gogo::Draw::Image { image, rect, .. } if *rect == made => Some(*image),
+            _ => None,
+        });
+        let pixels_key = pixels_key.expect("the Surface draws its picture");
+        program.gpu_draw(&mut renderer, &gpu);
+        assert!(renderer.has_image(pixels_key), "the pixels are with the renderer");
+        program.ui_mut().clear_picture(SETTINGS.made_in_code);
+        frame(&mut program, 0.016);
+        program.gpu_draw(&mut renderer, &gpu);
+        assert!(!renderer.has_image(pixels_key), "the pixels left the renderer");
+        program.back();
+        let_the_slides_end(&mut program);
+
+        // A texture (`set_picture_texture`): the paper page's paper.
+        program.go(PaperPage::default());
+        let_the_slides_end(&mut program);
+        let shows_the_paper = |program: &Program<AppState>| -> bool {
+            let ui = program.ui();
+            let rect: Rect = ui.rect(paper_surface);
+            ui.draws.iter().any(|draw| matches!(draw, turbodot::gogo::Draw::Image { rect: drawn, .. } if *drawn == rect))
+        };
+        program.gpu_draw(&mut renderer, &gpu);
+        assert_eq!(renderer.debug_held_external_count(), 1, "the paper's texture is with the renderer");
+        assert!(shows_the_paper(&program));
+
+        program.ui_mut().clear_picture(paper_surface);
+        frame(&mut program, 0.016);
+        assert!(!shows_the_paper(&program), "the Surface draws no picture");
+        assert_eq!(renderer.debug_held_external_count(), 1, "the renderer lets go at its next frame, not before");
+        program.gpu_draw(&mut renderer, &gpu);
+        assert_eq!(renderer.debug_held_external_count(), 0, "the texture left the renderer");
+        // The page holds it no more: a renderer made new asks every page
+        // for its textures again (a picture of the program does that),
+        // and gets none for this Surface.
+        gpu.draw_program(&mut program).expect("the pages are drawn");
+        program.gpu_draw(&mut renderer, &gpu);
+        assert_eq!(renderer.debug_held_external_count(), 0, "the page hands the texture to no renderer again");
+        assert!(!shows_the_paper(&program));
+
+        // A texture set after shows again, under the Surface's own key.
+        let size: wgpu::Extent3d = wgpu::Extent3d { width: 2, height: 2, depth_or_array_layers: 1 };
+        let second: wgpu::Texture = gpu.device.create_texture(&wgpu::TextureDescriptor { label: Some("second paper"), size, mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2, format: wgpu::TextureFormat::Rgba8Unorm, usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST, view_formats: &[] });
+        program.ui_mut().set_picture_texture(paper_surface, turbodot::Tex_Image_Straight_Srgb_4xU8_RGBA::new(&second));
+        program.gpu_draw(&mut renderer, &gpu);
+        frame(&mut program, 0.016);
+        assert!(shows_the_paper(&program), "the second texture shows");
+        assert_eq!(renderer.debug_held_external_count(), 1);
+
+        // Taken off and set again before a GPU frame came between: the
+        // one set last is the one the renderer has.
+        program.ui_mut().clear_picture(paper_surface);
+        program.ui_mut().set_picture_texture(paper_surface, turbodot::Tex_Image_Straight_Srgb_4xU8_RGBA::new(&second));
+        frame(&mut program, 0.016);
+        program.gpu_draw(&mut renderer, &gpu);
+        assert_eq!(renderer.debug_held_external_count(), 1, "set after the clear: still shown");
+
+        // Taken off, and the page freed before a GPU frame came: the
+        // renderer still lets go.
+        program.ui_mut().clear_picture(paper_surface);
+        program.back();
+        let_the_slides_end(&mut program);
+        program.free_cached_pages();
+        program.gpu_draw(&mut renderer, &gpu);
+        assert_eq!(renderer.debug_held_external_count(), 0, "nothing of the freed page is left with the renderer");
+    }
+
     /// Picture page's code makes shows its pixels where its Surface sits,
     /// in every picture of the page; a second one takes its place; page
     /// freed, then made again, shows it again.

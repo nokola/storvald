@@ -1989,6 +1989,10 @@ A page of a TurboDot program keeps no key. It hands the Surface a texture
 in `Page::before_draw`
 (`host.ui.set_picture_texture(NAMES.preview, texture)`), or pixels from
 anywhere (`host.ui.set_picture(NAMES.preview, width, height, rgba)`).
+`host.ui.clear_picture(NAMES.preview)` takes the picture off again: the
+Surface shows nothing, and the page and the renderer let go of it. A
+Surface holds its picture until then, or until its page is freed, so a
+page with a big photo calls it when it starts to leave.
 
 An `Image` names a picture file and nothing else: `source="preview://brush"`
 on an Image is an error (G2023) that names the Surface to write.

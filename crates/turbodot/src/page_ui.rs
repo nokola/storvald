@@ -98,6 +98,45 @@ impl PageUi {
         }
     }
 
+    /// Takes the picture off `surface`, a `Surface draw=picture` of
+    /// page's file: pixels (`set_picture`) or a texture
+    /// (`set_picture_texture`). The Surface shows nothing from the next
+    /// frame on, and keeps the size its file gives it. A picture set
+    /// after shows as a first one does.
+    ///
+    /// Needed for a picture that must not live as long as its page: a
+    /// photo of tens of megabytes, let go of when the page starts to
+    /// slide out. Without this call a Surface holds its picture until
+    /// its page is freed.
+    ///
+    /// Page lets go now: the pixels' buffer is freed, the handle to the
+    /// texture dropped. The renderer lets go at the next frame drawn on
+    /// a GPU. A texture is freed once the page's own code holds no
+    /// handle to it either.
+    ///
+    /// A Surface that shows no picture of the page's code: nothing
+    /// happens.
+    pub fn clear_picture(&mut self, surface: PictureSurface) {
+        let node: NodeId = surface.node();
+        let mut was_shown: bool = false;
+        if let Some(at) = self.code_pictures.iter().position(|picture| picture.node == node) {
+            let cleared: CodePicture = self.code_pictures.swap_remove(at);
+            #[cfg(feature = "gpu")]
+            self.cleared_pictures.0.extend(cleared.key);
+            let _ = cleared;
+            was_shown = true;
+        }
+        #[cfg(feature = "gpu")]
+        if let Some(at) = self.picture_textures.iter().position(|picture| picture.node == node) {
+            let cleared: crate::pages::PictureTexture = self.picture_textures.swap_remove(at);
+            self.cleared_pictures.1.extend(cleared.key);
+            was_shown = true;
+        }
+        if was_shown {
+            self.runtime.set_picture(surface, gogo_ui::NO_IMAGE);
+        }
+    }
+
     /// Draws `node` of this page and everything inside it to a new
     /// texture, as page's last layout has them. The walk and the
     /// renderer are the screen's, so what the user sees is what the
@@ -390,6 +429,21 @@ mod tests {
         assert_eq!(picture.rgba.as_ptr(), second_memory, "page holds the second buffer: no copy");
         assert_eq!((picture.width, picture.height, &picture.rgba[..]), (1, 2, &[9, 9, 9, 9, 8, 8, 8, 8][..]));
         assert!(picture.is_size_new && !picture.is_uploaded, "to place and to upload again");
+    }
+
+    /// A picture taken off its Surface is gone from the page; taking
+    /// one off a Surface that shows none does nothing.
+    #[test]
+    fn a_cleared_picture_is_gone_from_its_page() {
+        let (mut ui, node) = page_with_a_picture_surface();
+        ui.clear_picture(node);
+        assert!(ui.code_pictures.is_empty(), "nothing to take off");
+        ui.set_picture(node, 2, 1, vec![1, 2, 3, 4, 5, 6, 7, 8]);
+        ui.clear_picture(node);
+        assert!(ui.code_pictures.is_empty(), "page holds the pixels no more");
+        ui.set_picture(node, 1, 1, vec![9, 9, 9, 9]);
+        assert_eq!(ui.code_pictures.len(), 1, "a picture set after is the Surface's picture");
+        assert!(ui.code_pictures[0].is_size_new && !ui.code_pictures[0].is_uploaded, "to place and to upload, as a first one");
     }
 
     /// Bytes that do not make `width` x `height` pixels stop program with

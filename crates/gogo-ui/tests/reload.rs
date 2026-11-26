@@ -387,6 +387,10 @@ fn a_build_writes_down_what_a_reload_needs() {
     stamp.used("styles/theme.gogo", Some(theme_text));
     let row = format!("gogo_ui::reload::BuiltPage {{ file: \"first-page.gogo\", page: &first_page::PAGE, uses: &[\"styles/theme.gogo\"], text: {} }},", stamp.finish());
     assert!(source.contains("pub static BUILD: gogo_ui::reload::BuildTables<'static> = gogo_ui::reload::BuildTables {\n    keys: KEYS,\n    images: IMAGES,\n    slices: &SLICES,\n"), "{source}");
+    // The two tables that point at file bytes are statics: a const is
+    // copied, bytes and all, into every crate that names it.
+    assert!(source.contains("\npub static IMAGES: &[(&str, Option<&[u8]>)] = &[\n") && source.contains("\npub static FONTS: &[(&str, &[u8])] = &[\n"), "{source}");
+    assert!(!source.contains("pub const IMAGES") && !source.contains("pub const FONTS"), "{source}");
     assert!(source.contains(&row), "the page's row: {row}\n{source}");
     assert!(source.contains("gogo_ui::reload::BuiltPage { file: \"\", page: &gogo_edit_bar::PAGE, uses: &[], text: 0 },"), "the edit bar has no file");
     assert!(source.contains("    behaviors: &[\n"), "{source}");

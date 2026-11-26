@@ -3072,7 +3072,9 @@ with the type of its `draw=`), the enum
 `Handler`, and the enums `Arrangement`, `Anim` and `Theme` where the page
 declares arrangements, anims or theme values; for the whole build,
 `KEYS` with `enum Key`, the embedded `IMAGES` and `FONTS`, and the
-atlases. A page with an error fails the build. While a program runs
+atlases. `IMAGES` and `FONTS` are statics: a program holds each file's
+bytes once, however many of its crates name the tables. A page with an
+error fails the build. While a program runs
 (tests, tools, hot reload) `compile` does the same from text:
 
 ```rust

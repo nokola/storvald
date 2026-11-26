@@ -527,6 +527,12 @@ pub struct PageUi {
     /// Surface.
     #[cfg(feature = "gpu")]
     pub(crate) picture_textures: Vec<PictureTexture>,
+    /// Keys of pictures page's code took off their Surfaces
+    /// (`clear_picture`) since the last GPU frame: pixels' keys first,
+    /// textures' keys second. The next GPU frame takes them off the
+    /// renderer.
+    #[cfg(feature = "gpu")]
+    pub(crate) cleared_pictures: (Vec<ImageKey>, Vec<ImageKey>),
     /// Format of the pass page's GPU frame is drawn in
     /// (`PageUi::target_format`). `None` before page's first GPU frame.
     #[cfg(feature = "gpu")]
@@ -591,6 +597,8 @@ impl PageUi {
             code_pictures: Vec::new(),
             #[cfg(feature = "gpu")]
             picture_textures: Vec::new(),
+            #[cfg(feature = "gpu")]
+            cleared_pictures: (Vec::new(), Vec::new()),
             #[cfg(feature = "gpu")]
             target_format: None,
             #[cfg(feature = "gpu")]
