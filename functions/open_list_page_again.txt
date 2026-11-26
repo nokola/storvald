@@ -1,4 +1,4 @@
-# `open_list_page_again` at commit ef2acb0e212e3eecb320554e7d662c554fa59b72: instructions by function, 1827235 in all.
+# `open_list_page_again` at commit 3c33d57c893f96a79fd698256f5e52ca36d0cf3d: instructions by function, 1827235 in all.
 # A function's own code only: what it calls is counted at the called function.
 255704 _int_malloc
 159222 <gogo_ui::runtime::Watchers>::extend

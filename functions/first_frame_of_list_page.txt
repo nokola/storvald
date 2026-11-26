@@ -1,9 +1,9 @@
-# `first_frame_of_list_page` at commit ef2acb0e212e3eecb320554e7d662c554fa59b72: instructions by function, 21552098 in all.
+# `first_frame_of_list_page` at commit 3c33d57c893f96a79fd698256f5e52ca36d0cf3d: instructions by function, 21551969 in all.
 # A function's own code only: what it calls is counted at the called function.
 1547203 <gogo_ui::page::Page>::kind_default::{closure#0}
 1280270 <gogo_ui::runtime::Resolved>::override_of_by_id
 1054173 <gogo_ui::page::Page>::prop_by_id
-989987 __memcpy_avx_unaligned_erms
+989983 __memcpy_avx_unaligned_erms
 897070 harfrust::hb::ot_shape::shape_internal
 874740 <gogo_ui::runtime::Resolved>::prop_by_id
 779318 <cosmic_text::attrs::AttrsList>::get_span
@@ -81,7 +81,7 @@
 55904 <read_fonts::table_ref::TableRef<read_fonts::tables::cmap::Cmap6Marker> as read_fonts::read::FontRead>::read
 55752 <cosmic_text::buffer::Buffer>::set_text
 55717 <gogo_ui::layout::Lay>::place_children'2
-55340 <gogo_text::TextEngine>::measure
+55280 <gogo_text::TextEngine>::measure
 55016 harfrust::hb::ot::lookup::pair_pos2_cached
 54540 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&str>
 52444 <cosmic_text::line_ending::LineIter as core::iter::traits::iterator::Iterator>::next
@@ -144,7 +144,7 @@
 17136 gogo_ui::layout::free_axis
 16872 <harfrust::hb::ot_shape_plan::ShapePlanKey>::instance
 16629 __rustc::__rust_alloc
-16577 <hashbrown::map::HashMap<u64, (f32, f32), std::hash::random::RandomState>>::insert
+16512 <hashbrown::map::HashMap<u64, (f32, f32), std::hash::random::RandomState>>::insert
 16405 gogo_ui::runtime::own_word
 15704 <read_fonts::table_ref::TableRef<read_fonts::tables::gsub::LigatureMarker>>::component_glyph_ids
 15352 <alloc::vec::Vec<cosmic_text::shape::ShapeSpan> as core::ops::drop::Drop>::drop

@@ -1,4 +1,4 @@
-# `leave_and_come_back` at commit ef2acb0e212e3eecb320554e7d662c554fa59b72: instructions by function, 118987 in all.
+# `leave_and_come_back` at commit 3c33d57c893f96a79fd698256f5e52ca36d0cf3d: instructions by function, 118987 in all.
 # A function's own code only: what it calls is counted at the called function.
 22314 <gogo_ui::runtime::Runtime>::set_screen
 10843 _int_free_merge_chunk

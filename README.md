@@ -9,18 +9,18 @@ What gogo and TurboDot cost in the measured program (`perf/` on `main`), counted
 
 ## Last run
 
-2026-11-26T21:16:02Z, commit [ef2acb0](https://github.com/nokola/storvald/commit/ef2acb0e212e3eecb320554e7d662c554fa59b72), rustc 1.100.0, machine `github-ubuntu26`. 42 runs so far.
+2026-11-26T21:41:53Z, commit [3c33d57](https://github.com/nokola/storvald/commit/3c33d57c893f96a79fd698256f5e52ca36d0cf3d), rustc 1.100.0, machine `github-ubuntu26`. 43 runs so far.
 
 | Scenario | What is counted | Instructions | Against run before | Allocations | Nodes placed | Nodes measured |
 |---|---|---:|---:|---:|---:|---:|
-| `compile_controls_page` | gogo compiles the controls page's file | 3,160,962 | +0.0 % | 3,517 | 0 | 0 |
-| `start_program` | program is made and runs its first frame | 1,174,074 | +0.0 % | 343 | 6 | 8 |
-| `open_controls_page` | tap that opens the controls page: page is made | 121,499 | +0.0 % | 67 | 0 | 0 |
-| `first_frame_of_controls_page` | first frame of the controls page: its first layout | 4,905,131 | -0.0 % | 1,664 | 115 | 229 |
+| `compile_controls_page` | gogo compiles the controls page's file | 3,160,804 | -0.0 % | 3,517 | 0 | 0 |
+| `start_program` | program is made and runs its first frame | 1,173,952 | -0.0 % | 343 | 6 | 8 |
+| `open_controls_page` | tap that opens the controls page: page is made | 121,487 | -0.0 % | 67 | 0 | 0 |
+| `first_frame_of_controls_page` | first frame of the controls page: its first layout | 4,905,233 | +0.0 % | 1,664 | 115 | 229 |
 | `open_list_page` | tap that opens the list page: page and its 100 rows are made | 1,814,009 | +0.0 % | 2,561 | 0 | 0 |
-| `first_frame_of_list_page` | first frame of the list page: its first layout | 21,552,098 | +0.0 % | 6,047 | 413 | 910 |
+| `first_frame_of_list_page` | first frame of the list page: its first layout | 21,551,969 | -0.0 % | 6,047 | 413 | 910 |
 | `open_list_page_again` | same tap, at page's second open | 1,827,235 | +0.0 % | 2,556 | 0 | 0 |
-| `first_frame_of_list_page_again` | first frame of the list page at its second open | 8,246,327 | +0.0 % | 599 | 413 | 910 |
+| `first_frame_of_list_page_again` | first frame of the list page at its second open | 8,246,503 | +0.0 % | 599 | 413 | 910 |
 | `draw_list_of_list_page` | draw list of the list page, walked whole | 2,702,056 | +0.0 % | 7 | 0 | 0 |
 | `still_frame` | frame of the controls page while nothing changes | 3,173 | +0.0 % | 0 | 0 | 0 |
 | `mouse_move` | mouse moves onto another row of the controls page, and the frame after | 113,739 | +0.0 % | 0 | 0 | 0 |
