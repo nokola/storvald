@@ -34,6 +34,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::ops::Range;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
@@ -209,10 +210,32 @@ pub type HostColorGlyphPainter = Box<dyn FnMut(&str, f32) -> Option<HostColorGly
 ///
 /// Needed for the whole process, not per engine, so a renderer that drew
 /// with one engine and is handed another never takes the second engine's
-/// atlas for the one it uploaded (`TextEngine::atlas_version`).
+/// atlas for the one it uploaded (`TextEngine::atlas_rows_to_send`).
 fn next_atlas_version() -> u64 {
     static NEXT_ATLAS_VERSION: AtomicU64 = AtomicU64::new(1);
     NEXT_ATLAS_VERSION.fetch_add(1, Ordering::Relaxed)
+}
+
+/// What a renderer has sent to its GPU of one atlas: it keeps one for
+/// the letters' atlas and one for the emoji atlas, and hands each to
+/// `TextEngine::atlas_rows_to_send` or `color_atlas_rows_to_send`.
+///
+/// Needed so a renderer sends only the rows it has not sent. A new
+/// letter changes a few rows; the whole atlas is 4 MB at 2048 a side,
+/// and sending it took 11 to 17 ms on an old phone, for one letter.
+///
+/// `AtlasSent::default()` says nothing was sent: the next send is the
+/// whole atlas.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AtlasSent {
+    /// The atlas's version at the send.
+    version: u64,
+    /// Which atlas was sent (`TextEngine::atlas_id`, `color_atlas_id`).
+    atlas_id: u64,
+    /// The first row of the shelf that was being filled at the send. A
+    /// later glyph may have landed in that shelf; no row above it has
+    /// changed.
+    open_row: u32,
 }
 
 /// The color atlas's first side; it doubles when it fills (`grow_color`).
@@ -250,6 +273,28 @@ impl Shelf {
         self.x += w;
         self.h = self.h.max(h);
         Some(pos)
+    }
+
+    /// The rows a renderer at `sent` has not got of the atlas `atlas_id`
+    /// this shelf packs, now at `version`.
+    ///
+    /// Needed in one place because both atlases answer it the same way.
+    /// Slots are packed left to right, shelf below shelf, so the rows
+    /// above the shelf being filled never change: what a renderer lacks
+    /// starts at the shelf that was being filled when it sent last.
+    ///
+    /// Returns the rows, and what the renderer has sent once it sent
+    /// them. No rows when the version is the one sent; every row when
+    /// the atlas is another than the one sent.
+    fn rows_to_send(&self, atlas_id: u64, version: u64, sent: AtlasSent) -> (Range<u32>, AtlasSent) {
+        let rows: Range<u32> = if sent.version == version {
+            0..0
+        } else if sent.atlas_id != atlas_id {
+            0..self.size
+        } else {
+            sent.open_row..self.y + self.h
+        };
+        (rows, AtlasSent { version, atlas_id, open_row: self.y })
     }
 }
 
@@ -302,12 +347,17 @@ pub struct TextEngine {
     default_face: Option<Face>,
     atlas: Vec<u8>,
     atlas_size: u32,
+    /// A number no other atlas of this process has; a new one when the
+    /// atlas grows, since every row of the grown one differs.
+    atlas_id: u64,
     shelf: Shelf,
     /// (glyph, faux bold) → its coverage-atlas slot; a bold glyph is its
     /// own raster.
     slots: HashMap<(CacheKey, bool), Option<Slot>>,
     /// The emoji atlas: straight RGBA, `color_shelf.size` square.
     color_atlas: Vec<u8>,
+    /// `atlas_id`, for the emoji atlas.
+    color_atlas_id: u64,
     color_shelf: Shelf,
     /// A swash-painted color glyph → its color-atlas slot.
     color_slots: HashMap<CacheKey, Option<Slot>>,
@@ -319,13 +369,23 @@ pub struct TextEngine {
     color_faces: HashMap<fontdb::ID, bool>,
     /// The host's emoji painter, when it has one (Android).
     host_color_glyph_painter: Option<HostColorGlyphPainter>,
-    /// What `color_atlas_version` returns.
+    /// `atlas_version`, for the emoji atlas. 0 until the first emoji
+    /// packs, where a renderer's `AtlasSent` starts too: a start without
+    /// an emoji sends no emoji atlas.
     color_atlas_version: u64,
     /// The OS font scan ran (once per engine).
     system_loaded: bool,
     /// Family names the scan found, sorted, each once.
     system_families: Vec<String>,
-    /// What `atlas_version` returns.
+    /// A number that is new each time the letters' atlas changes: a
+    /// glyph packed into it, or the atlas grown. No two engines of a
+    /// process have the same one.
+    ///
+    /// Needed so each renderer knows by itself whether the atlas it
+    /// uploaded is still this one (`atlas_rows_to_send` compares it with
+    /// the version that renderer sent). With one flag that the first
+    /// reader cleared, a second renderer over the same engine drew every
+    /// plate and picture and no letters.
     atlas_version: u64,
     /// Set when the atlas grew: every uv handed out before is stale.
     pub generation: u32,
@@ -397,9 +457,11 @@ impl TextEngine {
             default_face,
             atlas: vec![0; (atlas_size * atlas_size) as usize],
             atlas_size,
+            atlas_id: next_atlas_version(),
             shelf: Shelf::new(atlas_size),
             slots: HashMap::new(),
             color_atlas: vec![0; (COLOR_ATLAS_START * COLOR_ATLAS_START * 4) as usize],
+            color_atlas_id: next_atlas_version(),
             color_shelf: Shelf::new(COLOR_ATLAS_START),
             color_slots: HashMap::new(),
             host_slots: HashMap::new(),
@@ -582,14 +644,6 @@ impl TextEngine {
         (&self.color_atlas, self.color_shelf.size)
     }
 
-    /// `atlas_version`, for the emoji atlas.
-    ///
-    /// Returns 0 until the first emoji packs: a renderer starts at 0
-    /// too, so a start without an emoji uploads no emoji atlas.
-    pub fn color_atlas_version(&self) -> u64 {
-        self.color_atlas_version
-    }
-
     /// Installs (or removes) the host's emoji painter. A load-time call:
     /// drops the shape cache and every host-painted slot, so a cluster
     /// the old painter drew is painted again by the new one.
@@ -635,19 +689,30 @@ impl TextEngine {
         self.shape_cache.clear();
     }
 
-    /// A number that is new each time the letters' atlas changes: a
-    /// glyph packed into it, or the atlas grown.
+    /// The rows of the letters' atlas that a renderer at `sent` has not
+    /// sent to its GPU. A renderer calls it once a frame and writes
+    /// those rows of `atlas` into its texture.
     ///
-    /// Needed so each renderer knows by itself whether the atlas it
-    /// uploaded is still this one: it keeps the number it uploaded at
-    /// and uploads again when the number differs. With one flag that the
-    /// first reader cleared, a second renderer over the same engine drew
-    /// every plate and picture and no letters.
+    /// Needed because a frame that draws one new letter otherwise sends
+    /// the whole atlas: the largest part of such a frame's text time.
+    /// Each renderer keeps its own `AtlasSent`, so several renderers
+    /// over one engine each get the rows they lack.
     ///
-    /// No two engines of a process return the same number, so a renderer
-    /// handed another engine uploads that engine's atlas.
-    pub fn atlas_version(&self) -> u64 {
-        self.atlas_version
+    /// Returns the rows, and what the renderer keeps as sent once it
+    /// wrote them. No rows when nothing was packed since `sent`. Every
+    /// row when the atlas is not the one `sent` names: nothing sent yet,
+    /// another engine's, or this one after it grew. Row `r` is the bytes
+    /// `r * size..(r + 1) * size` of `atlas`.
+    pub fn atlas_rows_to_send(&self, sent: AtlasSent) -> (Range<u32>, AtlasSent) {
+        self.shelf.rows_to_send(self.atlas_id, self.atlas_version, sent)
+    }
+
+    /// `atlas_rows_to_send`, for the emoji atlas (4 bytes a texel).
+    ///
+    /// Returns no rows until the first emoji packs: a start without an
+    /// emoji sends no emoji atlas.
+    pub fn color_atlas_rows_to_send(&self, sent: AtlasSent) -> (Range<u32>, AtlasSent) {
+        self.color_shelf.rows_to_send(self.color_atlas_id, self.color_atlas_version, sent)
     }
 
     /// The face `font` names (its style suffix ignored), else the default.
@@ -1012,6 +1077,7 @@ impl TextEngine {
         self.slots.clear();
         self.generation += 1;
         self.atlas_version = next_atlas_version();
+        self.atlas_id = next_atlas_version();
     }
 
     /// The color atlas doubles: every emoji slot handed out is stale, the
@@ -1027,6 +1093,7 @@ impl TextEngine {
         self.host_slots.clear();
         self.generation += 1;
         self.color_atlas_version = next_atlas_version();
+        self.color_atlas_id = next_atlas_version();
     }
 
     /// Rasterizes every glyph of `chars` at `font_size`.

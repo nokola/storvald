@@ -4,7 +4,8 @@
 //! way a host does, several times over, and reads them back. A third
 //! draws the wedge of a dial and checks it against the hit test. Two
 //! more draw one text engine's letters with a second renderer, and a
-//! second engine's letters with the same renderer.
+//! second engine's letters with the same renderer. A sixth draws letters
+//! new to the atlas and counts the rows of it the renderer sent.
 //!
 //! Needed because nothing else in this repository runs the shader: the
 //! unit tests cover the gradient tables only, and a renderer whose quads
@@ -20,7 +21,7 @@ use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use gogo_text::{EpxMeasure, TextEngine};
+use gogo_text::{EpxMeasure, GlyphQuad, TextEngine};
 use gogo_ui::layout::Rect;
 use gogo_ui::runtime::{Runtime, resolve};
 use gogo_ui::{Compiled, Draw, ImageKey, KeptFrame, Page, compile, draw, has_errors};
@@ -375,7 +376,7 @@ fn a_second_renderer_over_one_text_engine_draws_its_letters() {
 /// A renderer handed another text engine draws that engine's letters.
 ///
 /// Needed because a renderer keeps the version of the atlas it uploaded
-/// (`TextEngine::atlas_version`). Two engines that each packed two glyphs
+/// (`TextEngine::atlas_rows_to_send`). Two engines that each packed two glyphs
 /// would share a count kept per engine: the renderer would keep the first
 /// engine's atlas and draw the second engine's letters from the wrong
 /// places in it.
@@ -393,4 +394,49 @@ fn a_renderer_handed_another_text_engine_draws_that_engines_letters() {
     let mut fresh: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
     let (want, _) = drawn_tile(PAGE_LETTERS_SWAPPED, &mut fresh, &device, &queue, &second_engine);
     assert!(pixels == want, "the picture of a renderer that only ever saw the second engine");
+}
+
+const PAGE_OTHER_LETTERS: &str = r#"
+View card {
+    Panel plate width=120, height=60, halign=left, valign=top, background=#E51400 {
+        Label hello text="ok", font_size=32, font_color=#FFFFFF, halign=center, valign=center
+    }
+}
+"#;
+
+/// A renderer that drew one text and then draws letters new to the
+/// atlas sends those letters' rows only, and draws them as a renderer
+/// that sent the whole atlas does.
+///
+/// Needed because a frame with one new letter otherwise sends the whole
+/// atlas to the GPU, megabytes for a few rows. Red on the row count when
+/// every send is the whole atlas; red on the picture when the rows sent
+/// are not the rows that changed.
+#[test]
+#[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
+fn a_new_letter_sends_only_its_rows_of_the_atlas() {
+    let (device, queue) = device();
+    let mut ui: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
+    let text: RefCell<TextEngine> = engine();
+    // 52 letters at 64 px are wider than the atlas: they fill its first
+    // shelf, so the letters drawn below land under it. Needed because
+    // rows written at a wrong height, or read from a wrong place, are
+    // still right for letters in the top shelf.
+    text.borrow_mut().warm("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", 64.0, None);
+    drawn_tile(PAGE, &mut ui, &device, &queue, &text);
+    let atlas_rows: u64 = u64::from(text.borrow().atlas().1);
+    assert_eq!(ui.debug_atlas_rows_written(), atlas_rows, "the first frame sends the whole atlas");
+
+    let (pixels, label) = drawn_tile(PAGE_OTHER_LETTERS, &mut ui, &device, &queue, &text);
+    let rows_of_new_letters: u64 = ui.debug_atlas_rows_written() - atlas_rows;
+    assert!(rows_of_new_letters > 0 && rows_of_new_letters < 100, "two new letters at 32 px: {rows_of_new_letters} rows sent");
+    assert!(white_pixels(&pixels, label) > 20, "the new letters are drawn");
+    let new_letter: GlyphQuad = text.borrow_mut().glyph("o", 32.0, None).expect("the letter drawn above");
+    assert!(new_letter.uv[1] > 0.0, "the precondition: the new letters are below the atlas's first shelf");
+    let mut fresh: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
+    let (want, _) = drawn_tile(PAGE_OTHER_LETTERS, &mut fresh, &device, &queue, &text);
+    assert!(pixels == want, "the picture of a renderer that sent the whole atlas");
+
+    drawn_tile(PAGE_OTHER_LETTERS, &mut ui, &device, &queue, &text);
+    assert_eq!(ui.debug_atlas_rows_written(), atlas_rows + rows_of_new_letters, "a frame with no new letter sends no row");
 }

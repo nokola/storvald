@@ -8,9 +8,10 @@
 //! file out of the package (`exclude`), so `cargo test` on a downloaded
 //! package runs only what the package can feed.
 
-use gogo_text::{EpxMeasure, FaceMetrics, GlyphQuad, HostColorGlyph, TextEngine, TextPx, styled_key};
+use gogo_text::{AtlasSent, EpxMeasure, FaceMetrics, GlyphQuad, HostColorGlyph, TextEngine, TextPx, styled_key};
 use gogo_ui::layout::TextMeasure;
 use std::cell::RefCell;
+use std::ops::Range;
 use std::path::Path;
 
 /// A run whose glyph grows the atlas mid-way comes out whole against
@@ -97,21 +98,21 @@ fn color_texel_of(e: &TextEngine, q: &GlyphQuad) -> [u8; 4] {
 
 /// An emoji of a color face lands in the COLOR atlas with its own
 /// colors (`color: true`, texels that are not gray), a letter beside
-/// it in the coverage atlas; both atlases get a new version. Red when the
+/// it in the coverage atlas; both atlases have rows to send. Red when the
 /// rasterizer keeps coverage masks only: every other glyph is dropped,
 /// and the user sees a box for each emoji.
 #[test]
 #[ignore = "needs Windows' Segoe UI Emoji font: run with --include-ignored on Windows"]
 fn an_emoji_lands_in_the_color_atlas_beside_the_letters() {
     let mut e: TextEngine = engine_with_emoji();
-    assert_eq!(e.color_atlas_version(), 0, "nothing packed yet");
-    let letters_before: u64 = e.atlas_version();
+    assert!(e.color_atlas_rows_to_send(AtlasSent::default()).0.is_empty(), "nothing packed yet");
+    let (_, letters_before): (Range<u32>, AtlasSent) = e.atlas_rows_to_send(AtlasSent::default());
     let quads: Vec<GlyphQuad> = e.shape("a😀", px(40.0), None, None, 0.0, 0.0, 0.0, 0);
     assert_eq!(quads.len(), 2, "{quads:?}");
     assert!(!quads[0].color, "the letter: coverage atlas");
     assert!(quads[1].color, "the emoji: color atlas");
     assert!(quads[1].w > 20.0 && quads[1].h > 20.0, "an emoji at 40 px is a real box: {:?}", quads[1]);
-    assert!(e.atlas_version() != letters_before && e.color_atlas_version() != 0);
+    assert!(!e.atlas_rows_to_send(letters_before).0.is_empty() && !e.color_atlas_rows_to_send(AtlasSent::default()).0.is_empty());
     // Somewhere in the emoji's slot a texel is opaque and colored.
     let (atlas, side) = e.color_atlas();
     let (x0, y0, x1, y1) = ((quads[1].uv[0] * side as f32) as usize, (quads[1].uv[1] * side as f32) as usize, (quads[1].uv[2] * side as f32) as usize, (quads[1].uv[3] * side as f32) as usize);
@@ -230,24 +231,24 @@ fn measures_wraps_and_rasterizes() {
     assert_eq!(m.font_height(20.0), 24.0);
     let (_, h2) = e.measure("one two three four five six seven", px(20.0), Some(100.0), None);
     assert!(h2 >= 48.0, "{h2}");
-    let before: u64 = e.atlas_version();
+    let (_, before): (Range<u32>, AtlasSent) = e.atlas_rows_to_send(AtlasSent::default());
     let quads = e.shape("Hi", px(20.0), None, None, 10.0, 5.0, 0.0, 0);
     assert_eq!(quads.len(), 2);
     assert!(quads[0].x >= 10.0 && quads[1].x > quads[0].x);
     let (atlas, size) = e.atlas();
     assert!(atlas.iter().any(|b| *b > 128), "atlas has ink");
     assert_eq!(size, 1024);
-    // The atlas has a new version when glyphs are packed into it, the
-    // same one when a text's glyphs are in it already, and never one
-    // another engine has.
-    let packed: u64 = e.atlas_version();
-    assert_ne!(packed, before, "two glyphs were packed");
+    // The atlas has rows to send when glyphs are packed into it, none
+    // when a text's glyphs are in it already, and every row for a
+    // renderer that sent another engine's atlas.
+    let (rows, packed): (Range<u32>, AtlasSent) = e.atlas_rows_to_send(before);
+    assert!(!rows.is_empty(), "two glyphs were packed");
     e.shape("Hi", px(20.0), None, None, 40.0, 5.0, 0.0, 0);
-    assert_eq!(e.atlas_version(), packed, "nothing new was packed");
+    assert!(e.atlas_rows_to_send(packed).0.is_empty(), "nothing new was packed");
     let mut other = engine();
-    assert_ne!(other.atlas_version(), before, "a second engine's blank atlas");
+    assert_eq!(other.atlas_rows_to_send(before).0, 0..1024, "a second engine's blank atlas");
     other.shape("Hi", px(20.0), None, None, 10.0, 5.0, 0.0, 0);
-    assert_ne!(other.atlas_version(), packed, "a second engine with the same two glyphs");
+    assert_eq!(other.atlas_rows_to_send(packed).0, 0..1024, "a second engine with the same two glyphs");
 }
 
 /// A style suffix on the font key is a faux style: bold grows the
@@ -475,4 +476,132 @@ fn a_wrapping_label_in_a_tight_row_keeps_its_longest_word_whole() {
     let (word, _) = measure.measure("wonderful", 15.0, None, None);
     assert_eq!(label.w, word, "as wide as `wonderful`");
     assert_eq!(label.h, measure.measure("hello wonderful world", 15.0, Some(word + 0.01), None).1, "one word to a line");
+}
+
+/// What a renderer's texture holds of an atlas: it starts empty and
+/// takes only the rows the engine names.
+///
+/// Needed by the tests of `atlas_rows_to_send`: the rows are right when
+/// such a copy equals the engine's atlas after every take.
+#[derive(Clone, Default)]
+struct AtlasCopy {
+    sent: AtlasSent,
+    bytes: Vec<u8>,
+    size: u32,
+}
+
+impl AtlasCopy {
+    /// Copies `rows` of `atlas` (`size` a side, `texel_bytes` a texel)
+    /// and keeps `sent`. An atlas of another size starts a new, empty
+    /// copy, as a renderer makes a new texture, and must be sent whole.
+    fn take(&mut self, atlas: &[u8], size: u32, texel_bytes: u32, rows: Range<u32>, sent: AtlasSent) {
+        self.sent = sent;
+        if size != self.size {
+            assert_eq!(rows, 0..size, "an atlas of another size is sent whole");
+            self.bytes = vec![0; (size * size * texel_bytes) as usize];
+            self.size = size;
+        }
+        let row_bytes: u32 = size * texel_bytes;
+        let (from, to) = ((rows.start * row_bytes) as usize, (rows.end * row_bytes) as usize);
+        self.bytes[from..to].copy_from_slice(&atlas[from..to]);
+    }
+
+    /// Takes the rows of `e`'s letters' atlas this copy lacks.
+    ///
+    /// Returns the rows the engine named.
+    fn take_letters(&mut self, e: &TextEngine) -> Range<u32> {
+        let (rows, sent) = e.atlas_rows_to_send(self.sent);
+        let (atlas, size) = e.atlas();
+        self.take(atlas, size, 1, rows.clone(), sent);
+        rows
+    }
+
+    /// `take_letters`, for the emoji atlas.
+    fn take_emoji(&mut self, e: &TextEngine) -> Range<u32> {
+        let (rows, sent) = e.color_atlas_rows_to_send(self.sent);
+        let (atlas, size) = e.color_atlas();
+        self.take(atlas, size, 4, rows.clone(), sent);
+        rows
+    }
+}
+
+/// A renderer that sends only the rows `atlas_rows_to_send` names holds
+/// the engine's whole atlas after each send: no rows for nothing new, a
+/// new letter's shelf for a new letter, every row for an atlas it has
+/// not got. Red when a row that changed is not named: the user sees a
+/// new letter as an empty box, or cut off at the top.
+#[test]
+fn a_copy_that_takes_only_the_rows_to_send_holds_the_whole_atlas() {
+    let mut e = engine();
+    let mut copy = AtlasCopy::default();
+    let shape = |e: &mut TextEngine, text: &str, font_size: f32| {
+        e.shape(text, px(font_size), None, None, 0.0, 0.0, 100_000.0, 0);
+    };
+    shape(&mut e, "Hi", 20.0);
+    assert_eq!(copy.take_letters(&e), 0..1024, "nothing was sent yet: every row");
+    assert!(copy.bytes == e.atlas().0);
+
+    shape(&mut e, "Hi", 20.0);
+    assert!(copy.take_letters(&e).is_empty(), "nothing new was packed");
+
+    shape(&mut e, "o", 20.0);
+    let rows: Range<u32> = copy.take_letters(&e);
+    assert!(rows.start == 0 && !rows.is_empty() && rows.end < 64, "a new letter beside the first two: their shelf only, {rows:?}");
+    assert!(copy.bytes == e.atlas().0, "the copy after one new letter");
+
+    // 52 letters at 64 px are wider than the atlas: they fill the first
+    // shelf and start others below it.
+    shape(&mut e, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", 64.0);
+    copy.take_letters(&e);
+    assert!(copy.bytes == e.atlas().0, "the copy after letters over several shelves");
+
+    shape(&mut e, "?", 64.0);
+    let rows: Range<u32> = copy.take_letters(&e);
+    assert!(rows.start > 0 && !rows.is_empty() && rows.end - rows.start < 128, "a letter in a shelf below the first: no row of the first shelf again, {rows:?}");
+    assert!(copy.bytes == e.atlas().0, "the copy after a letter in a lower shelf");
+
+    let mut second_renderer = AtlasCopy::default();
+    assert_eq!(second_renderer.take_letters(&e), 0..1024, "a second renderer over the same engine: every row");
+    assert!(second_renderer.bytes == e.atlas().0);
+
+    // Another engine's atlas has the same size and other letters in the
+    // same places.
+    let mut other = engine();
+    shape(&mut other, "xyz", 20.0);
+    let mut handed_another_engine: AtlasCopy = copy.clone();
+    assert_eq!(handed_another_engine.take_letters(&other), 0..1024, "another engine's atlas: every row");
+    assert!(handed_another_engine.bytes == other.atlas().0);
+
+    let generation: u32 = e.generation;
+    shape(&mut e, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 400.0);
+    assert!(e.generation > generation, "the precondition: the atlas grew");
+    let size: u32 = e.atlas().1;
+    assert_eq!(copy.take_letters(&e), 0..size, "the grown atlas: every row");
+    assert!(copy.bytes == e.atlas().0);
+
+    shape(&mut e, "#", 20.0);
+    let rows: Range<u32> = copy.take_letters(&e);
+    assert!(!rows.is_empty() && rows.end - rows.start < size, "a new letter in the grown atlas: not every row, {rows:?}");
+    assert!(copy.bytes == e.atlas().0, "the copy after a letter in the grown atlas");
+}
+
+/// The emoji atlas is sent the same way: nothing before the first
+/// emoji, every row at the first, the shelf of a new emoji after.
+#[test]
+#[ignore = "needs Windows' Segoe UI Emoji font: run with --include-ignored on Windows"]
+fn a_copy_that_takes_only_the_rows_to_send_holds_the_whole_emoji_atlas() {
+    let mut e: TextEngine = engine_with_emoji();
+    let mut copy = AtlasCopy::default();
+    e.shape("a", px(40.0), None, None, 0.0, 0.0, 0.0, 0);
+    assert!(e.color_atlas_rows_to_send(copy.sent).0.is_empty(), "no emoji was packed: nothing to send");
+
+    e.shape("\u{1F600}", px(40.0), None, None, 0.0, 0.0, 0.0, 0);
+    let size: u32 = e.color_atlas().1;
+    assert_eq!(copy.take_emoji(&e), 0..size, "the first emoji: every row");
+    assert!(copy.bytes == e.color_atlas().0);
+
+    e.shape("\u{1F388}", px(40.0), None, None, 0.0, 0.0, 0.0, 0);
+    let rows: Range<u32> = copy.take_emoji(&e);
+    assert!(rows.start == 0 && !rows.is_empty() && rows.end < 128, "a second emoji beside the first: their shelf only, {rows:?}");
+    assert!(copy.bytes == e.color_atlas().0, "the copy after a second emoji");
 }

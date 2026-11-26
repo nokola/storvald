@@ -16,6 +16,7 @@
 
 use crate::textures::{Tex_Image_Straight_Srgb_4xU8_RGBA, Tex_Tile_Premul_Srgb_4xU8_RGBA};
 use crate::timings::{PrepareStage, PrepareTimings};
+use std::ops::Range;
 use std::time::Instant;
 
 use gogo_ui::draw::{Draw, Fit, GradientKind, Sampling, TextAlign};
@@ -23,7 +24,7 @@ use gogo_ui::layout::Rect;
 use gogo_ui::locale::Locale;
 use gogo_ui::page::{NO_STR, NodeId, Page};
 use gogo_ui::ImageKey;
-use gogo_text::{TextEngine, TextPx};
+use gogo_text::{AtlasSent, TextEngine, TextPx};
 
 /// A frame's draw lists, in draw order, each with the page that owns its
 /// strings. A slice, an array or a `Vec` of `(draws, page)` pairs is one.
@@ -293,15 +294,15 @@ pub struct UiRenderer {
     free_slots: Vec<TexId>,
     atlas_texture: Option<wgpu::Texture>,
     atlas_size: u32,
-    /// The `TextEngine::atlas_version` of the atlas in slot 0; 0 = none
-    /// uploaded yet.
-    atlas_version_uploaded: u64,
+    /// What of the engine's letters' atlas is in slot 0's texture.
+    atlas_sent: AtlasSent,
     /// Slot 1: the engine's emoji atlas (rebuilt when it changes size).
     color_atlas_texture: Option<wgpu::Texture>,
     color_atlas_size: u32,
-    /// The `TextEngine::color_atlas_version` of the atlas in slot 1; 0 =
-    /// none uploaded yet.
-    color_atlas_version_uploaded: u64,
+    /// What of the engine's emoji atlas is in slot 1's texture.
+    color_atlas_sent: AtlasSent,
+    /// What `debug_atlas_rows_written` returns.
+    atlas_rows_written: u64,
     /// Texture slot by `ImageKey` (the `source=` id); `None` = no pixels
     /// yet. Grows as the host interns pictures past the build's table.
     images: Vec<Option<TexId>>,
@@ -451,10 +452,11 @@ impl UiRenderer {
             free_slots: Vec::new(),
             atlas_texture: None,
             atlas_size: 0,
-            atlas_version_uploaded: 0,
+            atlas_sent: AtlasSent::default(),
             color_atlas_texture: None,
             color_atlas_size: 0,
-            color_atlas_version_uploaded: 0,
+            color_atlas_sent: AtlasSent::default(),
+            atlas_rows_written: 0,
             images: Vec::new(),
             externals: Vec::new(),
             gpu_places: Vec::new(),
@@ -698,6 +700,22 @@ impl UiRenderer {
         );
     }
 
+    /// Writes the rows `rows` of `data`, the pixels of a texture `width`
+    /// wide, into the same rows of `tex`.
+    ///
+    /// Needed for the glyph atlases: a new letter changes a few rows of
+    /// an atlas, and the whole of it is megabytes.
+    fn write_rows(queue: &wgpu::Queue, tex: &wgpu::Texture, data: &[u8], width: u32, rows: Range<u32>, bytes_per_pixel: u32) {
+        let row_bytes: u32 = width * bytes_per_pixel;
+        let row_count: u32 = rows.end - rows.start;
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo { texture: tex, mip_level: 0, origin: wgpu::Origin3d { x: 0, y: rows.start, z: 0 }, aspect: wgpu::TextureAspect::All },
+            &data[(rows.start * row_bytes) as usize..(rows.end * row_bytes) as usize],
+            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row_bytes), rows_per_image: Some(row_count) },
+            wgpu::Extent3d { width, height: row_count, depth_or_array_layers: 1 },
+        );
+    }
+
     /// A fresh RGBA8 texture holding `rgba`, as the slot entry of an
     /// uploaded picture. `write_image_texture_only` puts it in a slot.
     fn make_image(&self, device: &wgpu::Device, queue: &wgpu::Queue, rgba: &[u8], width: u32, height: u32) -> Texture {
@@ -790,39 +808,50 @@ impl UiRenderer {
         }
     }
 
-    /// Uploads each glyph atlas of `text` that is not the one this
-    /// renderer uploaded last.
+    /// Sends the rows of each glyph atlas of `text` that this renderer's
+    /// texture lacks: the rows of the letters new since its last send,
+    /// or every row of an atlas it has not sent.
     ///
-    /// Needed per renderer, by the atlas's version: a text engine may
-    /// meet several renderers (one per picture a host takes, a new one
-    /// after the GPU was lost), and a renderer may be handed another
-    /// engine. Each of them must end up with the atlas its glyph quads
-    /// point into.
+    /// Needed per renderer (`AtlasSent`): a text engine may meet several
+    /// renderers (one per picture a host takes, a new one after the GPU
+    /// was lost), and a renderer may be handed another engine. Each of
+    /// them must end up with the atlas its glyph quads point into.
     fn sync_atlas(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &TextEngine) {
-        if text.atlas_version() != self.atlas_version_uploaded {
-            self.atlas_version_uploaded = text.atlas_version();
+        let (rows, sent): (Range<u32>, AtlasSent) = text.atlas_rows_to_send(self.atlas_sent);
+        self.atlas_sent = sent;
+        if !rows.is_empty() {
             let (data, size) = text.atlas();
-            if size != self.atlas_size {
+            // A texture made here holds nothing: it takes every row.
+            let rows: Range<u32> = if size != self.atlas_size {
                 let (tex, entry) = self.make_texture(device, size, size, wgpu::TextureFormat::R8Unorm);
                 self.textures[ATLAS as usize] = entry;
                 self.atlas_texture = Some(tex);
                 self.atlas_size = size;
-            }
+                0..size
+            } else {
+                rows
+            };
             if let Some(tex) = &self.atlas_texture {
-                Self::write(queue, tex, data, size, size, 1);
+                Self::write_rows(queue, tex, data, size, rows.clone(), 1);
+                self.atlas_rows_written += u64::from(rows.end - rows.start);
             }
         }
-        if text.color_atlas_version() != self.color_atlas_version_uploaded {
-            self.color_atlas_version_uploaded = text.color_atlas_version();
+        let (rows, sent): (Range<u32>, AtlasSent) = text.color_atlas_rows_to_send(self.color_atlas_sent);
+        self.color_atlas_sent = sent;
+        if !rows.is_empty() {
             let (data, size) = text.color_atlas();
-            if size != self.color_atlas_size {
+            let rows: Range<u32> = if size != self.color_atlas_size {
                 let (tex, entry) = self.make_texture(device, size, size, wgpu::TextureFormat::Rgba8Unorm);
                 self.textures[COLOR_ATLAS as usize] = entry;
                 self.color_atlas_texture = Some(tex);
                 self.color_atlas_size = size;
-            }
+                0..size
+            } else {
+                rows
+            };
             if let Some(tex) = &self.color_atlas_texture {
-                Self::write(queue, tex, data, size, size, 4);
+                Self::write_rows(queue, tex, data, size, rows.clone(), 4);
+                self.atlas_rows_written += u64::from(rows.end - rows.start);
             }
         }
     }
@@ -1646,6 +1675,13 @@ impl UiRenderer {
     /// unchanged frame writes nothing.
     pub fn debug_quad_writes(&self) -> u32 {
         self.quad_writes
+    }
+
+    /// How many rows of the glyph atlases this renderer sent to the GPU
+    /// so far, both atlases together, for a test that a new letter sends
+    /// its own rows and not the whole atlas.
+    pub fn debug_atlas_rows_written(&self) -> u64 {
+        self.atlas_rows_written
     }
 
     pub fn has_image(&self, key: ImageKey) -> bool {
