@@ -1,0 +1,13 @@
+// A row of tags the page's code fills: a widget with a list inside.
+// A tap on a tag reaches the page under the name the page gives the
+// strip (`TagStrip strip` -> handler `Strip`); `PageUi::row_key` says
+// which tag.
+uses "look.gogo"
+
+widget TagStrip {
+    Row tagRow spacing=4 {
+        repeat tags by $item.name {
+            Button tag .Plain text=$item.name
+        }
+    }
+}

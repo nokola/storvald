@@ -1,0 +1,11 @@
+// A page with a strip of tags, filled by code after the page is made.
+// No page of the example opens it: a test does, to tap a tag.
+uses "look.gogo"
+uses "tag_strip.gogo"
+
+View tagsPage background=$back, padding=16 {
+    Column spacing=10 {
+        Label tagsTitle text="Tags", font_size=24, font_color=$ink
+        TagStrip strip
+    }
+}

@@ -68,7 +68,7 @@ mod tests {
     use crate::toast_page::{TOAST_SEC, ToastPage};
     use crate::paper_page::{LINE, LINE_EVERY_TEXELS, PAPER, PAPER_SIDE_TEXELS, PaperPage};
     use crate::settings_page::{MADE_PICTURE_COLOR, MADE_PICTURE_SIDE_PX, SettingsPage};
-    use crate::ui::{clear_page, dropped_page, edit_page, footer_page, home_page, settings_page, toast_page};
+    use crate::ui::{clear_page, dropped_page, edit_page, footer_page, home_page, settings_page, tags_page, toast_page};
 
     const HOME: home_page::Names = home_page::NAMES;
     const CLEAR: clear_page::Names = clear_page::NAMES;
@@ -616,6 +616,54 @@ mod tests {
         let_the_slides_end(&mut program);
         let long: f32 = program.ui().rect(SETTINGS.title).w;
         assert!(long > short * 2.0, "the frame its way ended laid the longer title out: {short} then {long}");
+    }
+
+    /// `tags_page.gogo` as a page that notes each tap on a tag of its
+    /// strip, with the tag's name.
+    struct TagsPage {
+        tapped: Vec<String>,
+    }
+    impl Page<AppState> for TagsPage {
+        const PAGE: &'static BuiltPage = &tags_page::PAGE;
+        type Handler = tags_page::Handler;
+        fn handle(&mut self, host: &mut Host<AppState>, event: PageEvent<tags_page::Handler>) {
+            match event.handler {
+                tags_page::Handler::Strip => {
+                    if let Some(ItemKey::Str(name)) = host.ui.row_key(event.node) {
+                        self.tapped.push(name.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    /// A tap on a row of a list inside a widget reaches the page under
+    /// the name the page gives the widget, for rows made after the page
+    /// was made, and again for rows made in place of those.
+    ///
+    /// Needed because a row's nodes are named when the row is made
+    /// (`strip/tags/1/tag`): a handler lookup that knows only the names
+    /// the page had when it was made dropped the tap, and the user's
+    /// pick from such a list did nothing.
+    #[test]
+    fn a_tap_on_a_row_made_later_inside_a_widget_reaches_the_page() {
+        let strip: crate::ui::TagStripNames = tags_page::NAMES.strip;
+        let tags = |names: &[&str]| -> Vec<Item> { names.iter().map(|name| Item::Record(vec![("name".to_string(), ItemValue::Str(name.to_string()))])).collect() };
+        let mut program: Program<AppState> = started(AppState::default());
+        program.go(TagsPage { tapped: Vec::new() });
+        frame(&mut program, 0.016);
+        program.ui_mut().set_items(strip.tags, &tags(&["red", "green", "blue"])).expect("three names, each once");
+        frame(&mut program, 0.016);
+        let rows: Vec<NodeId> = program.ui().rows(strip.tags);
+        assert_eq!(rows.len(), 3);
+        program.tap(rows[1], 2.0);
+        assert_eq!(program.page::<TagsPage>().expect("the tags page is on screen").tapped, ["green"]);
+        // Rows made in place of the first ones: new names again.
+        program.ui_mut().set_items(strip.tags, &tags(&["cyan", "magenta"])).expect("two names, each once");
+        frame(&mut program, 0.016);
+        let rows: Vec<NodeId> = program.ui().rows(strip.tags);
+        program.tap(rows[0], 3.0);
+        assert_eq!(program.page::<TagsPage>().expect("the tags page is on screen").tapped, ["green", "cyan"]);
     }
 
     /// Key `PickingPage` names its title's font by.

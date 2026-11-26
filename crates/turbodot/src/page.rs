@@ -589,7 +589,9 @@ pub(crate) trait PageObject<A> {
 /// 22 ns an event (measured, release build).
 ///
 /// Read when page is made, again when a saved file replaces page's
-/// strings (hot reload). String made later names no handler.
+/// strings (hot reload). A string made later is the name of a node of a
+/// row made at run time (`cards/2/title`): it has no place in the table
+/// and is read as text.
 pub(crate) struct HandlerTable<H> {
     /// What each of page's strings is as a node's name, by string index.
     by_string_index: Vec<NameUse<H>>,
@@ -621,11 +623,21 @@ impl<H: HandlerName> HandlerTable<H> {
     }
 
     /// Handler `event` is for, in page's own enum.
+    ///
+    /// Needed with the text of a name the table does not hold: a row's
+    /// node is named when its row is made (`fonts/rows/3/row`), after
+    /// the table was read. Taken for a handler-less name, it stopped
+    /// the walk to the widget's own name, and a tap on a row of a list
+    /// inside a widget reached no handler.
     fn handler_of(&self, ui: &PageUi, event: &Event) -> Option<H> {
-        let name: StrId = ui.handler_name_id_with(event, |name| matches!(self.by_string_index.get(name.index()), Some(NameUse::InsideWidget)))?;
+        let name: StrId = ui.handler_name_id_with(event, |name| match self.by_string_index.get(name.index()) {
+            Some(name_use) => matches!(name_use, NameUse::InsideWidget),
+            None => ui.page.str(name).contains('/'),
+        })?;
         match self.by_string_index.get(name.index()) {
             Some(NameUse::Handler(handler)) => Some(*handler),
-            _ => None,
+            Some(NameUse::NoHandler) | Some(NameUse::InsideWidget) => None,
+            None => H::from_name(ui.page.str(name)),
         }
     }
 }
