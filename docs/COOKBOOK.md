@@ -2317,6 +2317,37 @@ own moves to `Program::captured_mouse_moved`; it tells the program when
 its window gains or loses the keyboard (`set_window_focused`). TurboDot's
 own window does all of it.
 
+## How do I show text in a font the user picks?
+
+A font a page's file names (`theme { font = ".." }`, `font=`) is built
+into the program. A font that is in no file, such as one the user picks
+from a list, is added by the page's code through `host.fonts`, under a
+key of your choice. A node shows its text in it once the node names
+that key:
+
+```rust partial
+Handler::PickFont => {
+    host.fonts.add_face("picked://daniel", DANIEL_TTF.to_vec());
+    let key: StrId = host.ui.page.intern("picked://daniel");
+    host.ui.runtime.set_prop(NAMES.caption, PropKey::Font, Value::VText { text: key, key: NO_KEY });
+}
+```
+
+The text shows in the new font in the frame of the tap.
+
+- **Add a font when it is first needed.** `add_face` parses the file
+  then; 28 files at start took about a second on a phone. A key that
+  already names a face keeps it. `host.fonts.has_face(key)` asks first,
+  so a second pick of the same font copies no bytes.
+- **The fonts are the program's.** A face one page adds, every page can
+  name, and it stays until the program ends.
+- **The device's own fonts** come in two steps:
+  `host.fonts.load_system_fonts()` reads them once (hundreds of
+  milliseconds on a phone: call it when the list first opens),
+  `host.fonts.system_families()` gives their names, and
+  `host.fonts.add_system_face(key, family)` puts one under a key.
+- A key no face is under draws in the page's own font.
+
 ---
 
 ## How do I pin something to a screen corner or edge?

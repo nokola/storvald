@@ -1,7 +1,9 @@
 //! What a client writes: a page, and what a page gets with every call.
 
 use std::any::{Any, TypeId};
+use std::cell::RefCell;
 
+use gogo_text::TextEngine;
 use gogo_ui::{CommandSurface, Event, EventKind, HandlerName, NodeId, StaticPage, StrId, SurfaceCommands};
 
 use crate::pages::{PageId, PageUi};
@@ -59,6 +61,80 @@ pub struct Host<'a, A = ()> {
     pub ui: &'a mut PageUi,
     /// Opens another page, asks for back.
     pub nav: &'a mut Nav<A>,
+    /// Program's fonts: adds one no page's file names.
+    pub fonts: Fonts<'a>,
+}
+
+/// Program's fonts as a page reaches them: `host.fonts`.
+///
+/// Needed for a font no page's file names: one the user picks from a
+/// list, one a game adds for a single screen. Page adds it where it
+/// picks it, and a text that names its key shows in it in that frame.
+///
+/// One set for the whole program: a face one page adds, every page can
+/// name. A face stays until the program ends.
+pub struct Fonts<'a> {
+    /// Program's text engine. Each call here borrows it and gives it
+    /// back before it returns: layout and `PageGpu::draw_to_texture`
+    /// borrow it too.
+    pub(crate) text: &'a RefCell<TextEngine>,
+}
+
+impl Fonts<'_> {
+    /// Whether `key` names a face: a font of a page's file (`font=`),
+    /// or one added here. A style ending of `key` (bold, italic) is not
+    /// looked at.
+    pub fn has_face(&self, key: &str) -> bool {
+        self.text.borrow().has_face(key)
+    }
+
+    /// Adds a face under `key` from `bytes`, a TTF or OTF file. A key
+    /// that names a face already keeps that face.
+    ///
+    /// Needed for a font that is in no page's file: text shows in it
+    /// once a node names `key` as its font (`PropKey::Font`).
+    ///
+    /// WARNING: parses the file now. Add a font when it is first
+    /// needed, not every font at start: 28 font files took about a
+    /// second on a phone.
+    ///
+    /// Returns false when `bytes` hold no face.
+    pub fn add_face(&mut self, key: &str, bytes: Vec<u8>) -> bool {
+        self.text.borrow_mut().add_face(key, bytes)
+    }
+
+    /// Adds a face under `key` from `family`, a font family of the
+    /// device (one of `system_families`): its regular member when it
+    /// has one. A key that names a face already keeps that face.
+    ///
+    /// Returns false for a family the device does not have, and for
+    /// every family before `load_system_fonts` ran.
+    pub fn add_system_face(&mut self, key: &str, family: &str) -> bool {
+        self.text.borrow_mut().add_system_face(key, family)
+    }
+
+    /// Reads the device's fonts, once: a second call reads nothing.
+    ///
+    /// Needed for a list of the device's fonts (`system_families`), and
+    /// for letters no page font has: they are then looked up in the
+    /// device's fonts in place of drawing as boxes.
+    ///
+    /// WARNING: hundreds of milliseconds on a phone. Call it when such
+    /// a list first opens, never at start.
+    ///
+    /// Returns count of families found.
+    pub fn load_system_fonts(&mut self) -> usize {
+        self.text.borrow_mut().load_system_fonts()
+    }
+
+    /// Names of the device's font families, sorted, each once: what
+    /// `load_system_fonts` found. Empty before it ran.
+    ///
+    /// WARNING: allocates the list at every call. Ask when a font list
+    /// is built, not every frame.
+    pub fn system_families(&self) -> Vec<String> {
+        self.text.borrow().system_families().to_vec()
+    }
 }
 
 /// The GPU as a page gets it in `Page::before_draw`: device and queue

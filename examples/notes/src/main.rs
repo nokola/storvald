@@ -618,6 +618,88 @@ mod tests {
         assert!(long > short * 2.0, "the frame its way ended laid the longer title out: {short} then {long}");
     }
 
+    /// Key `PickingPage` names its title's font by.
+    const PICKED_FONT_KEY: &str = "picked://bold";
+
+    /// `settings_page.gogo` as a page whose Back button shows the title
+    /// in the font under `PICKED_FONT_KEY`. It adds that font first when
+    /// `must_add_the_font` says so.
+    struct PickingPage {
+        must_add_the_font: bool,
+    }
+    impl Page<AppState> for PickingPage {
+        const PAGE: &'static BuiltPage = &settings_page::PAGE;
+        type Handler = settings_page::Handler;
+        fn handle(&mut self, host: &mut Host<AppState>, event: PageEvent<settings_page::Handler>) {
+            match event.handler {
+                settings_page::Handler::GoBack => {
+                    if self.must_add_the_font {
+                        let bytes: Vec<u8> = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/Fonts/Roboto Bold.ttf")).expect("the font file");
+                        assert!(host.fonts.add_face(PICKED_FONT_KEY, bytes), "the file holds a face");
+                    }
+                    let key: turbodot::gogo::StrId = host.ui.page.intern(PICKED_FONT_KEY);
+                    host.ui.runtime.set_prop(SETTINGS.title, PropKey::Font, Value::VText { text: key, key: turbodot::gogo::NO_KEY });
+                }
+            }
+        }
+    }
+
+    /// Page adds a font in the handler of a tap (`host.fonts`), and the
+    /// text that names it is laid out in it in the frame of that tap. A
+    /// key the page only names, with no face under it, changes nothing.
+    ///
+    /// Needed for a font the user picks from a list: with no way from a
+    /// page to the program's fonts its host adds the font, a frame
+    /// later, and the user sees the text change its font one frame
+    /// after the rest of the page changed.
+    #[test]
+    fn a_font_a_page_adds_shows_in_the_frame_of_the_tap() {
+        /// Width of the title before the tap on Back and in the frame
+        /// of the tap, then whether the program has a face under
+        /// `PICKED_FONT_KEY` after it.
+        fn title_widths(must_add_the_font: bool) -> (f32, f32, bool) {
+            let mut program: Program<AppState> = started(AppState::default());
+            program.go(PickingPage { must_add_the_font });
+            let_the_slides_end(&mut program);
+            let before: f32 = program.ui().rect(SETTINGS.title).w;
+            program.tap(SETTINGS.go_back, 2.0);
+            frame(&mut program, 0.016);
+            let mut has_face: bool = false;
+            assert!(program.tell::<PickingPage>(|_, host| has_face = host.fonts.has_face(PICKED_FONT_KEY)));
+            (before, program.ui().rect(SETTINGS.title).w, has_face)
+        }
+        let (regular, named_only, has_face) = title_widths(false);
+        assert!(!has_face, "no page added a face under the key");
+        assert_eq!(named_only, regular, "a key no face is under draws in the page's own font");
+        let (regular, bold, has_face) = title_widths(true);
+        assert!(has_face);
+        assert!(bold > regular + 1.0, "the title is laid out in the bold face in the frame of the tap: {regular} then {bold}");
+    }
+
+    /// Page reads the device's fonts and puts one of them under a key
+    /// (`host.fonts`). Nothing is read before a page asks.
+    ///
+    /// Needed for a list of the device's fonts in a page: the read
+    /// costs hundreds of milliseconds on a phone, so it runs when the
+    /// page that shows the list asks, not at start.
+    #[test]
+    fn a_page_adds_a_font_of_the_device() {
+        const DEVICE_FONT_KEY: &str = "device://first";
+        let mut program: Program<AppState> = started(AppState::default());
+        assert!(program.tell::<HomePage>(|_, host| {
+            assert!(host.fonts.system_families().is_empty(), "nothing is read before a page asks");
+            assert!(!host.fonts.add_system_face(DEVICE_FONT_KEY, "no such family 0x1234"));
+            let family_count: usize = host.fonts.load_system_fonts();
+            let families: Vec<String> = host.fonts.system_families();
+            assert_eq!(families.len(), family_count);
+            assert!(family_count > 0, "this machine has no font");
+            assert!(!host.fonts.add_system_face(DEVICE_FONT_KEY, "no such family 0x1234"));
+            assert!(!host.fonts.has_face(DEVICE_FONT_KEY));
+            assert!(host.fonts.add_system_face(DEVICE_FONT_KEY, &families[0]), "{}", families[0]);
+            assert!(host.fonts.has_face(DEVICE_FONT_KEY));
+        }));
+    }
+
     /// `edit_page.gogo` as a page that makes its footer three times as
     /// tall as its title, from the title's rectangle of this frame, and
     /// notes each call.

@@ -34,7 +34,8 @@
 //!
 //! - [`Page`] and [`CachedPage`]: what a client writes per page. [`Host`]
 //!   is what a page gets with every call: `host.app` (program-wide state),
-//!   `host.ui` (the page's nodes), `host.nav` (open a page, ask for back).
+//!   `host.ui` (the page's nodes), `host.nav` (open a page, ask for back),
+//!   `host.fonts` (add a font no page's file names: one the user picks).
 //!   A page that lets the page under it show, such as a dialog, says
 //!   `const KIND: PageKind = PageKind::Overlay;`.
 //! - A page with a part its own code draws (a painting, a game's world)
@@ -114,7 +115,7 @@ pub use wgpu;
 #[cfg(feature = "gpu")]
 pub use gpu::{Buf_Straight_Srgb_4xU8_RGBA, DEPTH_FORMAT, Gpu, Picture};
 #[cfg(feature = "ui")]
-pub use page::{AsCachedPage, AsPage, Back, BuiltPage, CachedPage, Host, IntoPage, Nav, OffScreenPage, Page, PageBox, PageEvent, PageGpu, PageKind};
+pub use page::{AsCachedPage, AsPage, Back, BuiltPage, CachedPage, Fonts, Host, IntoPage, Nav, OffScreenPage, Page, PageBox, PageEvent, PageGpu, PageKind};
 #[cfg(feature = "ui")]
 pub use pages::TexturePlacement;
 #[cfg(feature = "ui")]
@@ -128,7 +129,7 @@ pub use window::WindowOptions;
 #[cfg(feature = "ui")]
 pub mod prelude {
     pub use crate::pages::{PageUi, TexturePlacement};
-    pub use crate::{Back, BuiltPage, CachedPage, Host, OffScreenPage, Page, PageEvent, PageGpu, PageKind};
+    pub use crate::{Back, BuiltPage, CachedPage, Fonts, Host, OffScreenPage, Page, PageEvent, PageGpu, PageKind};
     pub use gogo_ui::runtime::{Item, ItemKey, ItemValue};
     pub use gogo_ui::{Buttons, CommandSurface, EventKind, GpuSurface, HoverPhase, Mods, NodeId, Phase, PictureSurface, PointerSample, SurfaceCommands, Tool};
 }

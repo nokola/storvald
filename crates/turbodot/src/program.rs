@@ -12,7 +12,7 @@ use gogo_ui::{Buttons, CapturedMouse, Draw, Event, EventList, Hook, ImageKey, Ke
 
 #[cfg(feature = "gpu")]
 use crate::page::PageGpu;
-use crate::page::{Back, Host, IntoPage, KeptOffScreen, Nav, OffScreenPage, PageKind, PageObject, Request};
+use crate::page::{Back, Fonts, Host, IntoPage, KeptOffScreen, Nav, OffScreenPage, PageKind, PageObject, Request};
 use crate::pages::{PageUi, PageId, PagePlatform, PagePose, PageStack, UiAssets};
 
 /// Root of a page: first node of its file.
@@ -1500,7 +1500,7 @@ impl<A: 'static> Program<A> {
                 let (page_ui, others) = self.stack.one_and_others(id);
                 page_ui.target_format = Some(renderer.target_format());
                 page_ui.depth_format = renderer.depth_format();
-                let mut host: Host<'_, A> = Host { app: &mut self.app, ui: page_ui, nav: &mut self.nav };
+                let mut host: Host<'_, A> = Host { app: &mut self.app, ui: page_ui, nav: &mut self.nav, fonts: Fonts { text: &self.assets.text } };
                 let mut page_gpu: PageGpu<'_> = PageGpu { device: &gpu.device, queue: &gpu.queue, renderer: &mut *renderer, assets: &self.assets, others, kept: &self.kept_off_screen };
                 object.before_draw(&mut host, &mut page_gpu);
             }
@@ -1562,7 +1562,7 @@ impl<A: 'static> Program<A> {
     fn call<R>(&mut self, id: PageId, f: impl FnOnce(&mut dyn PageObject<A>, &mut Host<'_, A>) -> R) -> R {
         let mut object: Box<dyn PageObject<A>> = self.objects[id.index()].take().expect("a live page has its struct");
         self.nav.caller = Some(id);
-        let mut host: Host<'_, A> = Host { app: &mut self.app, ui: self.stack.get_mut(id), nav: &mut self.nav };
+        let mut host: Host<'_, A> = Host { app: &mut self.app, ui: self.stack.get_mut(id), nav: &mut self.nav, fonts: Fonts { text: &self.assets.text } };
         let result: R = f(object.as_mut(), &mut host);
         self.nav.caller = None;
         self.objects[id.index()] = Some(object);
