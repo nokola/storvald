@@ -1,4 +1,4 @@
-# `first_frame_of_list_page_again` at commit ef41c63d1e9fda1d28bbadf1b26efd4f2e624d4b: instructions by function, 8251351 in all.
+# `first_frame_of_list_page_again` at commit 2fb5b09fb6b80aadad7e4413cd66c92732860460: instructions by function, 8251411 in all.
 # A function's own code only: what it calls is counted at the called function.
 1547302 <gogo_ui::page::Page>::kind_default::{closure#0}
 1280313 <gogo_ui::runtime::Resolved>::override_of_by_id
@@ -31,7 +31,7 @@
 34744 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&u64>
 33694 gogo_ui::runtime::ladder_motion_and_seat
 28858 <gogo_ui::layout::VisibleChildren as core::iter::traits::iterator::Iterator>::next
-27688 <gogo_text::TextEngine>::measure
+27748 <gogo_text::TextEngine>::measure
 25888 <gogo_ui::layout::Lay>::seat
 24770 <gogo_ui::tree::Subtree as core::iter::traits::iterator::Iterator>::next
 24635 gogo_ui::runtime::resolve_into::{closure#46}
