@@ -145,6 +145,10 @@ fn the_page_hears_an_instance_with_code_by_its_report_and_nothing_inside_it() {
     assert!(rust.contains("    pub struct Widgets {\n        pub count: crate::Stepper,\n        pub size: crate::Picker,\n        pub zoom_stepper: crate::Stepper,\n    }"), "{rust}");
     assert!(rust.contains("zoom_stepper: <crate::Stepper as gogo_ui::Widget>::new(&NAMES.zoom.stepper),"), "the instance inside a widget with no code is reached through it: {rust}");
     assert!(rust.contains("heard(Handler::ZoomStepper(report))"), "{rust}");
+    // No repeat: nothing in the routing would be unused, or the app's
+    // build warns about the generated code.
+    assert!(rust.contains("        pub fn sync_rows(&mut self, _page: &mut gogo_ui::Page, _rt: &mut gogo_ui::Runtime) {\n        }"), "{rust}");
+    assert!(!rust.contains("let mut row"), "no row to pick: {rust}");
 
     // A page with no widget with code keeps its old `Handler`.
     let plain_rust: String = emit_rust_with(&c.page, "m", &WidgetCode::default()).unwrap();
@@ -200,6 +204,7 @@ fn rows_with_widgets_with_code_get_a_struct_each_and_report_with_their_number() 
     assert!(rust.contains("    pub enum LinesInside {\n        Amount(<crate::Stepper as gogo_ui::Widget>::Report),\n    }"), "{rust}");
     assert!(rust.contains("    pub struct LinesWidgets {\n        pub names: LinesSlot,\n        pub amount: crate::Stepper,\n    }"), "{rust}");
     assert!(rust.contains("        pub lines: gogo_ui::Rows<LinesWidgets>,"), "{rust}");
+    assert!(rust.contains("pub fn sync_rows(&mut self, page: &mut gogo_ui::Page, rt: &mut gogo_ui::Runtime) {") && rust.contains("let mut row: usize = 0;"), "{rust}");
     assert!(rust.contains("self.lines.sync(page, rt, NAMES.lines, |root| LinesWidgets::new(&LinesSlot::at(root)), |row, page, rt| gogo_ui::WidgetSet::load(row, page, rt));"), "{rust}");
     assert!(rust.contains("if let Some(found) = self.lines.iter().position(|one| one.names.root == at) {"), "{rust}");
     assert!(rust.contains("gogo_ui::WidgetSet::route(&mut self.lines[row], page, rt, event, &mut |inside| heard(Handler::Lines(row, inside)))"), "{rust}");

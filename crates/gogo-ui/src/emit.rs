@@ -1184,11 +1184,17 @@ fn emit_page_widgets(slots: &[CodeSlot], rows: &[CodeRows]) -> String {
         s.push_str(&format!("                {}: gogo_ui::Rows::new(),\n", row.field));
     }
     s.push_str("            }\n        }\n\n");
-    s.push_str("        /// Makes and loads the struct of every row made since the last call. The routing calls it at load, before each event and after each layout; a page that made rows and writes into their widgets at once calls it first.\n        pub fn sync_rows(&mut self, page: &mut gogo_ui::Page, rt: &mut gogo_ui::Runtime) {\n");
+    s.push_str("        /// Makes and loads the struct of every row made since the last call. The routing calls it at load, before each event and after each layout; a page that made rows and writes into their widgets at once calls it first.\n");
+    if rows.is_empty() {
+        // Nothing to make: the page and the runtime stay unused, said so,
+        // or they are a warning in the app's build.
+        s.push_str("        pub fn sync_rows(&mut self, _page: &mut gogo_ui::Page, _rt: &mut gogo_ui::Runtime) {\n");
+    } else {
+        s.push_str("        pub fn sync_rows(&mut self, page: &mut gogo_ui::Page, rt: &mut gogo_ui::Runtime) {\n");
+    }
     for row in rows {
         s.push_str(&format!("            self.{}.sync(page, rt, NAMES.{}, |root| {}::new(&{}::at(root)), |row, page, rt| gogo_ui::WidgetSet::load(row, page, rt));\n", row.field, row.repeat_names, row.row_struct, row.slot_struct));
     }
-    let _ = rows;
     s.push_str("        }\n    }\n\n    impl Default for Widgets {\n        fn default() -> Widgets {\n            Widgets::new()\n        }\n    }\n\n");
     s.push_str("    impl gogo_ui::WidgetSet<Handler> for Widgets {\n        fn route(&mut self, page: &mut gogo_ui::Page, rt: &mut gogo_ui::Runtime, event: &gogo_ui::Event, heard: &mut dyn FnMut(Handler)) -> bool {\n");
     s.push_str("            self.sync_rows(page, rt);\n");
@@ -1294,7 +1300,11 @@ fn route_body_with_rows(slots: &[CodeSlot], rows: &[CodeRows], heard: &dyn Fn(&C
     let mut s = String::new();
     s.push_str(&format!("{indent}let mut at: gogo_ui::NodeId = event.node;\n"));
     s.push_str(&format!("{indent}let mut slot: usize = usize::MAX;\n"));
-    s.push_str(&format!("{indent}let mut row: usize = 0;\n"));
+    // Only a page with rows picks one: without, the count would be a
+    // warning in the app's build.
+    if !rows.is_empty() {
+        s.push_str(&format!("{indent}let mut row: usize = 0;\n"));
+    }
     s.push_str(&format!("{indent}while at != gogo_ui::NO_NODE && at.index() < page.nodes.len() {{\n"));
     for (index, slot) in slots.iter().enumerate() {
         s.push_str(&format!("{indent}    if at == NAMES.{}.root {{\n{indent}        slot = {index};\n{indent}    }}\n", slot.names));
@@ -1304,7 +1314,6 @@ fn route_body_with_rows(slots: &[CodeSlot], rows: &[CodeRows], heard: &dyn Fn(&C
         s.push_str(&format!("{indent}    if let Some(found) = self.{}.iter().position(|one| one.names.root{} == at) {{\n{indent}        slot = {index};\n{indent}        row = found;\n{indent}    }}\n", rows_here.field, rows_here.root_suffix));
     }
     s.push_str(&format!("{indent}    at = page.nodes[at.index()].parent;\n{indent}}}\n"));
-    s.push_str(&format!("{indent}let _ = row;\n"));
     s.push_str(&format!("{indent}match slot {{\n"));
     for (index, slot) in slots.iter().enumerate() {
         s.push_str(&format!("{indent}    {index} => {{\n{indent}        gogo_ui::Widget::route(&mut self.{}, page, rt, event, &mut |report| {});\n{indent}        true\n{indent}    }}\n", slot.field, heard(slot)));
