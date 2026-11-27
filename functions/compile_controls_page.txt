@@ -1,10 +1,10 @@
-# `compile_controls_page` at commit 2bbb7ae735082a639116f9b7f0906cdb4207cb5d: instructions by function, 3162897 in all.
+# `compile_controls_page` at commit 2bbb7ae735082a639116f9b7f0906cdb4207cb5d: instructions by function, 3162962 in all.
 # A function's own code only: what it calls is counted at the called function.
 280946 _int_malloc
 200433 <gogo_ui::page::PropKey>::from_word
 169628 gogo_ui::lexer::lex
-158801 <gogo_ui::compile::Compiler>::node_inner'2
-156080 _int_free_merge_chunk
+158821 <gogo_ui::compile::Compiler>::node_inner'2
+156098 _int_free_merge_chunk
 140466 <gogo_ui::lexer::Lexer>::dotted_word
 127614 __memcmp_avx2_movbe
 123758 __memcpy_avx_unaligned_erms
@@ -97,7 +97,7 @@
 792 <alloc::raw_vec::RawVec<gogo_ui::atlas::Json>>::grow_one
 792 <alloc::raw_vec::RawVec<gogo_ui::compile::TmpNode>>::grow_one
 757 gogo_ui::page::palette_color
-698 <hashbrown::map::HashMap<alloc::string::String, (), std::hash::random::RandomState>>::insert
+725 <hashbrown::map::HashMap<alloc::string::String, (), std::hash::random::RandomState>>::insert
 690 <alloc::vec::Vec<gogo_ui::ast::AstItem> as core::clone::Clone>::clone'2
 673 <gogo_ui::compile::Compiler>::style_def
 672 <alloc::vec::Vec<gogo_ui::ast::AstValue> as core::clone::Clone>::clone
