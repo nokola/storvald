@@ -3,12 +3,12 @@
 
 use turbodot::gogo::{Page, Runtime, Widget, WidgetCx, WidgetEvent};
 
-use crate::stepper::StepperReport;
+use crate::stepper::StepperSignal;
 use crate::ui::{SizePickerInside, SizePickerNames, SizePickerWidgets};
 
 /// What a SizePicker tells the page that places it.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum SizePickerReport {
+pub enum SizePickerSignal {
     /// The user stepped the width or the height.
     SizeChanged { width: i32, height: i32 },
 }
@@ -28,7 +28,7 @@ impl SizePicker {
 }
 
 impl Widget for SizePicker {
-    type Report = SizePickerReport;
+    type Signal = SizePickerSignal;
 
     fn new(names: &SizePickerNames) -> SizePicker {
         SizePicker { widgets: SizePickerWidgets::new(names) }
@@ -40,11 +40,11 @@ impl Widget for SizePicker {
         self.widgets.height_stepper.set_value(page, rt, 1);
     }
 
-    fn handle(&mut self, cx: &mut WidgetCx<'_, SizePickerReport>, event: WidgetEvent<'_, SizePickerInside>) {
+    fn handle(&mut self, cx: &mut WidgetCx<'_, SizePickerSignal>, event: WidgetEvent<'_, SizePickerInside>) {
         match event {
-            WidgetEvent::Inside(SizePickerInside::WidthStepper(StepperReport::Changed(_)) | SizePickerInside::HeightStepper(StepperReport::Changed(_))) => {
+            WidgetEvent::Inside(SizePickerInside::WidthStepper(StepperSignal::Changed(_)) | SizePickerInside::HeightStepper(StepperSignal::Changed(_))) => {
                 let (width, height) = self.size();
-                cx.report(SizePickerReport::SizeChanged { width, height });
+                cx.emit(SizePickerSignal::SizeChanged { width, height });
             }
             // The label "Size" takes no touch.
             WidgetEvent::Own(_) => {}

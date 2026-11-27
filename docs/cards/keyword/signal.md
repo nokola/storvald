@@ -1,6 +1,9 @@
-Inside a `control` block: declares the signals the control's behavior
-raises — `drag_started` before a gesture's first write, `drag_ended`
-after the release's commit and on a cancelled gesture too.
+Declares what a part tells the page that places it. Inside a `control`
+block: the signals the control's behavior raises — `drag_started` before
+a gesture's first write, `drag_ended` after the release's commit and on a
+cancelled gesture too. Inside a `widget` with code: the signals its Rust
+struct raises (`cx.emit(...)`), checked against its signal enum
+(REFERENCE "Widgets with code").
 
 ```
 control Fader $value=0, $min=0, $max=100 {

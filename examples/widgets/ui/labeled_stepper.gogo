@@ -1,5 +1,5 @@
 // A caption beside a Stepper: a widget with no code of its own. The
-// Stepper inside it reports to the page that places this widget.
+// Stepper inside it signals the page that places this widget.
 uses "stepper.gogo"
 
 widget LabeledStepper $label="" {

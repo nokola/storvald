@@ -4,7 +4,7 @@
 uses "stepper.gogo"
 
 widget SizePicker {
-    report size_changed
+    signal size_changed
     Column spacing=8 {
         Label text="Size"
         Stepper widthStepper

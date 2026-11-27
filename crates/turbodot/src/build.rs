@@ -39,7 +39,7 @@ pub fn pages(folder: &str) {
 ///
 /// Needed so a page cannot forget to hand a widget its events: each page
 /// gets a `Widgets` struct with a field per instance of such a widget,
-/// and its `Handler` a variant per instance that reports
+/// and its `Handler` a variant per instance that has signals
 /// (`gogo_ui::Widget`, `Page::widgets`).
 ///
 /// WARNING: stops build script with exit code 1 when a page does not

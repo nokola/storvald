@@ -2,7 +2,7 @@
 // (`src/stepper.rs`). It tells the page that places it when the user
 // stepped the number.
 widget Stepper {
-    report changed
+    signal changed
     Row spacing=8 {
         Button minus text="-", width=40, height=40
         // Empty until the code loads: it writes the number.

@@ -456,7 +456,7 @@ button:
 
 ```kdl
 widget Stepper {
-    report changed
+    signal changed
     Row spacing=8 {
         Button minus text="-", width=40, height=40
         Label value text="", width=60
@@ -468,28 +468,31 @@ View counterRoot {
 }
 ```
 
-- `report <names>` lists what the widget tells the page that places it.
+- `signal <names>` lists what the widget tells the page that places it.
   The file lists names only; the Rust struct says what each one carries.
+  It is the word a `control` uses for its behavior's signals
+  (`signal drag_started`, below): in a control gogo raises them, in a
+  widget with code its struct does.
 - The app's build script names the struct of each widget with code, once:
   `turbodot::build::pages_with_widget_code("ui", &[("Stepper", "crate::stepper::Stepper")])`
   (with gogo alone: `BuildOptions::widget_code`).
-- The struct implements `gogo_ui::Widget`: its report enum, `new` over the
+- The struct implements `gogo_ui::Widget`: its signal enum, `new` over the
   instance's names, `handle` for an event on its own nodes, and, when it
   needs them, `loaded`, `frame` and `after_layout`. The build checks that
-  the report enum has exactly the file's `report` names: a variant the
+  the signal enum has exactly the file's `signal` names: a variant the
   file lacks, or a name the enum lacks, stops the build.
 
 ```rust partial
-pub enum StepperReport {
+pub enum StepperSignal {
     Changed(i32),
 }
 
 impl Widget for Stepper {
-    type Report = StepperReport;
+    type Signal = StepperSignal;
     fn new(names: &StepperNames) -> Stepper { ... }
-    fn handle(&mut self, cx: &mut WidgetCx<'_, StepperReport>, event: WidgetEvent<'_, NothingInside>) {
+    fn handle(&mut self, cx: &mut WidgetCx<'_, StepperSignal>, event: WidgetEvent<'_, NothingInside>) {
         // On a tap of `plus`: step, show, then
-        cx.report(StepperReport::Changed(self.value));
+        cx.emit(StepperSignal::Changed(self.value));
     }
 }
 ```
@@ -498,21 +501,21 @@ impl Widget for Stepper {
   (`widgets.count`), which the page keeps and calls directly
   (`self.widgets.count.set_value(...)`). A TurboDot page hands it over in
   `Page::widgets`; the engine then gives each event on an instance to its
-  struct first, and its report to the page's `handle`, in the same call,
+  struct first, and its signal to the page's `handle`, in the same call,
   as a variant of the page's `Handler` that carries it:
-  `Handler::Count(StepperReport::Changed(3))`. A page that forgets to hand
+  `Handler::Count(StepperSignal::Changed(3))`. A page that forgets to hand
   it over stops when it is made.
-- A report means the user did something: the page's own call into a
-  widget's struct reports nothing.
-- A widget with code inside another one reports to that one
+- A widget's signal means the user did something: the page's own call into
+  a widget's struct raises none.
+- A widget with code inside another one signals that one
   (`WidgetEvent::Inside`), which keeps its inner widgets in a field named
   `widgets` (`<Widget>Widgets`, made by the build). Inside a widget with no
-  code it reports to the page, named by its path (`zoom.stepper` →
+  code it signals the page, named by its path (`zoom.stepper` →
   `Handler::ZoomStepper`).
 - In a `repeat`'s rows, each row the repeat makes gets a struct, made and
-  loaded with the row; a report names the row by its place among the rows
+  loaded with the row; a signal names the row by its place among the rows
   made: `Handler::Lines(2, LinesInside::Amount(...))`.
-- Routing an event and its report allocates nothing.
+- Routing an event and its signal allocates nothing.
 - Refused at build: an instance with code that has no name, a row that is
   itself a widget with code (put it inside a node of the row), and a
   `repeat` inside a widget with code.
@@ -3412,7 +3415,7 @@ The parser and the compiler share one list of them:
   `uses`, `widget`, `control`, `style`, `theme`, `atlas`, `slice`,
   `arrangement`, `allow`, `layout`, `choice`, `empty`, `key`;
 - lines of a widget or control body: `slot`, `seat`, `gap`, `row`,
-  `skip`, `script`, `behavior`, `keys`, `signal`, `report`, `state`,
+  `skip`, `script`, `behavior`, `keys`, `signal`, `state`,
   `state_builtin`;
 - clause and step words: `as`, `by`, `in`, `and`, `then`, `play`,
   `each`, `group`, `delay`;

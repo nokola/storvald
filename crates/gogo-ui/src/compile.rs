@@ -159,13 +159,13 @@ struct WidgetDef {
     /// The `behavior <name>` line (GP52/GP53) and the behavior's spec —
     /// baked per instance at stamp time (the param scope is live there).
     behavior: Option<(AstNode, BehaviorSpec)>,
-    /// The `signal` lines' declared names — what GP52's behavior may
-    /// raise (`drag_started`/`drag_ended` when declared).
+    /// A `control`'s `signal` lines: the names GP52's behavior may raise
+    /// (`drag_started`/`drag_ended` when declared).
     signals: Vec<String>,
-    /// The `report` lines' names: what the widget's code tells the page
-    /// that places it (`report size_changed, opacity_changed`). The build
-    /// checks them against the code's report enum (`emit_widget_code`).
-    reports: Vec<String>,
+    /// A `widget`'s `signal` lines: what the widget's code tells the page
+    /// that places it (`signal size_changed, opacity_changed`). The build
+    /// checks them against the code's signal enum (`emit_widget_code`).
+    code_signals: Vec<String>,
     /// A `control` declaration (vs a `widget`): its own scoped anims may
     /// drive `slot.<name>.<motion word>` lanes.
     control: bool,
@@ -977,12 +977,13 @@ pub struct Compiled {
     /// page's own file.
     pub uses: Vec<String>,
     /// Every widget and control this compile declared, by name, with the
-    /// names of its `report` lines, sorted by widget name.
+    /// names of a widget's `signal` lines (none for a control), sorted by
+    /// widget name.
     ///
     /// Needed by the build that gives a widget its code
-    /// (`BuildOptions::widget_code`): it checks the code's report enum
+    /// (`BuildOptions::widget_code`): it checks the code's signal enum
     /// against these names.
-    pub widget_reports: Vec<(String, Vec<String>)>,
+    pub widget_signals: Vec<(String, Vec<String>)>,
 }
 
 /// `compile` with no host options.
@@ -1148,9 +1149,9 @@ pub(crate) fn compile_keeping_numbers<'a>(source: &str, loader: Loader<'a>, opti
     };
     c.page.slices = std::borrow::Cow::Owned(slices);
     c.page.file_nodes = c.page.nodes.len() as u32;
-    let mut widget_reports: Vec<(String, Vec<String>)> = c.widgets.iter().map(|(name, def)| (name.clone(), def.reports.clone())).collect();
-    widget_reports.sort();
-    Compiled { page: c.page, diags: c.diags, keys: c.local_keys, images: c.local_images, uses: c.uses_read, widget_reports }
+    let mut widget_signals: Vec<(String, Vec<String>)> = c.widgets.iter().map(|(name, def)| (name.clone(), def.code_signals.clone())).collect();
+    widget_signals.sort();
+    Compiled { page: c.page, diags: c.diags, keys: c.local_keys, images: c.local_images, uses: c.uses_read, widget_signals }
 }
 
 /// A number for what an `atlas` line says: its name, its words and the
@@ -3188,13 +3189,14 @@ impl<'a> Compiler<'a> {
         // A `control` body holds its behavior lines (`script`, `state`,
         // `state_builtin`, `signal`, a default `transition`) beside the root;
         // with no code-behind here they carry nothing for the picture. A
-        // `widget` has no script to raise or read them, so there they are
-        // refused, not skipped; `state_builtin` names must be built-ins.
+        // `widget` has no behavior to raise or read them, so there they are
+        // refused, not skipped, except `signal`: a widget's code raises its
+        // signals. `state_builtin` names must be built-ins.
         let mut keys_mask = 0u8;
         let mut behavior: Option<(AstNode, BehaviorSpec)> = None;
         for b in n.children.iter().filter_map(|i| if let AstItem::Node(b) = i { Some(b) } else { None }) {
             match b.type_word.as_str() {
-                "script" | "state" | "state_builtin" | "signal" | "keys" | "behavior" if n.type_word == "widget" => {
+                "script" | "state" | "state_builtin" | "keys" | "behavior" if n.type_word == "widget" => {
                     self.error("G0077", b.line, format!("`{}` lines belong to a `control` body (they describe its behavior) — a `widget` has none", b.type_word));
                 }
                 // The Godot addon's word: a script file was the control's
@@ -3202,13 +3204,14 @@ impl<'a> Compiler<'a> {
                 // by `behavior` — refused, never dropped (todo-bugs.md #4:
                 // a dropped `script` line left the effect page's switch
                 // deaf to taps).
-                // What the widget's code reports to the page that places
-                // it: names only, the types are the code's report enum.
-                "report" => {
+                // The signals a widget's code raises to the page that
+                // places it: names only, the types are the code's signal
+                // enum.
+                "signal" if n.type_word == "widget" => {
                     let mut seen: Vec<&str> = Vec::new();
                     for word in b.args.iter().filter_map(|a| a.as_ident()) {
                         if seen.contains(&word) {
-                            self.error("G0077", b.line, format!("`report {word}` is listed twice — each report is named once"));
+                            self.error("G0077", b.line, format!("`signal {word}` is listed twice — each signal is named once"));
                         }
                         seen.push(word);
                     }
@@ -3300,7 +3303,7 @@ impl<'a> Compiler<'a> {
                 _ => {}
             }
         }
-        let bodies: Vec<&AstNode> = n.children.iter().filter_map(|i| if let AstItem::Node(b) = i { Some(b) } else { None }).filter(|b| !matches!(b.type_word.as_str(), "script" | "state" | "state_builtin" | "signal" | "report" | "keys" | "behavior" | "transition" | "when" | "anim" | "style" | "arrangement")).collect();
+        let bodies: Vec<&AstNode> = n.children.iter().filter_map(|i| if let AstItem::Node(b) = i { Some(b) } else { None }).filter(|b| !matches!(b.type_word.as_str(), "script" | "state" | "state_builtin" | "signal" | "keys" | "behavior" | "transition" | "when" | "anim" | "style" | "arrangement")).collect();
         if bodies.len() != 1 {
             self.error("G0028", n.line, format!("widget `{name}` needs exactly one root node in its body"));
             return;
@@ -3380,11 +3383,16 @@ impl<'a> Compiler<'a> {
         }
         let states: Vec<String> = n.children.iter().filter_map(|i| if let AstItem::Node(b) = i { Some(b) } else { None }).filter(|b| b.type_word == "state").flat_map(|b| b.args.iter().filter_map(|a| a.as_ident()).map(str::to_string)).collect();
         let state_builtins: Vec<String> = n.children.iter().filter_map(|i| if let AstItem::Node(b) = i { Some(b) } else { None }).filter(|b| b.type_word == "state_builtin").flat_map(|b| b.args.iter().filter_map(|a| a.as_ident()).map(str::to_string)).collect();
-        let signals: Vec<String> = n.children.iter().filter_map(|i| if let AstItem::Node(b) = i { Some(b) } else { None }).filter(|b| b.type_word == "signal").flat_map(|b| b.args.iter().filter_map(|a| a.as_ident()).map(str::to_string)).collect();
-        let mut reports: Vec<String> = Vec::new();
-        for word in n.children.iter().filter_map(|i| if let AstItem::Node(b) = i { Some(b) } else { None }).filter(|b| b.type_word == "report").flat_map(|b| b.args.iter().filter_map(|a| a.as_ident())) {
-            if !reports.iter().any(|r| r == word) {
-                reports.push(word.to_string());
+        // One word, two raisers: a control's behavior raises its signals,
+        // a widget's code raises its own.
+        let is_control: bool = n.type_word == "control";
+        let mut signals: Vec<String> = Vec::new();
+        let mut code_signals: Vec<String> = Vec::new();
+        for word in n.children.iter().filter_map(|i| if let AstItem::Node(b) = i { Some(b) } else { None }).filter(|b| b.type_word == "signal").flat_map(|b| b.args.iter().filter_map(|a| a.as_ident())) {
+            if is_control {
+                signals.push(word.to_string());
+            } else if !code_signals.iter().any(|s| s == word) {
+                code_signals.push(word.to_string());
             }
         }
         // One word, one meaning: `when <word>` in the body could not say
@@ -3401,7 +3409,7 @@ impl<'a> Compiler<'a> {
                 keys_mask &= !spec.keys;
             }
         }
-        self.widgets.insert(name, WidgetDef { params: n.params.clone(), body: bodies[0].clone(), anims, host, props, whens, transitions, styles, states, state_builtins, arrangements, signals, reports, keys: keys_mask, behavior, control: n.type_word == "control", line: n.line });
+        self.widgets.insert(name, WidgetDef { params: n.params.clone(), body: bodies[0].clone(), anims, host, props, whens, transitions, styles, states, state_builtins, arrangements, signals, code_signals, keys: keys_mask, behavior, control: is_control, line: n.line });
     }
 
     /// `easing=name` plus its parameter words on the same line

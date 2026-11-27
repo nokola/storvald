@@ -9,7 +9,7 @@ use crate::ui::StepperNames;
 
 /// What a Stepper tells the page that places it.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum StepperReport {
+pub enum StepperSignal {
     /// The user stepped the number to this value.
     Changed(i32),
 }
@@ -27,7 +27,7 @@ impl Stepper {
         self.value
     }
 
-    /// Sets the number from the page's code. Reports nothing: the page
+    /// Sets the number from the page's code. Raises no signal: the page
     /// knows what it set.
     pub fn set_value(&mut self, page: &mut Page, rt: &mut Runtime, value: i32) {
         self.value = value;
@@ -43,7 +43,7 @@ impl Stepper {
 }
 
 impl Widget for Stepper {
-    type Report = StepperReport;
+    type Signal = StepperSignal;
 
     fn new(names: &StepperNames) -> Stepper {
         Stepper { names: *names, value: 0, text: String::with_capacity(12) }
@@ -55,7 +55,7 @@ impl Widget for Stepper {
         self.show(page, rt);
     }
 
-    fn handle(&mut self, cx: &mut WidgetCx<'_, StepperReport>, event: WidgetEvent<'_, NothingInside>) {
+    fn handle(&mut self, cx: &mut WidgetCx<'_, StepperSignal>, event: WidgetEvent<'_, NothingInside>) {
         let event = match event {
             WidgetEvent::Own(event) => event,
             WidgetEvent::Inside(nothing) => match nothing {},
@@ -72,6 +72,6 @@ impl Widget for Stepper {
         };
         self.value += step;
         self.show(cx.page, cx.rt);
-        cx.report(StepperReport::Changed(self.value));
+        cx.emit(StepperSignal::Changed(self.value));
     }
 }

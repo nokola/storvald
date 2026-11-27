@@ -17,7 +17,7 @@ pub(crate) const KEYWORDS: &[&str] = &[
     // Lines that are not nodes.
     "when", "transition", "anim", "repeat", "uses", "widget", "control", "style", "theme", "atlas", "slice", "arrangement", "allow", "layout", "choice", "empty", "key",
     // Lines of a widget or control body.
-    "slot", "seat", "gap", "row", "skip", "script", "behavior", "keys", "signal", "report", "state", "state_builtin",
+    "slot", "seat", "gap", "row", "skip", "script", "behavior", "keys", "signal", "state", "state_builtin",
     // Clause and step words.
     "as", "by", "in", "and", "then", "play", "each", "group", "delay",
     // States, and the two words that stand for one.
@@ -32,7 +32,7 @@ pub(crate) const KEYWORDS: &[&str] = &[
 const FLAGS: &[&str] = &["signals"];
 /// Line heads that carry a NAME LIST, never a single node name
 /// (`state_builtin hovered, focused`): every bare word is an entry.
-const LIST_HEADS: &[&str] = &["state", "state_builtin", "signal", "report", "keys"];
+const LIST_HEADS: &[&str] = &["state", "state_builtin", "signal", "keys"];
 
 pub fn parse(source: &str, diags: &mut Vec<Diagnostic>) -> Document {
     let tokens = lex(source, diags);

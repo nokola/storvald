@@ -1,4 +1,4 @@
-// The page that places the widgets: what each one reports reaches the
+// The page that places the widgets: each one's signals reach the
 // page's `handle` as a variant of its `Handler` (`src/counter_page.rs`).
 uses "look.gogo"
 uses "stepper.gogo"
@@ -10,7 +10,7 @@ View counterRoot {
         Stepper count
         SizePicker size
         LabeledStepper zoom label="Zoom"
-        // Rows the page makes when it loads: each row's Stepper reports
+        // Rows the page makes when it loads: each row's Stepper signals
         // with the row's number.
         Column lineList spacing=8 {
             repeat lines {

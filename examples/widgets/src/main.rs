@@ -1,8 +1,8 @@
-//! Widgets with code on TurboDot. A widget whose file lists `report`
+//! Widgets with code on TurboDot. A widget whose file lists `signal`
 //! lines has a struct of its own (`impl Widget`); the build script names
 //! it (`build.rs`), and the build writes the rest: each page's `Widgets`,
 //! a field per placed instance, and the routing that hands an event to
-//! the instance it happened in and its report to the page.
+//! the instance it happened in and its signal to the page.
 //!
 //! - `stepper`: a number with a minus and a plus button.
 //! - `size_picker`: a width and a height, each a Stepper inside it.
@@ -36,8 +36,8 @@ mod tests {
     use turbodot::prelude::*;
 
     use super::*;
-    use crate::size_picker::SizePickerReport;
-    use crate::stepper::StepperReport;
+    use crate::size_picker::SizePickerSignal;
+    use crate::stepper::StepperSignal;
     use crate::ui::counter_page::{self, Handler};
 
     #[global_allocator]
@@ -76,53 +76,53 @@ mod tests {
     }
 
     /// A tap on a Stepper's plus reaches the Stepper's code, which shows
-    /// the new number and reports it; the page hears the report under the
+    /// the new number and raises a signal; the page hears it under the
     /// instance's name, in the same call.
     ///
     /// Needed because a widget's code that never hears its taps looks
     /// right and does nothing.
     #[test]
-    fn a_tap_on_a_stepper_reaches_its_code_and_its_report_reaches_the_page() {
+    fn a_tap_on_a_stepper_reaches_its_code_and_its_signal_reaches_the_page() {
         let _one = ONE_TEST_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
         let mut program: Program<()> = started();
         program.tap(PAGE.count.plus, 1.0);
         program.tap(PAGE.count.plus, 2.0);
         program.tap(PAGE.count.minus, 3.0);
-        assert_eq!(heard(&program), [Handler::Count(StepperReport::Changed(1)), Handler::Count(StepperReport::Changed(2)), Handler::Count(StepperReport::Changed(1))]);
+        assert_eq!(heard(&program), [Handler::Count(StepperSignal::Changed(1)), Handler::Count(StepperSignal::Changed(2)), Handler::Count(StepperSignal::Changed(1))]);
         program.frame(SIZE_EPX.0, SIZE_EPX.1, 0.016);
         assert_eq!(text(&program, PAGE.count.value), "1");
     }
 
-    /// A Stepper inside a widget with code reports to that widget, and the
-    /// page hears that widget's report: the size, with both numbers.
+    /// A Stepper inside a widget with code signals that widget, and the
+    /// page hears that widget's signal: the size, with both numbers.
     #[test]
-    fn a_stepper_inside_a_widget_with_code_reports_through_that_widget() {
+    fn a_stepper_inside_a_widget_with_code_signals_through_that_widget() {
         let _one = ONE_TEST_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
         let mut program: Program<()> = started();
         program.tap(PAGE.size.width_stepper.plus, 1.0);
         program.tap(PAGE.size.height_stepper.plus, 2.0);
         program.tap(PAGE.size.height_stepper.plus, 3.0);
-        assert_eq!(heard(&program), [Handler::Size(SizePickerReport::SizeChanged { width: 2, height: 1 }), Handler::Size(SizePickerReport::SizeChanged { width: 2, height: 2 }), Handler::Size(SizePickerReport::SizeChanged { width: 2, height: 3 })]);
+        assert_eq!(heard(&program), [Handler::Size(SizePickerSignal::SizeChanged { width: 2, height: 1 }), Handler::Size(SizePickerSignal::SizeChanged { width: 2, height: 2 }), Handler::Size(SizePickerSignal::SizeChanged { width: 2, height: 3 })]);
     }
 
     /// A Stepper inside a widget with no code is the page's own to route:
     /// the page hears it under the path of its names (`zoom.stepper`).
     #[test]
-    fn a_stepper_inside_a_widget_without_code_reports_to_the_page() {
+    fn a_stepper_inside_a_widget_without_code_signals_the_page() {
         let _one = ONE_TEST_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
         let mut program: Program<()> = started();
         program.tap(PAGE.zoom.stepper.minus, 1.0);
-        assert_eq!(heard(&program), [Handler::ZoomStepper(StepperReport::Changed(-1))]);
+        assert_eq!(heard(&program), [Handler::ZoomStepper(StepperSignal::Changed(-1))]);
     }
 
-    /// A Stepper in a row the page made reports with the row's number; the
+    /// A Stepper in a row the page made signals with the row's number; the
     /// row's struct was made and loaded with the row, and the page wrote
     /// into it at once.
     ///
     /// Needed for rows a page makes while it runs (a list of settings,
     /// one row per setting): their widgets would hear nothing otherwise.
     #[test]
-    fn a_stepper_in_a_row_reports_with_its_row() {
+    fn a_stepper_in_a_row_signals_with_its_row() {
         let _one = ONE_TEST_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
         let mut program: Program<()> = started();
         let rows: Vec<NodeId> = program.ui().rows(PAGE.lines);
@@ -132,13 +132,13 @@ mod tests {
         program.tap(second.amount.plus, 1.0);
         let third: counter_page::LinesSlot = counter_page::LinesSlot::at(rows[2]);
         program.tap(third.amount.minus, 2.0);
-        assert_eq!(heard(&program), [Handler::Lines(1, counter_page::LinesInside::Amount(StepperReport::Changed(11))), Handler::Lines(2, counter_page::LinesInside::Amount(StepperReport::Changed(19)))]);
+        assert_eq!(heard(&program), [Handler::Lines(1, counter_page::LinesInside::Amount(StepperSignal::Changed(11))), Handler::Lines(2, counter_page::LinesInside::Amount(StepperSignal::Changed(19)))]);
         program.frame(SIZE_EPX.0, SIZE_EPX.1, 0.016);
         assert_eq!(text(&program, second.amount.value), "11");
     }
 
     /// A row made after the page loaded gets its struct at the next frame,
-    /// loaded, without the page asking: its Stepper shows 0 and reports.
+    /// loaded, without the page asking: its Stepper shows 0 and signals.
     #[test]
     fn a_row_made_later_gets_its_widgets_at_the_next_frame() {
         let _one = ONE_TEST_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
@@ -153,18 +153,18 @@ mod tests {
         assert_eq!(program.page::<CounterPage>().expect("on screen").widgets.lines.len(), crate::counter_page::LINES + 1);
         assert_eq!(text(&program, last.amount.value), "0", "loaded with its row");
         program.tap(last.amount.plus, 1.0);
-        assert_eq!(heard(&program), [Handler::Lines(crate::counter_page::LINES, counter_page::LinesInside::Amount(StepperReport::Changed(1)))]);
+        assert_eq!(heard(&program), [Handler::Lines(crate::counter_page::LINES, counter_page::LinesInside::Amount(StepperSignal::Changed(1)))]);
     }
 
-    /// The page's own call into a widget reports nothing: Reset sets the
+    /// The page's own call into a widget raises no signal: Reset sets the
     /// Stepper to 0 and the page hears only the Reset button.
     #[test]
-    fn a_page_s_own_call_into_a_widget_reports_nothing() {
+    fn a_page_s_own_call_into_a_widget_raises_no_signal() {
         let _one = ONE_TEST_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
         let mut program: Program<()> = started();
         program.tap(PAGE.count.plus, 1.0);
         program.tap(PAGE.reset, 2.0);
-        assert_eq!(heard(&program), [Handler::Count(StepperReport::Changed(1)), Handler::Reset]);
+        assert_eq!(heard(&program), [Handler::Count(StepperSignal::Changed(1)), Handler::Reset]);
         program.frame(SIZE_EPX.0, SIZE_EPX.1, 0.016);
         assert_eq!(text(&program, PAGE.count.value), "0");
     }
@@ -182,7 +182,7 @@ mod tests {
         assert_eq!(program.page::<CounterPage>().expect("on screen").widgets.size.size(), (1, 1));
     }
 
-    /// Routing an event to a widget two levels down, its report up through
+    /// Routing an event to a widget two levels down, its signal up through
     /// the widget around it to the page, and the frame after it, allocate
     /// nothing once warm.
     ///
@@ -203,23 +203,23 @@ mod tests {
         let row: NodeId = program.ui().rows(PAGE.lines)[1];
         let row_plus: Event = Event { node: counter_page::LinesSlot::at(row).amount.plus, kind: EventKind::Activate, action: None };
         let row_minus: Event = Event { node: counter_page::LinesSlot::at(row).amount.minus, kind: EventKind::Activate, action: None };
-        let mut reports: u32 = 0;
-        let mut step_and_frame = |program: &mut Program<()>, reports: &mut u32| {
+        let mut signals: u32 = 0;
+        let mut step_and_frame = |program: &mut Program<()>, signals: &mut u32| {
             for event in [&plus, &minus, &row_plus, &row_minus] {
                 let ui = program.ui_mut();
-                assert!(widgets.route(&mut ui.page, &mut ui.runtime, event, &mut |_| *reports += 1), "the event is a widget's");
+                assert!(widgets.route(&mut ui.page, &mut ui.runtime, event, &mut |_| *signals += 1), "the event is a widget's");
             }
             program.frame(SIZE_EPX.0, SIZE_EPX.1, 0.016);
         };
         for _ in 0..10 {
-            step_and_frame(&mut program, &mut reports);
+            step_and_frame(&mut program, &mut signals);
         }
         let before: u64 = alloc_count::allocations();
         for _ in 0..50 {
-            step_and_frame(&mut program, &mut reports);
+            step_and_frame(&mut program, &mut signals);
         }
         let made: u64 = alloc_count::allocations() - before;
-        assert_eq!(reports, 240, "each event reached the page as one report");
+        assert_eq!(signals, 240, "each event reached the page as one signal");
         assert_eq!(made, 0, "200 routed events and their 50 frames allocated {made} times");
     }
 
@@ -323,7 +323,7 @@ mod tests {
         program.tap(PAGE.size.width_stepper.plus, 1.0);
         program.frame(SIZE_EPX.0, SIZE_EPX.1, 0.016);
         let cached: &CachedCounter = program.page::<CachedCounter>().expect("on screen");
-        assert_eq!(cached.heard, [Handler::Size(SizePickerReport::SizeChanged { width: 2, height: 1 })]);
+        assert_eq!(cached.heard, [Handler::Size(SizePickerSignal::SizeChanged { width: 2, height: 1 })]);
         assert_eq!((cached.widgets.loads, cached.widgets.frames), (1, 2));
         assert!(cached.widgets.after_layouts >= 1 && asked, "laid out, and the frame the widgets asked for: {asked}");
         assert_eq!(text(&program, PAGE.size.width_stepper.value), "2");

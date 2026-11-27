@@ -51,7 +51,7 @@ pub use anim::{Easing, Finish, Motion};
 pub use runtime::{Resolved, Runtime, resolve, resolve_animated};
 pub use popup::{PopupAlign, PopupSide};
 pub use surface::{CommandSurface, GpuSurface, PictureSurface, SurfaceAsk, SurfaceCommands, SurfaceDraw};
-pub use widget::{NoReport, NothingInside, Reports, Rows, Widget, WidgetCx, WidgetEvent, WidgetSet, WidgetShape};
+pub use widget::{NoSignal, NothingInside, Rows, Signals, Widget, WidgetCx, WidgetEvent, WidgetSet, WidgetShape};
 
 use std::path::{Path, PathBuf};
 
@@ -148,7 +148,7 @@ pub struct BuildOptions<'a> {
     /// Needed so a page cannot forget to hand a widget its events: each
     /// page gets a `Widgets` struct with a field per instance and the
     /// routing to them, and its `Handler` a variant per instance that
-    /// reports.
+    /// raises signals.
     pub widget_code: &'a [(&'a str, &'a str)],
 }
 
@@ -222,8 +222,8 @@ pub fn build_pages(dir: &Path, out: &Path, options: BuildOptions<'_>) -> Result<
     let mut fonts: Vec<String> = Vec::new();
     // Every compiled page, for the build-wide `<Widget>Names` structs.
     let mut compiled_pages: Vec<(String, Page)> = Vec::new();
-    // Every widget a compile declared, with its `report` names.
-    let mut widget_reports: Vec<(String, Vec<String>)> = Vec::new();
+    // Every widget a compile declared, with its `signal` names.
+    let mut widget_signals: Vec<(String, Vec<String>)> = Vec::new();
     // (module, compiled page, path) to emit once every page compiled.
     let mut to_emit: Vec<(String, std::path::PathBuf)> = Vec::new();
     // Every page with its file, the files it `uses` and what they all say:
@@ -276,9 +276,9 @@ pub fn build_pages(dir: &Path, out: &Path, options: BuildOptions<'_>) -> Result<
             }
         }
         println!("cargo:rerun-if-changed={}", path.display());
-        for (widget, reports) in &compiled.widget_reports {
-            if !widget_reports.iter().any(|(w, _)| w == widget) {
-                widget_reports.push((widget.clone(), reports.clone()));
+        for (widget, signals) in &compiled.widget_signals {
+            if !widget_signals.iter().any(|(w, _)| w == widget) {
+                widget_signals.push((widget.clone(), signals.clone()));
             }
         }
         to_emit.push((module.clone(), path.clone()));
@@ -302,8 +302,8 @@ pub fn build_pages(dir: &Path, out: &Path, options: BuildOptions<'_>) -> Result<
         built.push(emit::BuiltPageRow { module: EDIT_BAR_MODULE.to_string(), file: String::new(), uses: Vec::new(), text: 0 });
         compiled_pages.push((EDIT_BAR_MODULE.to_string(), compiled.page));
     }
-    // Every page's code, now that every widget's report names are known.
-    let code: emit::WidgetCode<'_> = emit::WidgetCode { structs: options.widget_code, reports: &widget_reports };
+    // Every page's code, now that every widget's signal names are known.
+    let code: emit::WidgetCode<'_> = emit::WidgetCode { structs: options.widget_code, signals: &widget_signals };
     for (module, page) in &compiled_pages {
         let shown: String = match to_emit.iter().find(|(m, _)| m == module) {
             Some((_, path)) => path.display().to_string(),

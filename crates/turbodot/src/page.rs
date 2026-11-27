@@ -4,7 +4,7 @@ use std::any::{Any, TypeId};
 use std::cell::RefCell;
 
 use gogo_text::TextEngine;
-use gogo_ui::{CommandSurface, Event, EventKind, HandlerName, NodeId, Reports, StaticPage, StrId, SurfaceCommands, WidgetSet};
+use gogo_ui::{CommandSurface, Event, EventKind, HandlerName, NodeId, Signals, StaticPage, StrId, SurfaceCommands, WidgetSet};
 
 use crate::pages::{PageId, PageUi};
 #[cfg(feature = "gpu")]
@@ -280,7 +280,7 @@ pub trait Page<A = ()>: Sized + 'static {
     /// the page's file places no widget with code.
     ///
     /// Needed so the engine hands each event on an instance of a widget
-    /// with code to that widget's code first, then its reports to
+    /// with code to that widget's code first, then its signals to
     /// `handle` as variants of the page's `Handler`, in the same call; and
     /// calls the widgets' `loaded`, `frame` and `after_layout` before the
     /// page's own.
@@ -699,7 +699,7 @@ impl<A: 'static, P: Page<A>> PageObject<A> for Plain<P, P::Handler> {
         self.1.read(ui);
     }
     fn handle(&mut self, host: &mut Host<'_, A>, event: &Event) {
-        let mut heard: Reports<P::Handler> = Reports::new();
+        let mut heard: Signals<P::Handler> = Signals::new();
         if route_to_widgets(self.0.widgets(), host, event, &mut heard) {
             for handler in heard.drain() {
                 self.0.handle(host, PageEvent { handler, kind: event.kind, node: event.node });
@@ -781,7 +781,7 @@ impl<A: 'static, P: CachedPage<A>> PageObject<A> for Cached<P, P::Handler> {
         self.1.read(ui);
     }
     fn handle(&mut self, host: &mut Host<'_, A>, event: &Event) {
-        let mut heard: Reports<P::Handler> = Reports::new();
+        let mut heard: Signals<P::Handler> = Signals::new();
         if route_to_widgets(self.0.widgets(), host, event, &mut heard) {
             for handler in heard.drain() {
                 self.0.handle(host, PageEvent { handler, kind: event.kind, node: event.node });
@@ -833,11 +833,11 @@ impl<A: 'static, P: CachedPage<A>> PageObject<A> for Cached<P, P::Handler> {
 }
 
 /// Hands `event` to the page's widgets with code (`Page::widgets`), and
-/// their reports, as the page's `Handler`, to `heard`.
+/// their signals, as the page's `Handler`, to `heard`.
 ///
 /// Returns false when the page has none, or no widget with code holds
 /// the event's node: the page's handler table answers it.
-fn route_to_widgets<A, H>(widgets: Option<&mut dyn WidgetSet<H>>, host: &mut Host<'_, A>, event: &Event, heard: &mut Reports<H>) -> bool {
+fn route_to_widgets<A, H>(widgets: Option<&mut dyn WidgetSet<H>>, host: &mut Host<'_, A>, event: &Event, heard: &mut Signals<H>) -> bool {
     let Some(widgets) = widgets else { return false };
     let ui: &mut PageUi = &mut *host.ui;
     widgets.route(&mut ui.page, &mut ui.runtime, event, &mut |handler| heard.push(handler))
