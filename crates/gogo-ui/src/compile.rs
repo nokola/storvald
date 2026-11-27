@@ -162,9 +162,11 @@ struct WidgetDef {
     /// A `control`'s `signal` lines: the names GP52's behavior may raise
     /// (`drag_started`/`drag_ended` when declared).
     signals: Vec<String>,
-    /// A `widget`'s `signal` lines: what the widget's code tells the page
-    /// that places it (`signal size_changed, opacity_changed`). The build
-    /// checks them against the code's signal enum (`emit_widget_code`).
+    /// The `signal` lines of a `widget` or a `control`: what its code tells
+    /// the page that places it, when it has code (`signal size_changed,
+    /// opacity_changed`; a control's include its behavior's, which reach
+    /// its code first). The build checks them against the code's signal
+    /// enum (`emit_widget_code`).
     code_signals: Vec<String>,
     /// A `control` declaration (vs a `widget`): its own scoped anims may
     /// drive `slot.<name>.<motion word>` lanes.
@@ -977,8 +979,7 @@ pub struct Compiled {
     /// page's own file.
     pub uses: Vec<String>,
     /// Every widget and control this compile declared, by name, with the
-    /// names of a widget's `signal` lines (none for a control), sorted by
-    /// widget name.
+    /// names of its `signal` lines, sorted by widget name.
     ///
     /// Needed by the build that gives a widget its code
     /// (`BuildOptions::widget_code`): it checks the code's signal enum
@@ -3199,15 +3200,11 @@ impl<'a> Compiler<'a> {
                 "script" | "state" | "state_builtin" | "keys" | "behavior" if n.type_word == "widget" => {
                     self.error("G0077", b.line, format!("`{}` lines belong to a `control` body (they describe its behavior) — a `widget` has none", b.type_word));
                 }
-                // The Godot addon's word: a script file was the control's
-                // behavior there. Here the behavior is Rust the file names
-                // by `behavior` — refused, never dropped (todo-bugs.md #4:
-                // a dropped `script` line left the effect page's switch
-                // deaf to taps).
-                // The signals a widget's code raises to the page that
-                // places it: names only, the types are the code's signal
-                // enum.
-                "signal" if n.type_word == "widget" => {
+                // Everything the page that places the widget or control
+                // hears from it: names only, the types are the code's
+                // signal enum. Named twice, the code's enum could not match
+                // the line.
+                "signal" => {
                     let mut seen: Vec<&str> = Vec::new();
                     for word in b.args.iter().filter_map(|a| a.as_ident()) {
                         if seen.contains(&word) {
@@ -3216,6 +3213,11 @@ impl<'a> Compiler<'a> {
                         seen.push(word);
                     }
                 }
+                // The Godot addon's word: a script file was the control's
+                // behavior there. Here the behavior is Rust the file names
+                // by `behavior` — refused, never dropped (todo-bugs.md #4:
+                // a dropped `script` line left the effect page's switch
+                // deaf to taps).
                 "script" => {
                     self.error("G0082", b.line, format!("`script` is the Godot addon's word — a control names its input behavior here: `behavior <name> by $value in $min..$max` ({}); code-behind input is `on:pointer=` + `keys`", self.behavior_names()));
                 }
@@ -3383,15 +3385,19 @@ impl<'a> Compiler<'a> {
         }
         let states: Vec<String> = n.children.iter().filter_map(|i| if let AstItem::Node(b) = i { Some(b) } else { None }).filter(|b| b.type_word == "state").flat_map(|b| b.args.iter().filter_map(|a| a.as_ident()).map(str::to_string)).collect();
         let state_builtins: Vec<String> = n.children.iter().filter_map(|i| if let AstItem::Node(b) = i { Some(b) } else { None }).filter(|b| b.type_word == "state_builtin").flat_map(|b| b.args.iter().filter_map(|a| a.as_ident()).map(str::to_string)).collect();
-        // One word, two raisers: a control's behavior raises its signals,
-        // a widget's code raises its own.
+        // One list, two raisers: a control's behavior raises the names it
+        // knows (`drag_started`), and a widget's or control's code raises
+        // every name on the list. A control with code hears its behavior's
+        // first and passes them on; which one has code, the build knows
+        // (`BuildOptions::widget_code`), the compile does not.
         let is_control: bool = n.type_word == "control";
         let mut signals: Vec<String> = Vec::new();
         let mut code_signals: Vec<String> = Vec::new();
         for word in n.children.iter().filter_map(|i| if let AstItem::Node(b) = i { Some(b) } else { None }).filter(|b| b.type_word == "signal").flat_map(|b| b.args.iter().filter_map(|a| a.as_ident())) {
             if is_control {
                 signals.push(word.to_string());
-            } else if !code_signals.iter().any(|s| s == word) {
+            }
+            if !code_signals.iter().any(|s| s == word) {
                 code_signals.push(word.to_string());
             }
         }

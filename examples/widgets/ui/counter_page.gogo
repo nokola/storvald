@@ -4,12 +4,14 @@ uses "look.gogo"
 uses "stepper.gogo"
 uses "size_picker.gogo"
 uses "labeled_stepper.gogo"
+uses "fader.gogo"
 
 View counterRoot {
     Column halign=left, valign=top, spacing=16, padding=16 {
         Stepper count
         SizePicker size
         LabeledStepper zoom label="Zoom"
+        Fader volume
         // Rows the page makes when it loads: each row's Stepper signals
         // with the row's number.
         Column lineList spacing=8 {

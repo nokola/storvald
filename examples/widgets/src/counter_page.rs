@@ -1,5 +1,5 @@
-//! The page that places a Stepper, a SizePicker and a LabeledStepper
-//! (`ui/counter_page.gogo`).
+//! The page that places a Stepper, a SizePicker, a LabeledStepper and a
+//! Fader (`ui/counter_page.gogo`).
 
 use turbodot::prelude::*;
 
@@ -44,7 +44,7 @@ impl Page for CounterPage {
     fn handle(&mut self, host: &mut Host, event: PageEvent<Handler>) {
         match &event.handler {
             Handler::Reset => self.widgets.count.set_value(&mut host.ui.page, &mut host.ui.runtime, 0),
-            Handler::Count(_) | Handler::Size(_) | Handler::ZoomStepper(_) | Handler::Lines(..) => {}
+            Handler::Count(_) | Handler::Size(_) | Handler::ZoomStepper(_) | Handler::Volume(_) | Handler::Lines(..) => {}
         }
         self.heard.push(event.handler);
     }

@@ -1,0 +1,18 @@
+// A number the user drags from 0 to 100: a control with code
+// (`src/fader.rs`). Its slider behavior moves the value and raises the
+// drag's two ends; its code hears all of them first and tells the page.
+// The `signal` line lists everything the page hears from a Fader.
+control Fader $value=0, $min=0, $max=100 {
+    behavior slider by $value in $min..$max
+    signal value_changed, drag_started, drag_ended
+    Layers width=240, height=40 {
+        // Empty until the code loads: it writes the number.
+        Label value text="", halign=right, valign=top
+        slot track height=8, valign=bottom, margin_bottom=6 {
+            Rectangle width=fill, height=fill, color=#FFFFFF33
+            slot progress automatic=length by $value in $min..$max {
+                Rectangle width=fill, height=fill, color=#3388FFFF
+            }
+        }
+    }
+}

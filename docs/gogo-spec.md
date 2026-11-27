@@ -315,14 +315,16 @@ These are ordinary nodes to the parser; the resolver gives them meaning:
   - **`signals`** — a flag on one node inside a widget body marking the event surface:
     an `on:` entry written on an instance lands on this node.
     Omitted ⇒ the root is the surface.
-  - **`signal <names>`** — beside the body: what the widget's Rust struct tells the
-    page that places it (a widget with code, named by the build script:
-    `BuildOptions::widget_code`). The same word as a `control`'s `signal` line;
-    there the behavior raises them, here the struct does. Names only; the
-    struct's signal enum must have exactly these, or the build stops. Each
-    instance's events go to its struct first, and its signals reach the page as
-    a variant of the page's `Handler` (REFERENCE "Widgets with code"). A name
-    listed twice is G0077.
+  - **`signal <names>`** — beside the body: everything the page that places the
+    widget hears from its Rust struct (a widget with code, named by the build
+    script: `BuildOptions::widget_code`). Names only; the struct's signal enum
+    must have exactly these, or the build stops. Each instance's events go to
+    its struct first, and its signals reach the page as a variant of the page's
+    `Handler` (REFERENCE "Widgets with code"). A `control` writes the same
+    line: with no code its behavior raises the names it knows (`drag_started`,
+    `drag_ended`) and the page hears them by their own names; with code the
+    line is the struct's list, the behavior's signals reach the struct first,
+    and the struct passes them on. A name listed twice is G0077.
   - Widgets may use other widgets; cycles are a build error (cycle path printed).
   - **`for=<Host>` (D276)** — the announced host contract: `widget Name for=Radio, $p=v
     { ... }` says the body fills a stateful host's body (hosts: `Button`, `Radio`,

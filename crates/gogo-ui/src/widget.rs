@@ -9,8 +9,10 @@
 //!
 //! How the parts fit:
 //! - The widget's file lists the signals its code raises:
-//!   `signal size_changed` (the word a `control` uses for the signals its
-//!   behavior raises).
+//!   `signal size_changed`. A `control` can have code too: its `signal`
+//!   line then lists its behavior's signals beside its code's, and the
+//!   behavior's reach its code first (`WidgetEvent::Own`, an
+//!   `EventKind::Signal` event), which passes them on.
 //! - The app's build script names the struct of each widget with code
 //!   (`BuildOptions::widget_code`). The build then writes, per widget,
 //!   its `WidgetShape` (its names, the signals of the widgets inside it,

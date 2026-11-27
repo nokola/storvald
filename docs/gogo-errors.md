@@ -526,8 +526,9 @@ names; an empty head declares nothing.
 `state`, `state_builtin`, `keys` and `behavior` lines say how a
 `control` behaves; a `widget` has no behavior, so its body refuses them
 (and the Godot addon's `script` line). A `signal` line is the one a
-widget keeps: there it lists the signals its code raises, and a name
-listed twice is refused under this code. Under `state`, a built-in's
+widget keeps: there it lists the signals its code raises. A name listed
+twice on a `signal` line, a widget's or a control's, is refused under
+this code. Under `state`, a built-in's
 name is also refused — `state held` claims a built-in state; declare
 built-ins with `state_builtin`, your own words with `state`. Another
 dialect's word for a built-in (`hover`, `pressed`, `focus`, `checked`)

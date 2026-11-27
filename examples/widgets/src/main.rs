@@ -6,12 +6,16 @@
 //!
 //! - `stepper`: a number with a minus and a plus button.
 //! - `size_picker`: a width and a height, each a Stepper inside it.
-//! - `counter_page`: places a Stepper, a SizePicker, and a Stepper inside
-//!   a widget with no code (`LabeledStepper`).
+//! - `fader`: a control with code. Its slider behavior moves the number
+//!   and raises the drag's two ends; its code hears them first and tells
+//!   the page.
+//! - `counter_page`: places a Stepper, a SizePicker, a Stepper inside a
+//!   widget with no code (`LabeledStepper`), and a Fader.
 //!
 //! Run it with `cargo run -p turbodot-example-widgets`.
 
 mod counter_page;
+mod fader;
 mod size_picker;
 mod stepper;
 
@@ -36,6 +40,7 @@ mod tests {
     use turbodot::prelude::*;
 
     use super::*;
+    use crate::fader::FaderSignal;
     use crate::size_picker::SizePickerSignal;
     use crate::stepper::StepperSignal;
     use crate::ui::counter_page::{self, Handler};
@@ -113,6 +118,38 @@ mod tests {
         let mut program: Program<()> = started();
         program.tap(PAGE.zoom.stepper.minus, 1.0);
         assert_eq!(heard(&program), [Handler::ZoomStepper(StepperSignal::Changed(-1))]);
+    }
+
+    /// A drag on a Fader, a control with code: its slider behavior moves
+    /// the number and raises the drag's two ends, the Fader's code hears
+    /// all of them first, and the page hears each under the instance's
+    /// name, in order.
+    ///
+    /// Needed because a page with two sliders must know which one a drag
+    /// began on (a host pauses a live preview between the two ends), and
+    /// a control's code that never heard them could not tell it.
+    #[test]
+    fn a_drag_on_a_fader_reaches_its_code_and_the_page_hears_which_fader() {
+        let _one = ONE_TEST_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let mut program: Program<()> = started();
+        // The track spans the control's whole width.
+        let track: turbodot::gogo::Rect = program.ui().rect(PAGE.volume.root);
+        assert!(track.w > 0.0, "the Fader is laid out: {track:?}");
+        let y: f32 = track.y + track.h / 2.0;
+        program.touch(Phase::Down, track.x + track.w * 0.25, y, 1.0);
+        program.frame(SIZE_EPX.0, SIZE_EPX.1, 0.016);
+        program.touch(Phase::Move, track.x + track.w * 0.5, y, 1.1);
+        program.frame(SIZE_EPX.0, SIZE_EPX.1, 0.016);
+        program.touch(Phase::Up, track.x + track.w * 0.5, y, 1.2);
+        program.frame(SIZE_EPX.0, SIZE_EPX.1, 0.016);
+        let got: Vec<Handler> = heard(&program);
+        assert_eq!(got.first(), Some(&Handler::Volume(FaderSignal::DragStarted)), "{got:?}");
+        assert_eq!(got.last(), Some(&Handler::Volume(FaderSignal::DragEnded)), "{got:?}");
+        let values: Vec<f32> = got.iter().filter_map(|h| if let Handler::Volume(FaderSignal::ValueChanged(v)) = h { Some(*v) } else { None }).collect();
+        assert_eq!(values.len(), 2, "the press's jump and the move, each once: {got:?}");
+        assert!((values[0] - 25.0).abs() < 1.0 && (values[1] - 50.0).abs() < 1.0, "{values:?}");
+        assert_eq!(program.page::<CounterPage>().expect("on screen").widgets.volume.value(), values[1]);
+        assert_eq!(text(&program, PAGE.volume.value), "50");
     }
 
     /// A Stepper in a row the page made signals with the row's number; the

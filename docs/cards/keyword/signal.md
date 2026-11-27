@@ -29,5 +29,12 @@ build error G0049. Value events are never declared here — gogo
 synthesizes `edit`/`change` for the control's value (D181); `signal` is
 for the behavior's OWN discrete moments.
 
+A control with code (its Rust struct named in the build script) lists
+everything the page hears from it, its code's names beside the
+behavior's: `signal value_changed, drag_started, drag_ended`. The
+behavior's signals then reach the struct first, and the struct passes
+them on; the page hears the instance by its name,
+`Handler::Gain(FaderSignal::DragStarted)`.
+
 (The widget-body `signals` FLAG — which node exposes signals — is a
 different word and unchanged.)

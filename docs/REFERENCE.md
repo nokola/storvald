@@ -468,11 +468,19 @@ View counterRoot {
 }
 ```
 
-- `signal <names>` lists what the widget tells the page that places it.
-  The file lists names only; the Rust struct says what each one carries.
-  It is the word a `control` uses for its behavior's signals
-  (`signal drag_started`, below): in a control gogo raises them, in a
-  widget with code its struct does.
+- `signal <names>` lists everything the page that places the widget hears
+  from it. The file lists names only; the Rust struct says what each one
+  carries, and raises it (`cx.emit`).
+- A `control` (below) can have code too. Its `signal` line then lists
+  everything the page hears from it, its behavior's signals among them:
+  `signal value_changed, drag_started, drag_ended`. The behavior still
+  raises `drag_started` and `drag_ended`, but they reach the control's
+  struct first (an `EventKind::Signal` event, its name in `Action::Emit`),
+  and the struct passes them on with `cx.emit`. The page hears each
+  instance by its name, `Handler::Volume(FaderSignal::DragStarted)`, so
+  with two sliders it knows which one a drag began on. A control with no
+  code raises its behavior's signals to the page by their own names
+  (`Handler::DragStarted`).
 - The app's build script names the struct of each widget with code, once:
   `turbodot::build::pages_with_widget_code("ui", &[("Stepper", "crate::stepper::Stepper")])`
   (with gogo alone: `BuildOptions::widget_code`).
@@ -553,6 +561,10 @@ control Fader $value=0, $min=0, $max=100, $step=0 {
 
 Fader gain value=25          // drag_started reaches code as a Signal event
 ```
+
+A control whose struct is named in the build script (a control with code,
+"Widgets with code" above) hears its behavior's signals first, and its
+`signal` line lists everything the page hears from it.
 
 `behavior <name> by $value in $min..$max[, step=$step][, key_unit=5%]`
 names the INPUT BEHAVIOR that answers every instance of the control. The

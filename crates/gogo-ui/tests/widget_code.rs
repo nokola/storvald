@@ -125,24 +125,76 @@ fn an_empty_signal_line_is_refused() {
     assert!(has_errors(&c.diags), "`signal` with no name: {:#?}", c.diags);
 }
 
-/// One word, two raisers: a control's `signal` lines are its behavior's,
-/// heard by their own names; a widget's are its code's, heard only through
-/// the instance.
+/// One list, two raisers: a control's `signal` line is the list its code
+/// would raise, and with no code its behavior's names are heard by their
+/// own names; a widget's are its code's, heard only through the instance.
 ///
 /// Needed so a widget's signal never turns into a handler of the page by
-/// itself, and a control's drag signals stay where pages hear them now.
+/// itself, and a control with no code keeps its drag signals where pages
+/// hear them now.
 #[test]
-fn a_control_s_signals_are_its_behavior_s_and_a_widget_s_are_its_code_s() {
+fn a_control_with_no_code_is_heard_by_its_behavior_s_names_and_a_widget_through_its_code() {
     let c = compile(RAISERS, &|_| None);
     assert!(!has_errors(&c.diags), "{:#?}", c.diags);
     let signals_of = |widget: &str| c.widget_signals.iter().find(|(w, _)| w == widget).map(|(_, s)| s.clone());
-    assert_eq!(signals_of("Knob"), Some(Vec::new()), "a control's signals are its behavior's, not code's");
+    assert_eq!(signals_of("Knob"), Some(vec!["drag_started".to_string(), "drag_ended".to_string()]), "the list its code would raise");
     assert_eq!(signals_of("Dial"), Some(vec!["turned".to_string()]));
     let plain: Vec<String> = handler_names_with(&c.page, &WidgetCode::default());
     assert!(plain.iter().any(|n| n == "drag_started"), "a control's signal is heard by its own name: {plain:?}");
     for name in ["pressed", "bumped", "turned"] {
         assert!(!plain.iter().any(|n| n == name), "a widget's signal `{name}` is never a handler of its own: {plain:?}");
     }
+}
+
+/// Two instances of a control with a slider behavior, and a button.
+const FADERS: &str = "control Fader $value=0, $min=0, $max=10 {
+    behavior slider by $value in $min..$max
+    signal value_changed, drag_started, drag_ended
+    Layers width=100, height=20 {
+        slot track width=fill, height=10 {
+            Rectangle width=fill, height=fill
+        }
+    }
+}
+View page {
+    Column {
+        Fader volume
+        Fader balance
+        Button reset text=\"Reset\"
+    }
+}
+";
+
+/// A control with code: its `signal` line lists everything the page hears
+/// from it, its behavior's drag signals among them. The behavior still
+/// raises those (for the code), and the page hears each instance by its
+/// name alone: no bare `drag_started` that could not say which one.
+///
+/// Needed so a page with two sliders knows which one the finger is on.
+#[test]
+fn a_control_with_code_is_heard_through_its_code_alone() {
+    let c = compile(FADERS, &|_| None);
+    assert!(!has_errors(&c.diags), "{:#?}", c.diags);
+    let signals_of = |widget: &str| c.widget_signals.iter().find(|(w, _)| w == widget).map(|(_, s)| s.clone());
+    assert_eq!(signals_of("Fader"), Some(vec!["value_changed".to_string(), "drag_started".to_string(), "drag_ended".to_string()]));
+    assert_eq!(c.page.behaviors.len(), 2);
+    assert!(c.page.behaviors.iter().all(|b| b.drag_started != gogo_ui::NO_STR && b.drag_ended != gogo_ui::NO_STR), "the behavior still raises the drag signals the line lists");
+    let plain: Vec<String> = handler_names_with(&c.page, &WidgetCode::default());
+    for name in ["volume", "balance", "drag_started", "drag_ended", "reset"] {
+        assert!(plain.iter().any(|n| n == name), "with no code, `{name}` is the page's: {plain:?}");
+    }
+    let code: WidgetCode<'_> = WidgetCode { structs: &[("Fader", "crate::Fader")], signals: &c.widget_signals };
+    assert_eq!(handler_names_with(&c.page, &code), ["reset"]);
+    let rust: String = emit_rust_with(&c.page, "m", &code).unwrap();
+    assert!(rust.contains("    pub enum Handler {\n        Reset,\n        Volume(<crate::Fader as gogo_ui::Widget>::Signal),\n        Balance(<crate::Fader as gogo_ui::Widget>::Signal),\n    }"), "{rust}");
+    let shape: String = emit_widget_code(&[("m", &c.page)], &code).unwrap();
+    assert!(shape.contains("const _: fn(&FaderSignalOfFile) = |signal| match signal {\n    FaderSignalOfFile::ValueChanged { .. } => {}\n    FaderSignalOfFile::DragStarted { .. } => {}\n    FaderSignalOfFile::DragEnded { .. } => {}\n};"), "the code's enum is checked against the whole line: {shape}");
+}
+
+#[test]
+fn a_control_s_signal_named_twice_is_refused() {
+    let c = compile("control Knob $value=0, $min=0, $max=10 {\n    behavior slider by $value in $min..$max\n    signal drag_started, drag_started\n    Panel box width=10, height=10\n}\nView page { Knob k }\n", &|_| None);
+    assert!(c.diags.iter().any(|d| d.message.contains("`signal drag_started` is listed twice")), "{:#?}", c.diags);
 }
 
 /// `report` is no word of the language: a widget's signals are `signal`
