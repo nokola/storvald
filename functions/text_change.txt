@@ -1,4 +1,4 @@
-# `text_change` at commit d2160d496d0b1714c90b213936c89d9ffe39381d: instructions by function, 68989 in all.
+# `text_change` at commit a26616f58fd93d5478640d9c3d10b1ed8fcac582: instructions by function, 68989 in all.
 # A function's own code only: what it calls is counted at the called function.
 14178 gogo_ui::draw::walk'2
 8150 <gogo_ui::page::Page>::kind_default::{closure#0}

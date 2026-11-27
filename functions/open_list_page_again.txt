@@ -1,13 +1,13 @@
-# `open_list_page_again` at commit d2160d496d0b1714c90b213936c89d9ffe39381d: instructions by function, 1826378 in all.
+# `open_list_page_again` at commit a26616f58fd93d5478640d9c3d10b1ed8fcac582: instructions by function, 1824983 in all.
 # A function's own code only: what it calls is counted at the called function.
 254108 _int_malloc
 159222 <gogo_ui::runtime::Watchers>::extend
-128517 __memcpy_avx_unaligned_erms
+128513 __memcpy_avx_unaligned_erms
 116221 <gogo_ui::runtime::Runtime>::set_prop_by_id
 106320 <gogo_ui::runtime::Runtime>::set_items::{closure#1}
 76650 <gogo_ui::runtime::Runtime>::grow_pool
 74074 <gogo_ui::page::Page>::clone_subtree
-72382 __memcmp_avx2_movbe
+70991 __memcmp_avx2_movbe
 63894 _int_free_merge_chunk
 49889 malloc
 42253 free
@@ -65,7 +65,7 @@
 2068 __rustc::__rust_dealloc
 1792 <gogo_ui::runtime::Resolved>::prop_by_id
 1769 <alloc::vec::Vec<turbodot::page::NameUse<storvald_perf::ui::list_page::Handler>> as alloc::vec::spec_extend::SpecExtend<turbodot::page::NameUse<storvald_perf::ui::list_page::Handler>, core::iter::adapters::map::Map<core::slice::iter::Iter<alloc::borrow::Cow<str>>, <turbodot::page::HandlerTable<storvald_perf::ui::list_page::Handler>>::read::{closure#0}>>>::spec_extend
-1653 <gogo_ui::tree::PlacedTree>::build
+1651 <gogo_ui::tree::PlacedTree>::build
 1590 <gogo_ui::page::Page>::prop_by_id
 1561 <gogo_ui::page::Page>::intern
 1419 <gogo_ui::runtime::Resolved>::override_of_by_id
@@ -82,7 +82,7 @@
 770 <gogo_ui::tree::Subtree as core::iter::traits::iterator::Iterator>::next
 724 <gogo_ui::input::Input>::touch
 640 <storvald_perf::pages::ListPage as turbodot::page::Page<storvald_perf::AppState>>::show
-599 <gogo_ui::anim::Player>::new
+601 <gogo_ui::anim::Player>::new
 570 <gogo_ui::runtime::Runtime>::play_hook_on_drawn_nodes
 552 gogo_ui::draw::hit_laid_at
 549 <gogo_ui::runtime::Runtime>::set_screen
@@ -96,7 +96,7 @@
 165 <core::iter::adapters::map::Map<core::ops::range::Range<usize>, <gogo_ui::page::NodeId>::from_index> as core::iter::traits::iterator::Iterator>::try_fold::<(), core::iter::traits::iterator::Iterator::find::check<gogo_ui::page::NodeId, &mut <gogo_ui::runtime::Runtime>::new::{closure#5}>::{closure#0}, core::ops::control_flow::ControlFlow<gogo_ui::page::NodeId>>
 163 <gogo_ui::runtime::Runtime>::play_action
 161 <turbodot::pages::PageStack>::pointer_to
-152 0x0000000004d21680
+152 0x0000000004d28680
 144 <alloc::raw_vec::RawVec<gogo_ui::lexer::Token>>::grow_one
 134 <turbodot::program::Program<storvald_perf::AppState>>::make
 133 <gogo_ui::runtime::Runtime>::pool_of

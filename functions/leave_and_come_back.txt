@@ -1,4 +1,4 @@
-# `leave_and_come_back` at commit d2160d496d0b1714c90b213936c89d9ffe39381d: instructions by function, 118935 in all.
+# `leave_and_come_back` at commit a26616f58fd93d5478640d9c3d10b1ed8fcac582: instructions by function, 118945 in all.
 # A function's own code only: what it calls is counted at the called function.
 22314 <gogo_ui::runtime::Runtime>::set_screen
 10814 _int_free_merge_chunk
@@ -21,7 +21,7 @@
 1682 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::dealloc
 1652 <gogo_ui::input::Input>::tick
 1322 core::ptr::drop_glue::<gogo_ui::layout::Tables>
-1189 <gogo_ui::anim::Player>::new
+1199 <gogo_ui::anim::Player>::new
 1021 <turbodot::pages::PageUi>::relayout
 1001 <gogo_ui::anim::Easing>::apply
 968 gogo_ui::runtime::settle_seats

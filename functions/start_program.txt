@@ -1,4 +1,4 @@
-# `start_program` at commit d2160d496d0b1714c90b213936c89d9ffe39381d: instructions by function, 1177332 in all.
+# `start_program` at commit a26616f58fd93d5478640d9c3d10b1ed8fcac582: instructions by function, 1177330 in all.
 # A function's own code only: what it calls is counted at the called function.
 368543 __memcpy_avx_unaligned_erms
 117720 __memset_avx2_unaligned_erms
@@ -127,7 +127,7 @@
 918 <gogo_ui::layout::Lay>::stack_min
 906 _int_free_maybe_trim
 902 <gogo_ui::layout::Lay>::size_at_flag
-895 <gogo_ui::tree::PlacedTree>::build
+893 <gogo_ui::tree::PlacedTree>::build
 890 turbodot::pictures::image_table
 888 <unicode_segmentation::grapheme::GraphemeCursor>::grapheme_category
 871 <gogo_ui::page::Page>::from_static
@@ -416,7 +416,7 @@
 32 <read_fonts::table_ref::TableRef<read_fonts::tables::cmap::CmapMarker> as read_fonts::read::FontRead>::read
 31 <harfrust::hb::buffer::UnicodeBuffer as core::default::Default>::default
 31 core::ptr::drop_glue::<gogo_ui::tree::PlacedTree>
-30 0x0000000004d21680
+30 0x0000000004d28680
 30 <core::iter::adapters::map::Map<std::collections::hash::map::IntoIter<[u8; 4], alloc::collections::btree::set::BTreeSet<fontdb::ID>>, <cosmic_text::font::system::FontSystem>::new_with_locale_and_db_and_fallback<cosmic_text::font::fallback::platform::PlatformFallback>::{closure#3}> as core::iter::traits::iterator::Iterator>::fold::<(), core::iter::traits::iterator::Iterator::for_each::call<([u8; 4], alloc::vec::Vec<fontdb::ID>), <hashbrown::map::HashMap<[u8; 4], alloc::vec::Vec<fontdb::ID>, core::hash::BuildHasherDefault<rustc_hash::FxHasher>> as core::iter::traits::collect::Extend<([u8; 4], alloc::vec::Vec<fontdb::ID>)>>::extend<core::iter::adapters::map::Map<std::collections::hash::map::IntoIter<[u8; 4], alloc::collections::btree::set::BTreeSet<fontdb::ID>>, <cosmic_text::font::system::FontSystem>::new_with_locale_and_db_and_fallback<cosmic_text::font::fallback::platform::PlatformFallback>::{closure#3}>>::{closure#0}>::{closure#0}>
 30 <ttf_parser::RawFace>::parse
 30 munmap_chunk
@@ -507,7 +507,7 @@
 3 <cosmic_text::font::fallback::platform::PlatformFallback as cosmic_text::font::fallback::Fallback>::common_fallback
 3 <cosmic_text::font::fallback::platform::PlatformFallback as cosmic_text::font::fallback::Fallback>::forbidden_fallback
 3 getrandom
-2 0x0000000004d216f0
+2 0x0000000004d286f0
 2 <gogo_ui::runtime::Runtime>::play_entrances
 2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::built
 2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame

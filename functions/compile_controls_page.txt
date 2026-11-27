@@ -1,14 +1,14 @@
-# `compile_controls_page` at commit d2160d496d0b1714c90b213936c89d9ffe39381d: instructions by function, 3162553 in all.
+# `compile_controls_page` at commit a26616f58fd93d5478640d9c3d10b1ed8fcac582: instructions by function, 3166024 in all.
 # A function's own code only: what it calls is counted at the called function.
 280946 _int_malloc
 200433 <gogo_ui::page::PropKey>::from_word
-169639 gogo_ui::lexer::lex
-158821 <gogo_ui::compile::Compiler>::node_inner'2
-156074 _int_free_merge_chunk
-140502 <gogo_ui::lexer::Lexer>::dotted_word
-127238 __memcmp_avx2_movbe
-123772 __memcpy_avx_unaligned_erms
-116458 <gogo_ui::parser::Parser>::items'2
+169628 gogo_ui::lexer::lex
+158801 <gogo_ui::compile::Compiler>::node_inner'2
+156080 _int_free_merge_chunk
+140466 <gogo_ui::lexer::Lexer>::dotted_word
+129596 __memcmp_avx2_movbe
+123758 __memcpy_avx_unaligned_erms
+117571 <gogo_ui::parser::Parser>::items'2
 116351 <alloc::vec::Vec<char> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<char, core::iter::adapters::filter::Filter<core::str::iter::Chars, gogo_ui::lexer::lex::{closure#0}>>>::from_iter
 115485 free
 76503 <gogo_ui::page::Page>::intern
@@ -76,7 +76,7 @@
 2962 <alloc::vec::into_iter::IntoIter<(gogo_ui::page::NodeId, alloc::vec::Vec<gogo_ui::compile::TmpNode>)> as core::ops::drop::Drop>::drop
 2732 <alloc::vec::into_iter::IntoIter<gogo_ui::compile::TmpNode> as core::ops::drop::Drop>::drop
 2197 <alloc::vec::Vec<core::option::Option<gogo_ui::compile::WhenTmp>> as core::ops::drop::Drop>::drop
-2042 gogo_ui::compile::compile_keeping_numbers
+2095 gogo_ui::compile::compile_keeping_numbers
 1860 gogo_ui::runtime::deref
 1743 <gogo_ui::compile::Compiler>::node_inner
 1725 <gogo_ui::surface::SurfaceDraw>::of_by_id
@@ -84,7 +84,7 @@
 1603 <hashbrown::map::HashMap<alloc::string::String, gogo_ui::page::Color_Straight_Srgb_4xU8_RGBA, std::hash::random::RandomState>>::insert
 1569 <alloc::vec::Vec<alloc::string::String> as core::clone::Clone>::clone
 1467 <alloc::vec::Vec<alloc::vec::Vec<gogo_ui::page::NodeId>> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<alloc::vec::Vec<gogo_ui::page::NodeId>, core::iter::adapters::map::Map<core::slice::iter::Iter<alloc::vec::Vec<gogo_ui::compile::WhenTmp>>, <gogo_ui::compile::Compiler>::finish::{closure#15}>>>::from_iter
-1443 core::ptr::drop_glue::<gogo_ui::compile::Compiled>
+1450 core::ptr::drop_glue::<gogo_ui::compile::Compiled>
 1266 core::ptr::drop_glue::<gogo_ui::ast::AstNode>
 1170 <gogo_ui::compile::Compiler>::compile_anim_decl
 1104 <alloc::raw_vec::RawVec<gogo_ui::ast::AstItem>>::grow_one
@@ -97,7 +97,7 @@
 792 <alloc::raw_vec::RawVec<gogo_ui::atlas::Json>>::grow_one
 792 <alloc::raw_vec::RawVec<gogo_ui::compile::TmpNode>>::grow_one
 757 gogo_ui::page::palette_color
-725 <hashbrown::map::HashMap<alloc::string::String, (), std::hash::random::RandomState>>::insert
+698 <hashbrown::map::HashMap<alloc::string::String, (), std::hash::random::RandomState>>::insert
 690 <alloc::vec::Vec<gogo_ui::ast::AstItem> as core::clone::Clone>::clone'2
 673 <gogo_ui::compile::Compiler>::style_def
 672 <alloc::vec::Vec<gogo_ui::ast::AstValue> as core::clone::Clone>::clone
@@ -147,7 +147,7 @@
 182 core::slice::memchr::memrchr_aligned
 180 core::ptr::drop_glue::<gogo_ui::compile::AnimSt>
 168 <gogo_ui::parser::Parser>::terminator
-166 0x0000000004d21680
+166 0x0000000004d28680
 162 <alloc::vec::Vec<gogo_ui::ast::AstNode> as alloc::vec::spec_extend::SpecExtend<gogo_ui::ast::AstNode, alloc::vec::into_iter::IntoIter<gogo_ui::ast::AstNode>>>::spec_extend
 153 <gogo_ui::anim::Easing>::to_word
 144 <alloc::raw_vec::RawVec<gogo_ui::page::Node>>::grow_one
@@ -196,9 +196,11 @@
 25 storvald_perf::counts::counted::<storvald_perf::scenarios::compile_controls_page::{closure#1}>::{closure#0}
 24 <alloc::raw_vec::RawVec<(alloc::string::String, gogo_ui::ast::AstNode)>>::grow_one
 24 <alloc::raw_vec::RawVec<gogo_ui::compile::Fills>>::grow_one
-23 <alloc::vec::Vec<&str> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<&str, core::iter::adapters::filter_map::FilterMap<core::slice::iter::Iter<gogo_ui::ast::AstValue>, <gogo_ui::compile::Compiler>::widget::{closure#3}>>>::from_iter
+23 <alloc::vec::Vec<&str> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<&str, core::iter::adapters::filter_map::FilterMap<core::slice::iter::Iter<gogo_ui::ast::AstValue>, <gogo_ui::compile::Compiler>::widget::{closure#4}>>>::from_iter
+23 <alloc::vec::Vec<(alloc::string::String, alloc::vec::Vec<alloc::string::String>)> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<(alloc::string::String, alloc::vec::Vec<alloc::string::String>), core::iter::adapters::map::Map<std::collections::hash::map::Iter<alloc::string::String, gogo_ui::compile::WidgetDef>, gogo_ui::compile::compile_keeping_numbers::{closure#5}>>>::from_iter
 23 <alloc::vec::into_iter::IntoIter<(gogo_ui::page::State, alloc::vec::Vec<gogo_ui::ast::AstItem>, u32, bool, u16)> as core::ops::drop::Drop>::drop
 20 gogo_ui::compile::compile
+19 <alloc::vec::Vec<(alloc::string::String, alloc::vec::Vec<alloc::string::String>)> as core::ops::drop::Drop>::drop
 19 <alloc::vec::Vec<std::collections::hash::map::HashMap<alloc::string::String, alloc::vec::Vec<gogo_ui::ast::AstProp>>> as core::ops::drop::Drop>::drop
 19 <alloc::vec::into_iter::IntoIter<(alloc::string::String, alloc::string::String, alloc::vec::Vec<alloc::string::String>, u32)> as core::ops::drop::Drop>::drop
 19 <alloc::vec::into_iter::IntoIter<(usize, usize, gogo_ui::compile::WhenTmp)> as core::ops::drop::Drop>::drop

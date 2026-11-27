@@ -1,4 +1,4 @@
-# `first_frame_of_list_page_again` at commit d2160d496d0b1714c90b213936c89d9ffe39381d: instructions by function, 8251414 in all.
+# `first_frame_of_list_page_again` at commit a26616f58fd93d5478640d9c3d10b1ed8fcac582: instructions by function, 8251209 in all.
 # A function's own code only: what it calls is counted at the called function.
 1547302 <gogo_ui::page::Page>::kind_default::{closure#0}
 1280313 <gogo_ui::runtime::Resolved>::override_of_by_id
@@ -23,7 +23,7 @@
 61880 <gogo_ui::layout::Lay>::stack_min
 57825 <gogo_ui::layout::Lay>::content_min
 55717 <gogo_ui::layout::Lay>::place_children'2
-43711 <gogo_ui::tree::PlacedTree>::build
+43709 <gogo_ui::tree::PlacedTree>::build
 41210 <gogo_ui::layout::Lay>::text_extent
 39675 gogo_ui::runtime::ladder_node
 39626 gogo_ui::draw::clips
@@ -31,7 +31,7 @@
 34744 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&u64>
 33694 gogo_ui::runtime::ladder_motion_and_seat
 28858 <gogo_ui::layout::VisibleChildren as core::iter::traits::iterator::Iterator>::next
-27748 <gogo_text::TextEngine>::measure
+27546 <gogo_text::TextEngine>::measure
 25888 <gogo_ui::layout::Lay>::seat
 24770 <gogo_ui::tree::Subtree as core::iter::traits::iterator::Iterator>::next
 24635 gogo_ui::runtime::resolve_into::{closure#46}
@@ -76,7 +76,7 @@
 2760 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::realloc
 2629 <gogo_ui::runtime::Resolved>::font_size
 2424 _int_free_maybe_trim
-2209 __memcmp_avx2_movbe
+2208 __memcmp_avx2_movbe
 1717 _int_free_chunk
 1605 gogo_ui::draw::walk
 1604 <gogo_ui::draw::DrawCache>::emit
@@ -102,7 +102,7 @@
 186 <gogo_ui::draw::DrawCache>::remember
 183 <gogo_ui::layout::LayoutCache>::patch
 179 <gogo_ui::runtime::Resolved>::follow
-176 0x0000000004d21680
+176 0x0000000004d28680
 173 <gogo_ui::runtime::Runtime>::is_hook_playing_by_id
 168 <alloc::raw_vec::RawVec<gogo_ui::draw::Draw>>::grow_one
 168 <alloc::raw_vec::RawVec<gogo_ui::page::When>>::grow_one

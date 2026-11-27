@@ -1,4 +1,4 @@
-# `first_frame_of_controls_page` at commit d2160d496d0b1714c90b213936c89d9ffe39381d: instructions by function, 4942387 in all.
+# `first_frame_of_controls_page` at commit a26616f58fd93d5478640d9c3d10b1ed8fcac582: instructions by function, 4942399 in all.
 # A function's own code only: what it calls is counted at the called function.
 403474 <gogo_ui::page::Page>::kind_default::{closure#0}
 315542 <gogo_ui::page::Page>::prop_by_id
@@ -44,7 +44,7 @@
 26266 <hashbrown::map::HashMap<cosmic_text::attrs::FontMatchAttrs, alloc::sync::Arc<alloc::vec::Vec<cosmic_text::font::system::FontMatchKey>>, core::hash::BuildHasherDefault<rustc_hash::FxHasher>>>::rustc_entry
 25330 <cosmic_text::shape::ShapeLine>::layout_spans
 25026 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&u64>
-24356 <gogo_text::TextEngine>::measure
+24363 <gogo_text::TextEngine>::measure
 23822 <gogo_ui::runtime::Resolved>::inherited
 23175 <gogo_ui::tree::Children as core::iter::traits::iterator::Iterator>::next
 22908 <read_fonts::table_ref::TableRef<read_fonts::tables::gsub::LigatureSubstFormat1Marker> as harfrust::hb::ot_layout_gsubgpos::Apply>::apply_with_external_cache
@@ -85,7 +85,7 @@
 12708 __memset_avx2_unaligned_erms
 12020 <rangemap::map::RangeMap<usize, cosmic_text::attrs::AttrsOwned>>::get_key_value
 11914 harfrust::hb::ot::lookup::pair_pos2_cached
-11820 <gogo_ui::tree::PlacedTree>::build
+11818 <gogo_ui::tree::PlacedTree>::build
 11424 <gogo_ui::layout::Lay>::bare_image_in_column
 11300 <smallvec::SmallVec<[u32; 8]>>::from_elem
 10976 <read_fonts::table_ref::TableRef<read_fonts::tables::cmap::Cmap6Marker> as read_fonts::read::FontRead>::read
@@ -136,7 +136,7 @@
 5075 <hashbrown::raw::RawTable<(u64, gogo_text::KeptMeasure)>>::reserve_rehash::<hashbrown::map::make_hasher<u64, gogo_text::KeptMeasure, std::hash::random::RandomState>::{closure#0}>
 5052 <core::iter::adapters::chain::Chain<core::iter::adapters::map::Map<core::str::iter::CharIndices, unicode_linebreak::linebreaks::{closure#0}>, core::iter::sources::once::Once<(usize, u8)>> as core::iter::traits::iterator::Iterator>::try_fold::<(), <core::iter::adapters::scan::Scan<_, _, _> as core::iter::traits::iterator::Iterator>::try_fold::scan<(usize, u8), (u8, bool), (usize, bool, bool), (), core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>, unicode_linebreak::linebreaks::{closure#1}, core::iter::traits::iterator::Iterator::find_map::check<(usize, bool, bool), (usize, unicode_linebreak::BreakOpportunity), &mut unicode_linebreak::linebreaks::{closure#2}>::{closure#0}>::{closure#0}, core::ops::control_flow::ControlFlow<core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>>>
 4978 <read_fonts::table_ref::TableRef<read_fonts::tables::gsub::LigatureMarker> as read_fonts::read::FontRead>::read
-4864 <hashbrown::map::HashMap<u64, gogo_text::KeptMeasure, std::hash::random::RandomState>>::insert
+4871 <hashbrown::map::HashMap<u64, gogo_text::KeptMeasure, std::hash::random::RandomState>>::insert
 4712 <alloc::vec::Vec<cosmic_text::shape::ShapeSpan> as core::ops::drop::Drop>::drop
 4620 __rustc::__rust_alloc
 4606 _int_free_maybe_trim
@@ -269,7 +269,7 @@
 124 <std::time::Instant>::now
 123 <turbodot::program::Program<storvald_perf::AppState>>::do_what_layouts_left
 123 <turbodot::program::Program<storvald_perf::AppState>>::frame_pages
-120 0x0000000004d21680
+120 0x0000000004d28680
 120 <read_fonts::table_ref::TableRef<read_fonts::tables::gpos::PairPosFormat2Marker>>::class_def2
 120 gogo_ui::layout::scroll_axes_of
 118 <gogo_ui::layout::LookCopy>::diff
