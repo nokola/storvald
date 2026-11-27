@@ -1,10 +1,10 @@
-# `compile_controls_page` at commit 2bbb7ae735082a639116f9b7f0906cdb4207cb5d: instructions by function, 3162962 in all.
+# `compile_controls_page` at commit b69519c40e358007e915c0b7ea180f87eca9a131: instructions by function, 3162935 in all.
 # A function's own code only: what it calls is counted at the called function.
 280946 _int_malloc
 200433 <gogo_ui::page::PropKey>::from_word
 169628 gogo_ui::lexer::lex
-158821 <gogo_ui::compile::Compiler>::node_inner'2
-156098 _int_free_merge_chunk
+158801 <gogo_ui::compile::Compiler>::node_inner'2
+156086 _int_free_merge_chunk
 140466 <gogo_ui::lexer::Lexer>::dotted_word
 127614 __memcmp_avx2_movbe
 123758 __memcpy_avx_unaligned_erms
@@ -81,7 +81,7 @@
 1743 <gogo_ui::compile::Compiler>::node_inner
 1725 <gogo_ui::surface::SurfaceDraw>::of_by_id
 1634 <hashbrown::raw::RawTable<(alloc::string::String, f32)>>::reserve_rehash::<hashbrown::map::make_hasher<alloc::string::String, f32, std::hash::random::RandomState>::{closure#0}>
-1571 <hashbrown::map::HashMap<alloc::string::String, gogo_ui::page::Color_Straight_Srgb_4xU8_RGBA, std::hash::random::RandomState>>::insert
+1603 <hashbrown::map::HashMap<alloc::string::String, gogo_ui::page::Color_Straight_Srgb_4xU8_RGBA, std::hash::random::RandomState>>::insert
 1569 <alloc::vec::Vec<alloc::string::String> as core::clone::Clone>::clone
 1467 <alloc::vec::Vec<alloc::vec::Vec<gogo_ui::page::NodeId>> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<alloc::vec::Vec<gogo_ui::page::NodeId>, core::iter::adapters::map::Map<core::slice::iter::Iter<alloc::vec::Vec<gogo_ui::compile::WhenTmp>>, <gogo_ui::compile::Compiler>::finish::{closure#15}>>>::from_iter
 1450 core::ptr::drop_glue::<gogo_ui::compile::Compiled>
@@ -97,7 +97,7 @@
 792 <alloc::raw_vec::RawVec<gogo_ui::atlas::Json>>::grow_one
 792 <alloc::raw_vec::RawVec<gogo_ui::compile::TmpNode>>::grow_one
 757 gogo_ui::page::palette_color
-725 <hashbrown::map::HashMap<alloc::string::String, (), std::hash::random::RandomState>>::insert
+698 <hashbrown::map::HashMap<alloc::string::String, (), std::hash::random::RandomState>>::insert
 690 <alloc::vec::Vec<gogo_ui::ast::AstItem> as core::clone::Clone>::clone'2
 673 <gogo_ui::compile::Compiler>::style_def
 672 <alloc::vec::Vec<gogo_ui::ast::AstValue> as core::clone::Clone>::clone
