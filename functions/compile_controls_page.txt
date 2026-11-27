@@ -1,14 +1,14 @@
-# `compile_controls_page` at commit b69519c40e358007e915c0b7ea180f87eca9a131: instructions by function, 3162935 in all.
+# `compile_controls_page` at commit c0aeba1579394697d06e433b1284b3f4a6aed929: instructions by function, 3163319 in all.
 # A function's own code only: what it calls is counted at the called function.
 280946 _int_malloc
 200433 <gogo_ui::page::PropKey>::from_word
 169628 gogo_ui::lexer::lex
 158801 <gogo_ui::compile::Compiler>::node_inner'2
-156086 _int_free_merge_chunk
+156092 _int_free_merge_chunk
 140466 <gogo_ui::lexer::Lexer>::dotted_word
-127614 __memcmp_avx2_movbe
-123758 __memcpy_avx_unaligned_erms
-116458 <gogo_ui::parser::Parser>::items'2
+128209 __memcmp_avx2_movbe
+123760 __memcpy_avx_unaligned_erms
+117466 <gogo_ui::parser::Parser>::items'2
 116351 <alloc::vec::Vec<char> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<char, core::iter::adapters::filter::Filter<core::str::iter::Chars, gogo_ui::lexer::lex::{closure#0}>>>::from_iter
 115485 free
 76503 <gogo_ui::page::Page>::intern
@@ -26,7 +26,7 @@
 42117 unlink_chunk.isra.0
 41641 <gogo_ui::lexer::Tok as core::clone::Clone>::clone
 40542 <alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global>
-35467 <gogo_ui::parser::Parser>::value_one
+34167 <gogo_ui::parser::Parser>::value_one
 33269 _int_free_chunk
 28731 gogo_ui::parser::parse
 25696 <gogo_ui::lexer::Lexer>::digits
@@ -51,7 +51,7 @@
 8962 _int_realloc
 7350 <core::iter::adapters::chain::Chain<core::iter::adapters::chain::Chain<core::slice::iter::Iter<&str>, core::slice::iter::Iter<&str>>, core::slice::iter::Iter<&str>> as core::iter::traits::iterator::Iterator>::try_fold::<(), core::iter::traits::iterator::Iterator::any::check<&&str, gogo_ui::compile::untranslated_in_value::{closure#0}>::{closure#0}, core::ops::control_flow::ControlFlow<()>>
 7214 <core::iter::adapters::chain::Chain<core::iter::adapters::chain::Chain<core::iter::adapters::map::Map<alloc::vec::into_iter::IntoIter<alloc::string::String>, <gogo_ui::compile::Compiler>::node_inner::{closure#43}>, core::iter::adapters::map::Map<core::slice::iter::Iter<alloc::string::String>, <gogo_ui::compile::Compiler>::node_inner::{closure#44}>>, core::iter::adapters::flatten::FlatMap<core::option::Iter<&gogo_ui::ast::AstNode>, core::iter::adapters::map::Map<core::slice::iter::Iter<alloc::string::String>, <gogo_ui::compile::Compiler>::node_inner::{closure#45}::{closure#0}>, <gogo_ui::compile::Compiler>::node_inner::{closure#45}>> as core::iter::traits::iterator::Iterator>::next
-6669 <gogo_ui::parser::Parser>::items
+6690 <gogo_ui::parser::Parser>::items
 6470 alloc_perturb
 6417 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&alloc::string::String>
 6348 <gogo_ui::ast::AstNode>::stamp_origin'2
@@ -81,7 +81,7 @@
 1743 <gogo_ui::compile::Compiler>::node_inner
 1725 <gogo_ui::surface::SurfaceDraw>::of_by_id
 1634 <hashbrown::raw::RawTable<(alloc::string::String, f32)>>::reserve_rehash::<hashbrown::map::make_hasher<alloc::string::String, f32, std::hash::random::RandomState>::{closure#0}>
-1603 <hashbrown::map::HashMap<alloc::string::String, gogo_ui::page::Color_Straight_Srgb_4xU8_RGBA, std::hash::random::RandomState>>::insert
+1615 <hashbrown::map::HashMap<alloc::string::String, gogo_ui::page::Color_Straight_Srgb_4xU8_RGBA, std::hash::random::RandomState>>::insert
 1569 <alloc::vec::Vec<alloc::string::String> as core::clone::Clone>::clone
 1467 <alloc::vec::Vec<alloc::vec::Vec<gogo_ui::page::NodeId>> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<alloc::vec::Vec<gogo_ui::page::NodeId>, core::iter::adapters::map::Map<core::slice::iter::Iter<alloc::vec::Vec<gogo_ui::compile::WhenTmp>>, <gogo_ui::compile::Compiler>::finish::{closure#15}>>>::from_iter
 1450 core::ptr::drop_glue::<gogo_ui::compile::Compiled>
@@ -97,7 +97,7 @@
 792 <alloc::raw_vec::RawVec<gogo_ui::atlas::Json>>::grow_one
 792 <alloc::raw_vec::RawVec<gogo_ui::compile::TmpNode>>::grow_one
 757 gogo_ui::page::palette_color
-698 <hashbrown::map::HashMap<alloc::string::String, (), std::hash::random::RandomState>>::insert
+703 <hashbrown::map::HashMap<alloc::string::String, (), std::hash::random::RandomState>>::insert
 690 <alloc::vec::Vec<gogo_ui::ast::AstItem> as core::clone::Clone>::clone'2
 673 <gogo_ui::compile::Compiler>::style_def
 672 <alloc::vec::Vec<gogo_ui::ast::AstValue> as core::clone::Clone>::clone
@@ -106,9 +106,9 @@
 540 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&str>
 510 <alloc::vec::Vec<(alloc::string::String, gogo_ui::ast::AstValue)> as core::clone::Clone>::clone
 504 <gogo_ui::ast::AstValue as core::clone::Clone>::clone'2
+497 <hashbrown::map::HashMap<alloc::string::String, (gogo_ui::page::Color_Straight_Srgb_4xU8_RGBA, gogo_ui::page::Color_Straight_Srgb_4xU8_RGBA), std::hash::random::RandomState>>::insert
 481 <hashbrown::raw::RawTable<(alloc::string::String, ())>>::reserve_rehash::<hashbrown::map::make_hasher<alloc::string::String, (), std::hash::random::RandomState>::{closure#0}>
 465 <gogo_ui::compile::Compiler>::easing_spec
-465 <hashbrown::map::HashMap<alloc::string::String, (gogo_ui::page::Color_Straight_Srgb_4xU8_RGBA, gogo_ui::page::Color_Straight_Srgb_4xU8_RGBA), std::hash::random::RandomState>>::insert
 460 core::ptr::drop_glue::<gogo_ui::compile::StyleDef>
 450 core::ptr::drop_glue::<gogo_ui::ast::AstValue>'2
 423 <gogo_ui::anim::Channel>::parse
@@ -117,11 +117,11 @@
 410 <alloc::vec::Vec<gogo_ui::page::KindDefault>>::retain::<<gogo_ui::compile::Compiler>::theme::{closure#1}>
 382 <gogo_ui::compile::Compiler>::handler
 370 <alloc::vec::Vec<gogo_ui::ast::AstItem> as core::ops::drop::Drop>::drop
+360 <gogo_ui::parser::Parser>::call
 356 <gogo_ui::anim::Easing>::parse
-348 <gogo_ui::parser::Parser>::call
-345 <gogo_ui::parser::Parser>::value_one'2
 345 alloc::fmt::format::format_inner
 338 <gogo_ui::ast::AstNode>::stamp_origin
+336 <gogo_ui::parser::Parser>::value_one'2
 330 <gogo_ui::compile::Compiler>::palette_lookup
 318 <alloc::vec::Vec<gogo_ui::ast::AstNode> as core::clone::Clone>::clone
 315 <gogo_ui::compile::Compiler>::anim_ref

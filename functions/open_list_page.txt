@@ -1,4 +1,4 @@
-# `open_list_page` at commit b69519c40e358007e915c0b7ea180f87eca9a131: instructions by function, 1815796 in all.
+# `open_list_page` at commit c0aeba1579394697d06e433b1284b3f4a6aed929: instructions by function, 1814101 in all.
 # A function's own code only: what it calls is counted at the called function.
 248236 _int_malloc
 159222 <gogo_ui::runtime::Watchers>::extend
@@ -7,7 +7,7 @@
 106320 <gogo_ui::runtime::Runtime>::set_items::{closure#1}
 76650 <gogo_ui::runtime::Runtime>::grow_pool
 74074 <gogo_ui::page::Page>::clone_subtree
-72733 __memcmp_avx2_movbe
+71046 __memcmp_avx2_movbe
 62125 _int_free_merge_chunk
 49433 malloc
 43171 __libc_malloc2
@@ -82,7 +82,7 @@
 770 <gogo_ui::tree::Subtree as core::iter::traits::iterator::Iterator>::next
 717 <gogo_ui::input::Input>::touch
 640 <storvald_perf::pages::ListPage as turbodot::page::Page<storvald_perf::AppState>>::show
-601 <gogo_ui::anim::Player>::new
+599 <gogo_ui::anim::Player>::new
 570 <gogo_ui::runtime::Runtime>::play_hook_on_drawn_nodes
 552 gogo_ui::draw::hit_laid_at
 549 <gogo_ui::runtime::Runtime>::set_screen
@@ -122,7 +122,6 @@
 72 <alloc::raw_vec::RawVec<(u32, usize, usize)>>::grow_one
 72 <turbodot::program::Program<storvald_perf::AppState>>::open
 72 core::slice::sort::shared::pivot::median3_rec::<u32, <[u32]>::sort_unstable_by<<gogo_ui::runtime::Runtime>::set_items::{closure#4}>::{closure#0}>
-66 core::slice::memchr::memchr_aligned
 63 <gogo_ui::runtime::Runtime>::disabled::<gogo_ui::page::NodeId>
 63 <turbodot::program::Program<storvald_perf::AppState>>::page_that_takes
 62 <alloc::vec::Vec<gogo_ui::runtime::Item> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<gogo_ui::runtime::Item, core::iter::adapters::map::Map<core::ops::range::Range<usize>, <storvald_perf::pages::ListPage as turbodot::page::Page<storvald_perf::AppState>>::show::{closure#0}>>>::from_iter
@@ -130,6 +129,7 @@
 62 __libc_calloc2
 62 core::ptr::drop_glue::<gogo_ui::tree::PlacedTree>
 62 gogo_ui::runtime::compose_anim
+60 core::slice::memchr::memchr_aligned
 57 <turbodot::pages::PageStack>::add
 57 <turbodot::program::Program<storvald_perf::AppState>>::tap::<gogo_ui::page::NodeId>
 55 <turbodot::pages::PageStack>::get

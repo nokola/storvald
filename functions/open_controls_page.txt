@@ -1,4 +1,4 @@
-# `open_controls_page` at commit b69519c40e358007e915c0b7ea180f87eca9a131: instructions by function, 121323 in all.
+# `open_controls_page` at commit c0aeba1579394697d06e433b1284b3f4a6aed929: instructions by function, 121258 in all.
 # A function's own code only: what it calls is counted at the called function.
 26999 __memcpy_avx_unaligned_erms
 11818 <gogo_ui::tree::PlacedTree>::build
@@ -23,10 +23,10 @@
 1245 <gogo_ui::page::Page>::from_static
 1140 gogo_ui::input::event_action
 868 <turbodot::alloc_count::CountingAlloc as core::alloc::global::GlobalAlloc>::alloc
-773 __memcmp_avx2_movbe
 717 <gogo_ui::input::Input>::touch
+716 __memcmp_avx2_movbe
 612 <alloc::raw_vec::RawVecInner<_>>::reserve::do_reserve_and_handle::<alloc::alloc::Global>
-601 <gogo_ui::anim::Player>::new
+599 <gogo_ui::anim::Player>::new
 590 gogo_ui::draw::hit_laid_at
 568 free
 468 gogo_ui::draw::hit
@@ -64,7 +64,6 @@
 72 <turbodot::program::Program<storvald_perf::AppState>>::open
 72 _int_free_maybe_trim
 68 __rustc::__rust_dealloc
-66 core::slice::memchr::memchr_aligned
 63 <gogo_ui::runtime::Runtime>::disabled::<gogo_ui::page::NodeId>
 63 <turbodot::program::Program<storvald_perf::AppState>>::page_that_takes
 62 <turbodot::program::Program<storvald_perf::AppState>>::call_with_placed
@@ -73,6 +72,7 @@
 62 gogo_ui::runtime::compose_anim
 62 unlink_chunk.isra.0
 61 __rustc::__rust_no_alloc_shim_is_unstable_v2
+60 core::slice::memchr::memchr_aligned
 57 <turbodot::pages::PageStack>::add
 57 <turbodot::program::Program<storvald_perf::AppState>>::tap::<gogo_ui::page::NodeId>
 55 <turbodot::pages::PageStack>::get

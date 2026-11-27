@@ -1,6 +1,6 @@
-# `start_program` at commit b69519c40e358007e915c0b7ea180f87eca9a131: instructions by function, 1061967 in all.
+# `start_program` at commit c0aeba1579394697d06e433b1284b3f4a6aed929: instructions by function, 1061951 in all.
 # A function's own code only: what it calls is counted at the called function.
-368537 __memcpy_avx_unaligned_erms
+368535 __memcpy_avx_unaligned_erms
 32186 _int_malloc
 25534 harfrust::hb::ot_shape::shape_internal
 22228 <cosmic_text::attrs::AttrsList>::get_span
@@ -100,7 +100,7 @@
 1558 <harfrust::hb::ot_shape_plan::ShapePlanKey>::matches
 1547 <read_fonts::table_ref::TableRef<read_fonts::tables::layout::CoverageFormat2Marker>>::range_records
 1506 <harfrust::hb::ot_shape::hb_ot_shape_planner_t>::compile
-1451 __memcmp_avx2_movbe
+1463 __memcmp_avx2_movbe
 1444 <read_fonts::table_ref::TableRef<read_fonts::tables::gsub::LigatureSubstFormat1Marker>>::ligature_sets
 1440 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&str>
 1403 <harfrust::hb::buffer::hb_buffer_t>::sync
@@ -230,7 +230,6 @@
 247 <read_fonts::table_ref::TableRef<read_fonts::TableDirectoryMarker>>::table_records
 241 <turbodot::program::Program<storvald_perf::AppState>>::make
 229 <gogo_ui::runtime::Runtime>::frame_retained
-225 core::slice::memchr::memchr_aligned
 224 <gogo_text::EpxMeasure as gogo_ui::layout::TextMeasure>::measure
 221 <read_fonts::table_ref::TableRef<read_fonts::tables::layout::ClassDefFormat1Marker>>::class_value_array
 220 <read_fonts::table_ref::TableRef<read_fonts::tables::gpos::PairPosFormat2Marker>>::value_format1
@@ -247,6 +246,7 @@
 204 gogo_ui::draw::own_opacity
 200 <alloc::vec::drain::Drain<cosmic_text::shape::ShapeSpan> as core::ops::drop::Drop>::drop
 200 <read_fonts::table_ref::TableRef<read_fonts::tables::layout::ChainedSequenceContextFormat3Marker> as harfrust::hb::ot_layout_gsubgpos::Apply>::apply
+199 core::slice::memchr::memchr_aligned
 198 <harfrust::hb::ot::OtTables>::new
 192 <alloc::raw_vec::RawVec<harfrust::hb::ot_map::StageMap>>::grow_one
 192 <alloc::raw_vec::RawVec<harfrust::hb::ot_map::feature_info_t>>::grow_one
