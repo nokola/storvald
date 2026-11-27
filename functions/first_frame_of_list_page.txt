@@ -1,4 +1,4 @@
-# `first_frame_of_list_page` at commit c521c0c4d4c5de7c5b383d6884a186eb15c6a1d9: instructions by function, 21704567 in all.
+# `first_frame_of_list_page` at commit ef41c63d1e9fda1d28bbadf1b26efd4f2e624d4b: instructions by function, 21704301 in all.
 # A function's own code only: what it calls is counted at the called function.
 1547203 <gogo_ui::page::Page>::kind_default::{closure#0}
 1280270 <gogo_ui::runtime::Resolved>::override_of_by_id
@@ -55,7 +55,7 @@
 89728 <harfrust::hb::glyph_metrics::GlyphMetrics>::populate_advance_widths
 87014 <core::iter::adapters::map::Map<core::str::iter::CharIndices, unicode_linebreak::linebreaks::{closure#0}> as core::iter::traits::iterator::Iterator>::try_fold::<(), &mut <core::iter::adapters::scan::Scan<_, _, _> as core::iter::traits::iterator::Iterator>::try_fold::scan<(usize, u8), (u8, bool), (usize, bool, bool), (), core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>, unicode_linebreak::linebreaks::{closure#1}, core::iter::traits::iterator::Iterator::find_map::check<(usize, bool, bool), (usize, unicode_linebreak::BreakOpportunity), &mut unicode_linebreak::linebreaks::{closure#2}>::{closure#0}>::{closure#0}, core::ops::control_flow::ControlFlow<core::ops::control_flow::ControlFlow<(usize, unicode_linebreak::BreakOpportunity)>>>
 86922 <gogo_ui::tree::Children as core::iter::traits::iterator::Iterator>::next
-86123 <gogo_text::TextEngine>::measure
+85955 <gogo_text::TextEngine>::measure
 85160 <cosmic_text::font::system::FontSystem>::get_font_matches
 83880 <harfrust::hb::buffer::GlyphInfo>::init_unicode_props
 80362 harfrust::hb::ot::lookup::pair_pos1_cached
@@ -145,7 +145,7 @@
 16872 <harfrust::hb::ot_shape_plan::ShapePlanKey>::instance
 16629 __rustc::__rust_alloc
 16405 gogo_ui::runtime::own_word
-16195 <hashbrown::map::HashMap<u64, gogo_text::KeptMeasure, std::hash::random::RandomState>>::insert
+16097 <hashbrown::map::HashMap<u64, gogo_text::KeptMeasure, std::hash::random::RandomState>>::insert
 15704 <read_fonts::table_ref::TableRef<read_fonts::tables::gsub::LigatureMarker>>::component_glyph_ids
 15352 <alloc::vec::Vec<cosmic_text::shape::ShapeSpan> as core::ops::drop::Drop>::drop
 14751 <read_fonts::tables::layout::CoverageTable as read_fonts::read::FontRead>::read
