@@ -441,7 +441,7 @@ fn a_new_letter_sends_only_its_part_of_the_atlas() {
     assert!(texels_of_new_letters > 0 && texels_of_new_letters < 100 * 100, "two new letters at 32 px: {texels_of_new_letters} texels sent");
     assert!(white_pixels(&pixels, label) > 20, "the new letters are drawn");
     let new_letter: GlyphQuad = text.borrow_mut().glyph("o", 32.0, None).expect("the letter drawn above");
-    assert!(new_letter.uv[0] > 0.0 && new_letter.uv[1] > 0.0, "the precondition: the new letters are below the atlas's first shelf and right of its left edge");
+    assert!(new_letter.page == 0 && new_letter.uv[0] * 2048.0 > 2.0 && new_letter.uv[1] * 2048.0 > 20.0, "the precondition: the new letters are below the page's first shelf and right of its left edge: {new_letter:?}");
     let mut fresh: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
     let (want, _) = drawn_tile(PAGE_OTHER_LETTERS, &mut fresh, &device, &queue, &text);
     assert!(pixels == want, "the picture of a renderer that sent the page in one go");
@@ -460,13 +460,17 @@ View card {
 }
 "#;
 
-/// A frame whose letters are on both pages of the letters' atlas draws
-/// each letter from its own page's texture: the picture is the one of an
-/// engine that has all those letters on one page.
+/// A frame whose letters are on two pages of the letters' atlas draws
+/// each letter from its own page's quarter of the sheet, in as many draw
+/// calls as an engine that has all those letters on one page, and the
+/// same picture.
 ///
 /// Needed because a full page starts a new one (`gogo_text::Atlas`).
-/// Red when a quad is drawn from another page's texture: the user sees
-/// pieces of other letters where the letters are.
+/// Red on the picture when a quad is drawn from another page's texels:
+/// the user sees pieces of other letters where the letters are. Red on
+/// the calls when each page is a texture of its own: a label on the
+/// other page changes texture, and a list of names in many scripts
+/// panned 1.1 to 1.5 ms slower a frame on an old phone.
 #[test]
 #[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
 fn letters_on_two_pages_are_drawn_each_from_its_page() {
@@ -484,6 +488,7 @@ fn letters_on_two_pages_are_drawn_each_from_its_page() {
         }
     }
     let (pixels, label) = drawn_tile(PAGE_TWO_LABELS, &mut ui, &device, &queue, &text);
+    let calls: u32 = ui.draw_calls;
     let old_letter: GlyphQuad = text.borrow_mut().glyph("H", 32.0, None).expect("ink");
     let new_letter: GlyphQuad = text.borrow_mut().glyph("k", 32.0, None).expect("ink");
     assert_eq!((old_letter.page, new_letter.page), (0, 1), "the precondition: \"Hi\" on the first page, \"ok\" on the second");
@@ -493,7 +498,57 @@ fn letters_on_two_pages_are_drawn_each_from_its_page() {
     let (want, _) = drawn_tile(PAGE_TWO_LABELS, &mut fresh, &device, &queue, &one_page);
     assert_eq!(one_page.borrow().atlas().page_count(), 1, "the precondition: the other engine has one page");
     assert!(pixels == want, "the picture of an engine with every letter on one page");
+    assert_eq!(calls, fresh.draw_calls, "as many draw calls as with every letter on one page");
 }
+
+/// `PAGE` turned 25 degrees about the plate's center, drawn by a new
+/// renderer with the letters of `text`.
+fn turned_tile(text: &RefCell<TextEngine>, device: &wgpu::Device, queue: &wgpu::Queue) -> Vec<u8> {
+    let compiled: Compiled = compile(PAGE, &|_| None);
+    let page: Page = compiled.page;
+    let runtime: Runtime = Runtime::new(&page);
+    let screen: Rect = Rect::new(0.0, 0.0, TILE.0 as f32, TILE.1 as f32);
+    let measure = EpxMeasure { engine: text, epx: 1.0, font: None, images: &[] };
+    let kept: KeptFrame = KeptFrame::fresh(&page, resolve(&page, &runtime), screen, &measure);
+    let mut draws: Vec<Draw> = vec![Draw::RotatePush { angle: 25.0, cx: 60.0, cy: 30.0 }];
+    draws.extend(draw(&page, kept.frame()));
+    draws.push(Draw::RotatePop);
+    let mut ui: UiRenderer = UiRenderer::new(device, wgpu::TextureFormat::Rgba8Unorm, None);
+    let tile: Tex_Tile_Premul_Srgb_4xU8_RGBA = ui.render_to_texture(device, queue, &draws, &page, &mut text.borrow_mut(), None, 1.0, (0.0, 0.0), TILE);
+    read_back(device, queue, &tile)
+}
+
+/// A turned label draws the same whether its letters are the first ones
+/// of a page or sit deep inside it.
+///
+/// Needed because a turned glyph is sampled between texels, the texels
+/// around it included. Red when the first glyphs sit against the page's
+/// top and left edge: there the texture repeats its edge, and the turned
+/// letters show a hard edge (seen on an old phone: up to 101 of 255 at
+/// the edges of a turned text bubble).
+#[test]
+#[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
+fn a_turned_label_draws_the_same_wherever_its_letters_sit() {
+    let (device, queue) = device();
+    let first_letters: RefCell<TextEngine> = engine();
+    let deep_inside: RefCell<TextEngine> = engine();
+    deep_inside.borrow_mut().warm("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", 64.0, None);
+    deep_inside.borrow_mut().warm("Q", 40.0, None);
+    let at_corner: Vec<u8> = turned_tile(&first_letters, &device, &queue);
+    let inside: Vec<u8> = turned_tile(&deep_inside, &device, &queue);
+    let first_h: GlyphQuad = first_letters.borrow_mut().shape("Hi", TextPx::from_epx(32.0, 1.0), None, None, 0.0, 0.0, 0.0, 0)[0];
+    let inner_h: GlyphQuad = deep_inside.borrow_mut().shape("Hi", TextPx::from_epx(32.0, 1.0), None, None, 0.0, 0.0, 0.0, 0)[0];
+    assert!(first_h.uv[0] * 2048.0 < 2.0 && inner_h.uv[0] * 2048.0 > 100.0, "the precondition: the label's first letter at the page's corner in one engine, inside in the other: {first_h:?} {inner_h:?}");
+    // A texel's place in the texture moves where a sample between texels
+    // rounds: 1 of 255 in a pixel or two is that, not an edge.
+    let differing: usize = at_corner.chunks_exact(4).zip(inside.chunks_exact(4)).filter(|(a, b)| a.iter().zip(b.iter()).any(|(p, q)| p.abs_diff(*q) > ROUNDING_OF_255)).count();
+    assert!(white_pixels(&inside, Rect::new(0.0, 0.0, TILE.0 as f32, TILE.1 as f32)) > 20, "the precondition: the turned letters are drawn");
+    assert_eq!(differing, 0, "pixels that differ by more than {ROUNDING_OF_255} of 255 between the two engines' turned labels");
+}
+
+/// How far a pixel may differ, of 255, between two drawings of the same
+/// texels from other places in a texture.
+const ROUNDING_OF_255: u8 = 2;
 
 /// The tile the big letters are drawn on.
 const BIG_TILE: (u32, u32) = (256, 256);

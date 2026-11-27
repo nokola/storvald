@@ -6,8 +6,8 @@
 //!
 //! The page's rects are epx and are scaled to device pixels here
 //! (`gogo-ui` never sees a device pixel). Text is shaped by `gogo-text`
-//! into glyph quads over the pages of its atlases (a texture per page,
-//! `UiRenderer::page_slot`); images are RGBA
+//! into glyph quads over the pages of its atlases (a texture per sheet of
+//! four pages, `UiRenderer::page_slot`); images are RGBA
 //! textures the host uploads by `ImageKey` (`write_image_texture_only`).
 //! A gradient is ONE quad whose stops sit in a row of the gradient tables
 //! (`GradientTable`); a `RotatePush` turns every quad until its pop about
@@ -103,23 +103,33 @@ struct Screen {
     _pad: [f32; 2],
 }
 
-/// Texture slot: 0 = the first page of the glyph coverage atlas, 1 = the
-/// first page of the emoji color atlas, 2.. = images as they were first
-/// written, the atlases' later pages, and the text engine's big glyphs,
+/// Texture slot: 0 = the first sheet of the glyph coverage atlas, 1 = the
+/// first sheet of the emoji color atlas, 2.. = images as they were first
+/// written, the atlases' later sheets, and the text engine's big glyphs,
 /// each as it was first drawn.
 type TexId = u32;
 const ATLAS: TexId = 0;
-/// The first page of the text engine's color atlas (emoji): straight
+/// The first sheet of the text engine's color atlas (emoji): straight
 /// RGBA, drawn as image quads with a white tint.
 const COLOR_ATLAS: TexId = 1;
 
-/// One page of a text engine's glyph atlas, as a renderer holds it.
-struct AtlasPageTexture {
-    /// The page's texture slot.
+/// One sheet of a text engine's glyph atlas, four pages as its quarters
+/// (`gogo_text::Atlas::page_place`), as a renderer holds it.
+struct AtlasSheetTexture {
+    /// The sheet's texture slot.
     slot: TexId,
     texture: wgpu::Texture,
-    /// What of the page the texture holds.
-    sent: AtlasSent,
+}
+
+/// What a renderer holds of one glyph atlas of a text engine: a texture
+/// per sheet it has drawn from, and what each page's quarter of it holds.
+#[derive(Default)]
+struct HeldAtlas {
+    /// By sheet.
+    sheets: Vec<AtlasSheetTexture>,
+    /// By page. Only grows: a renderer handed an engine of fewer pages
+    /// keeps what its quarters hold, so a page sent later is sent whole.
+    sent: Vec<AtlasSent>,
 }
 
 struct Batch {
@@ -167,7 +177,7 @@ struct Texture {
     height: u32,
     /// The texture itself, so a same-size re-upload writes in place
     /// (`write_image_texture_only`); None for the externals' entries and
-    /// the atlas pages (`AtlasPageTexture` holds theirs).
+    /// the atlas sheets (`AtlasSheetTexture` holds theirs).
     texture: Option<wgpu::Texture>,
 }
 
@@ -298,18 +308,17 @@ pub struct UiRenderer {
     /// a Surface allocates nothing once warm.
     surface_draws: Vec<Draw>,
     screen: (u32, u32),
-    /// Slots 0 and 1 are the first page of the letters' and of the emoji
+    /// Slots 0 and 1 are the first sheet of the letters' and of the emoji
     /// atlas (a 1x1 blank until the engine's first glyph of each).
     textures: Vec<Texture>,
     /// Slots `release_image` emptied (they hold a 1x1 blank), taken again
     /// by the next picture so a page that comes and goes does not grow
     /// the table.
     free_slots: Vec<TexId>,
-    /// The pages of the engine's letters' atlas this renderer has drawn
-    /// from, by page (`GlyphQuad::page`).
-    letter_pages: Vec<AtlasPageTexture>,
-    /// `letter_pages`, of the emoji atlas.
-    emoji_pages: Vec<AtlasPageTexture>,
+    /// What this renderer holds of the engine's letters' atlas.
+    letters: HeldAtlas,
+    /// `letters`, of the emoji atlas.
+    emoji: HeldAtlas,
     /// What `debug_atlas_texels_written` returns.
     atlas_texels_written: u64,
     /// The texture slot of each big glyph of the text engine that this
@@ -467,8 +476,8 @@ impl UiRenderer {
             screen: (1, 1),
             textures: Vec::new(),
             free_slots: Vec::new(),
-            letter_pages: Vec::new(),
-            emoji_pages: Vec::new(),
+            letters: HeldAtlas::default(),
+            emoji: HeldAtlas::default(),
             atlas_texels_written: 0,
             big_glyphs: HashMap::new(),
             big_glyphs_to_send: Vec::new(),
@@ -486,11 +495,11 @@ impl UiRenderer {
             draw_calls: 0,
         };
         // Slot 0: a 1×1 blank until the text engine's first letter makes
-        // the letters' first page (`page_slot`).
+        // the letters' first sheet (`page_slot`).
         let (tex, mut entry) = r.make_texture(device, 1, 1, wgpu::TextureFormat::R8Unorm);
         entry.texture = Some(tex);
         r.textures.push(entry);
-        // Slot 1: the emoji atlas's first page, the same way.
+        // Slot 1: the emoji atlas's first sheet, the same way.
         let (tex, mut entry) = r.make_texture(device, 1, 1, wgpu::TextureFormat::Rgba8Unorm);
         entry.texture = Some(tex);
         r.textures.push(entry);
@@ -716,12 +725,12 @@ impl UiRenderer {
         );
     }
 
-    /// Writes the rectangle `part` of `data`, the pixels of a texture
-    /// `width` wide, into the same rectangle of `tex`.
+    /// Writes the rectangle `part` of `data`, the pixels of a page `width`
+    /// wide, into `tex` with the page's top left texel at `origin`.
     ///
     /// Needed for the glyph atlases: a new letter changes a small
-    /// rectangle of an atlas, and the whole of it is megabytes.
-    fn write_part(queue: &wgpu::Queue, tex: &wgpu::Texture, data: &[u8], width: u32, part: &AtlasPart, bytes_per_pixel: u32) {
+    /// rectangle of a page, and a sheet of four pages is megabytes.
+    fn write_part(queue: &wgpu::Queue, tex: &wgpu::Texture, data: &[u8], width: u32, part: &AtlasPart, bytes_per_pixel: u32, origin: (u32, u32)) {
         let row_bytes: u32 = width * bytes_per_pixel;
         let column_count: u32 = part.columns.end - part.columns.start;
         let row_count: u32 = part.rows.end - part.rows.start;
@@ -730,7 +739,7 @@ impl UiRenderer {
         let first: usize = (part.rows.start * row_bytes + part.columns.start * bytes_per_pixel) as usize;
         let length: usize = ((row_count - 1) * row_bytes + column_count * bytes_per_pixel) as usize;
         queue.write_texture(
-            wgpu::TexelCopyTextureInfo { texture: tex, mip_level: 0, origin: wgpu::Origin3d { x: part.columns.start, y: part.rows.start, z: 0 }, aspect: wgpu::TextureAspect::All },
+            wgpu::TexelCopyTextureInfo { texture: tex, mip_level: 0, origin: wgpu::Origin3d { x: origin.0 + part.columns.start, y: origin.1 + part.rows.start, z: 0 }, aspect: wgpu::TextureAspect::All },
             &data[first..first + length],
             wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row_bytes), rows_per_image: Some(row_count) },
             wgpu::Extent3d { width: column_count, height: row_count, depth_or_array_layers: 1 },
@@ -847,27 +856,29 @@ impl UiRenderer {
         self.big_glyphs = big_glyphs;
     }
 
-    /// The texture slot of page `page` of `text`'s letters' atlas, or of
-    /// its emoji atlas when `is_color`, with a texture of the page's size
-    /// made in it the first time. `sync_atlas` sends the page's texels
-    /// after the walk.
+    /// The texture slot of the sheet that holds page `page` of `text`'s
+    /// letters' atlas, or of its emoji atlas when `is_color`, with a
+    /// texture of the sheet's size made in it the first time.
+    /// `sync_atlas` sends the pages' texels after the walk.
     ///
     /// Needed because the engine adds pages as glyphs fill them, and a
     /// batch names its texture slot while the frame is walked. The first
-    /// page of each atlas takes slot 0 or 1; later pages take any free
+    /// sheet of each atlas takes slot 0 or 1; later sheets take any free
     /// slot.
     ///
-    /// A texture made here holds zeros: its first send is what the page
-    /// holds so far (`AtlasSent::default()`), not the whole page.
+    /// A texture made here holds zeros: the first send of each of its
+    /// pages is what the page holds so far (`AtlasSent::default()`).
     fn page_slot(&mut self, device: &wgpu::Device, text: &TextEngine, is_color: bool, page: u32) -> TexId {
         let (atlas, format): (&Atlas, wgpu::TextureFormat) = if is_color { (text.color_atlas(), wgpu::TextureFormat::Rgba8Unorm) } else { (text.atlas(), wgpu::TextureFormat::R8Unorm) };
+        let (sheet, _, _): (usize, u32, u32) = atlas.page_place(page as usize);
         loop {
-            let held: usize = if is_color { self.emoji_pages.len() } else { self.letter_pages.len() };
-            if let Some(slot) = (if is_color { &self.emoji_pages } else { &self.letter_pages }).get(page as usize).map(|held| held.slot) {
-                return slot;
+            let held: &HeldAtlas = if is_color { &self.emoji } else { &self.letters };
+            if let Some(texture) = held.sheets.get(sheet) {
+                return texture.slot;
             }
-            let (texture, entry) = self.make_texture(device, atlas.side(), atlas.side(), format);
-            let slot: TexId = match (held, is_color) {
+            let held_count: usize = held.sheets.len();
+            let (texture, entry) = self.make_texture(device, atlas.sheet_side(), atlas.sheet_side(), format);
+            let slot: TexId = match (held_count, is_color) {
                 (0, false) => {
                     self.textures[ATLAS as usize] = entry;
                     ATLAS
@@ -878,8 +889,8 @@ impl UiRenderer {
                 }
                 _ => self.take_slot(entry),
             };
-            let pages: &mut Vec<AtlasPageTexture> = if is_color { &mut self.emoji_pages } else { &mut self.letter_pages };
-            pages.push(AtlasPageTexture { slot, texture, sent: AtlasSent::default() });
+            let held: &mut HeldAtlas = if is_color { &mut self.emoji } else { &mut self.letters };
+            held.sheets.push(AtlasSheetTexture { slot, texture });
         }
     }
 
@@ -942,19 +953,20 @@ impl UiRenderer {
         }
     }
 
-    /// Sends, for each atlas page of `text` this renderer has a texture
-    /// of, the part that texture lacks: the rectangle of the glyphs new
-    /// since its last send, what the page holds for a texture made this
-    /// frame, or the whole page when the texture holds another. Then the
-    /// texels of the big glyphs the frame's walk made a texture for.
+    /// Sends, for each atlas page of `text` on a sheet this renderer has
+    /// a texture of, the part of its quarter that texture lacks: the
+    /// rectangle of the glyphs new since its last send, what the page
+    /// holds for a texture made this frame, or the whole page when the
+    /// quarter holds another. Then the texels of the big glyphs the
+    /// frame's walk made a texture for.
     ///
     /// Needed per renderer (`AtlasSent`): a text engine may meet several
     /// renderers (one per picture a host takes, a new one after the GPU
     /// was lost), and a renderer may be handed another engine. Each of
     /// them must end up with the pages its glyph quads point into.
     fn sync_atlas(&mut self, queue: &wgpu::Queue, text: &TextEngine) {
-        Self::send_pages(queue, text.atlas(), &mut self.letter_pages, &mut self.atlas_texels_written);
-        Self::send_pages(queue, text.color_atlas(), &mut self.emoji_pages, &mut self.atlas_texels_written);
+        Self::send_pages(queue, text.atlas(), &mut self.letters, &mut self.atlas_texels_written);
+        Self::send_pages(queue, text.color_atlas(), &mut self.emoji, &mut self.atlas_texels_written);
         // The list steps out of self for the loop and goes back empty,
         // with its capacity.
         let mut to_send: Vec<BigGlyphId> = std::mem::take(&mut self.big_glyphs_to_send);
@@ -968,18 +980,25 @@ impl UiRenderer {
         self.big_glyphs_to_send = to_send;
     }
 
-    /// Writes into each texture of `held` the part of its page of `atlas`
-    /// that it lacks (`Atlas::part_to_send`), and counts the texels in
-    /// `texels_written`.
+    /// Writes into each sheet texture of `held` the part of each of its
+    /// pages of `atlas` that its quarter lacks (`Atlas::part_to_send`),
+    /// and counts the texels in `texels_written`.
     ///
     /// Needed in one place because the letters' and the emoji atlas are
     /// sent the same way.
-    fn send_pages(queue: &wgpu::Queue, atlas: &Atlas, held: &mut [AtlasPageTexture], texels_written: &mut u64) {
-        for (index, page) in held.iter_mut().enumerate().take(atlas.page_count()) {
-            let (part, sent): (AtlasPart, AtlasSent) = atlas.part_to_send(index, page.sent);
-            page.sent = sent;
+    ///
+    /// Allocates only when the atlas has a page more than the last call.
+    fn send_pages(queue: &wgpu::Queue, atlas: &Atlas, held: &mut HeldAtlas, texels_written: &mut u64) {
+        if held.sent.len() < atlas.page_count() {
+            held.sent.resize(atlas.page_count(), AtlasSent::default());
+        }
+        for index in 0..atlas.page_count() {
+            let (sheet, x, y): (usize, u32, u32) = atlas.page_place(index);
+            let Some(texture) = held.sheets.get(sheet) else { continue };
+            let (part, sent): (AtlasPart, AtlasSent) = atlas.part_to_send(index, held.sent[index]);
+            held.sent[index] = sent;
             if !part.is_empty() {
-                Self::write_part(queue, &page.texture, atlas.page(index), atlas.side(), &part, atlas.texel_bytes());
+                Self::write_part(queue, &texture.texture, atlas.page(index), atlas.side(), &part, atlas.texel_bytes(), (x, y));
                 *texels_written += part.texel_count();
             }
         }

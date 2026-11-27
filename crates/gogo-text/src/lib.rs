@@ -138,16 +138,34 @@ pub const ATLAS_PAGE_SIDE: u32 = 1024;
 /// The side of one page of the emoji atlas, in texels: 1 MB of RGBA.
 pub const COLOR_ATLAS_PAGE_SIDE: u32 = 512;
 
+/// Pages along each side of a sheet: a sheet is one GPU texture that
+/// holds 2 x 2 pages, as its quarters (`Atlas::page_place`).
+///
+/// Needed so the letters of several pages draw in one call: a renderer
+/// binds one texture per sheet, and a label whose letters sit on two
+/// pages of one sheet does not change texture between them. With a
+/// texture per page, panning a list of names in many scripts took 1.1
+/// to 1.5 ms more a frame on an old phone.
+pub const ATLAS_SHEET_PAGES_A_SIDE: u32 = 2;
+
 /// How many pages an atlas holds before it empties the page used longest
-/// ago for new glyphs.
+/// ago for new glyphs: one sheet's worth.
 ///
 /// Needed so a session that shows many fonts and sizes does not keep
 /// every letter it ever drew.
 ///
 /// A page that a text of the frame being drawn uses is never emptied
 /// (`TextEngine::start_frame`): an atlas whose pages are all on screen
-/// gets one more.
-pub const ATLAS_PAGES_KEPT: usize = 4;
+/// gets one more, on a second sheet.
+pub const ATLAS_PAGES_KEPT: usize = (ATLAS_SHEET_PAGES_A_SIDE * ATLAS_SHEET_PAGES_A_SIDE) as usize;
+
+/// Texels left empty along a page's top and left edge.
+///
+/// Needed so every glyph has an empty texel on all four sides (a slot's
+/// own right and bottom texel stay empty too). A glyph against a page's
+/// edge has none there: turned or scaled, it shows a hard edge on that
+/// side, and on a sheet the texel past the edge is another page's.
+const PAGE_MARGIN_TEXELS: u32 = 1;
 
 /// The bytes of big glyphs' texels an engine keeps before
 /// `TextEngine::start_frame` drops some.
@@ -217,7 +235,7 @@ struct Slot {
     height: u32,
     /// In the color atlas (an emoji), not the coverage atlas.
     color: bool,
-    /// The page of its atlas the uv is into.
+    /// The page of its atlas it is on; the uv is into that page's sheet.
     page: u32,
     /// The glyph is a big one: its uv is into that glyph's own raster,
     /// not into an atlas.
@@ -252,8 +270,10 @@ pub struct GlyphQuad {
     /// (`TextEngine::color_atlas`) when true, into the letters' atlas
     /// (`TextEngine::atlas`) when false.
     pub color: bool,
-    /// The page of that atlas the uv is into (`Atlas::page`). 0 for a big
-    /// glyph and for one with no ink.
+    /// The page of that atlas the glyph is on (`Atlas::page`). The uv is
+    /// into the page's sheet, the texture that holds it with three other
+    /// pages (`Atlas::page_place`). 0 for a big glyph and for one with no
+    /// ink.
     pub page: u32,
     /// The glyph is a big one (`BigGlyph`): the uv is into that glyph's
     /// own raster (`TextEngine::big_glyph`), not into an atlas.
@@ -413,7 +433,8 @@ impl AtlasPart {
 }
 
 /// A shelf packer over one square page: slots go left to right along a
-/// row, a new row starts when one does not fit.
+/// row, a new row starts when one does not fit. The page's first row
+/// and column stay empty (`PAGE_MARGIN_TEXELS`).
 ///
 /// Needed because both atlases (coverage and color) pack the same way:
 /// one packer, two sizes.
@@ -427,14 +448,14 @@ struct Shelf {
 
 impl Shelf {
     fn new(size: u32) -> Shelf {
-        Shelf { size, x: 0, y: 0, h: 0 }
+        Shelf { size, x: PAGE_MARGIN_TEXELS, y: PAGE_MARGIN_TEXELS, h: 0 }
     }
 
     /// The top-left of a `w` × `h` slot, or `None` when the page is full.
     fn pack(&mut self, w: u32, h: u32) -> Option<(u32, u32)> {
         if self.x + w > self.size {
             self.y += self.h;
-            self.x = 0;
+            self.x = PAGE_MARGIN_TEXELS;
             self.h = 0;
         }
         if self.y + h > self.size {
@@ -467,7 +488,7 @@ impl Shelf {
     /// shelf is still being filled. Else whole rows, from that shelf down
     /// to the last one used.
     fn part_to_send(&self, page_id: u64, version: u64, sent: AtlasSent) -> (AtlasPart, AtlasSent) {
-        let from: AtlasSent = if sent.page_id == 0 { AtlasSent { version: 0, page_id, open_row: 0, open_x: 0 } } else { sent };
+        let from: AtlasSent = if sent.page_id == 0 { AtlasSent { version: 0, page_id, open_row: PAGE_MARGIN_TEXELS, open_x: 0 } } else { sent };
         let part: AtlasPart = if from.version == version {
             AtlasPart { columns: 0..0, rows: 0..0 }
         } else if from.page_id != page_id {
@@ -541,9 +562,10 @@ fn page_bit(page: u32) -> u64 {
 /// pages before stay where they are. No glyph is drawn again, no text is
 /// shaped again, and a renderer sends only the new page's part.
 ///
-/// A renderer holds a texture per page: it makes one the first time a
-/// quad names the page (`GlyphQuad::page`), and sends each page's new
-/// part once a frame (`part_to_send`).
+/// A renderer holds a texture per sheet, four pages as its quarters
+/// (`ATLAS_SHEET_PAGES_A_SIDE`, `page_place`): it makes one the first
+/// time a quad names a page of it (`GlyphQuad::page`), and sends each
+/// page's new part into its quarter once a frame (`part_to_send`).
 pub struct Atlas {
     side: u32,
     texel_bytes: u32,
@@ -561,6 +583,24 @@ impl Atlas {
     /// The side of every page, in texels.
     pub fn side(&self) -> u32 {
         self.side
+    }
+
+    /// The side of every sheet, in texels: the texture a renderer makes
+    /// for four pages.
+    pub fn sheet_side(&self) -> u32 {
+        self.side * ATLAS_SHEET_PAGES_A_SIDE
+    }
+
+    /// Where page `index` sits: its sheet, and the column and row of its
+    /// top left texel in that sheet.
+    ///
+    /// Needed by a renderer, which writes a page's part at that place in
+    /// the sheet's texture, and by the engine, whose uvs are into the
+    /// sheet.
+    pub fn page_place(&self, index: usize) -> (usize, u32, u32) {
+        let pages_a_sheet: usize = ATLAS_PAGES_KEPT;
+        let quarter: u32 = (index % pages_a_sheet) as u32;
+        (index / pages_a_sheet, (quarter % ATLAS_SHEET_PAGES_A_SIDE) * self.side, (quarter / ATLAS_SHEET_PAGES_A_SIDE) * self.side)
     }
 
     /// Bytes a texel: 1 for the letters' coverage, 4 for the emoji's
@@ -582,9 +622,10 @@ impl Atlas {
     }
 
     /// The part of page `index` that a renderer at `sent` has not sent to
-    /// its GPU. A renderer calls it once a frame for each page it holds a
-    /// texture of, after the frame's texts are shaped, and writes that
-    /// rectangle of `page(index)` into the texture: all the frame's new
+    /// its GPU, in the page's own texels. A renderer calls it once a frame
+    /// for each page of a sheet it holds a texture of, after the frame's
+    /// texts are shaped, and writes that rectangle of `page(index)` at the
+    /// page's place in the texture (`page_place`): all the frame's new
     /// glyphs on that page in one write.
     ///
     /// Needed because a frame that draws one new letter otherwise sends a
@@ -633,6 +674,14 @@ impl Atlas {
         let (x, y): (u32, u32) = page.shelf.pack(w, h).expect("a slot fits an empty page");
         page.version = next_atlas_version();
         Packed { page: self.filling, x, y, change }
+    }
+
+    /// The uv of a `w` x `h` slot at column `x`, row `y` of page `page`,
+    /// into the page's sheet (`page_place`).
+    fn sheet_uv(&self, page: usize, x: u32, y: u32, w: u32, h: u32) -> [f32; 4] {
+        let (_, page_x, page_y): (usize, u32, u32) = self.page_place(page);
+        let sheet_side: f32 = self.sheet_side() as f32;
+        [(page_x + x) as f32 / sheet_side, (page_y + y) as f32 / sheet_side, (page_x + x + w) as f32 / sheet_side, (page_y + y + h) as f32 / sheet_side]
     }
 
     /// Notes that a text of frame `frame` uses the pages `pages` names
@@ -1482,8 +1531,8 @@ impl TextEngine {
                 let dst = ((py + row) * side + px) as usize;
                 texels[dst..dst + w as usize].copy_from_slice(src);
             }
-            let s = side as f32;
-            Some(Slot { u0: px as f32 / s, v0: py as f32 / s, u1: (px + w) as f32 / s, v1: (py + h) as f32 / s, left, top, width: w, height: h, color: false, page: page as u32, big_glyph: None })
+            let [u0, v0, u1, v1]: [f32; 4] = self.letters.sheet_uv(page, px, py, w, h);
+            Some(Slot { u0, v0, u1, v1, left, top, width: w, height: h, color: false, page: page as u32, big_glyph: None })
         });
         slot
     }
@@ -1532,8 +1581,8 @@ impl TextEngine {
                 straight_from_premultiplied(out);
             }
         }
-        let s = side as f32;
-        Slot { u0: px as f32 / s, v0: py as f32 / s, u1: (px + w) as f32 / s, v1: (py + h) as f32 / s, left, top, width: w, height: h, color: true, page: page as u32, big_glyph: None }
+        let [u0, v0, u1, v1]: [f32; 4] = self.emoji.sheet_uv(page, px, py, w, h);
+        Slot { u0, v0, u1, v1, left, top, width: w, height: h, color: true, page: page as u32, big_glyph: None }
     }
 
     /// A place for a `w` x `h` slot in the letters' atlas, or in the

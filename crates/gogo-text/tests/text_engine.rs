@@ -194,9 +194,18 @@ fn engine_with_emoji() -> TextEngine {
 /// The color atlas texel at the top-left of `q`'s slot, RGBA.
 fn color_texel_of(e: &TextEngine, q: &GlyphQuad) -> [u8; 4] {
     let (atlas, side): (&[u8], u32) = (e.color_atlas().page(q.page as usize), e.color_atlas().side());
-    let (x, y) = ((q.uv[0] * side as f32).round() as usize, (q.uv[1] * side as f32).round() as usize);
+    let (x, y, _, _) = page_rect(e.color_atlas(), q);
     let i = (y * side as usize + x) * 4;
     [atlas[i], atlas[i + 1], atlas[i + 2], atlas[i + 3]]
+}
+
+/// The texels `q` covers in its page, `(x0, y0, x1, y1)`, the ends
+/// past the last: its uv is into the page's sheet (`Atlas::page_place`).
+fn page_rect(atlas: &Atlas, q: &GlyphQuad) -> (usize, usize, usize, usize) {
+    let (_, page_x, page_y): (usize, u32, u32) = atlas.page_place(q.page as usize);
+    let sheet_side: f32 = atlas.sheet_side() as f32;
+    let texel = |uv: f32, page_start: u32| -> usize { ((uv * sheet_side).round() as u32 - page_start) as usize };
+    (texel(q.uv[0], page_x), texel(q.uv[1], page_y), texel(q.uv[2], page_x), texel(q.uv[3], page_y))
 }
 
 /// An emoji of a color face lands in the COLOR atlas with its own
@@ -217,7 +226,7 @@ fn an_emoji_lands_in_the_color_atlas_beside_the_letters() {
     assert!(!e.atlas().part_to_send(0, AtlasSent::default()).0.is_empty() && !e.color_atlas().part_to_send(0, AtlasSent::default()).0.is_empty());
     // Somewhere in the emoji's slot a texel is opaque and colored.
     let (atlas, side): (&[u8], u32) = (e.color_atlas().page(quads[1].page as usize), e.color_atlas().side());
-    let (x0, y0, x1, y1) = ((quads[1].uv[0] * side as f32) as usize, (quads[1].uv[1] * side as f32) as usize, (quads[1].uv[2] * side as f32) as usize, (quads[1].uv[3] * side as f32) as usize);
+    let (x0, y0, x1, y1) = page_rect(e.color_atlas(), &quads[1]);
     let colored = (y0..y1).flat_map(|y| (x0..x1).map(move |x| (x, y))).any(|(x, y)| {
         let i = (y * side as usize + x) * 4;
         let (r, g, b, a) = (atlas[i], atlas[i + 1], atlas[i + 2], atlas[i + 3]);
@@ -695,7 +704,7 @@ fn a_copy_that_takes_only_the_part_to_send_holds_the_whole_page() {
     };
     shape(&mut e, "Hi", 20.0);
     let first: AtlasPart = copy.take(e.atlas(), 0);
-    assert!(first.rows.start == 0 && first.columns.start == 0 && first.texel_count() < 64 * 64, "a new texture: what the page holds so far, not the whole page, {first:?}");
+    assert!(first.rows.start == 1 && first.columns.start == 0 && first.texel_count() < 64 * 64, "a new texture: what the page holds so far, below its empty first row, not the whole page, {first:?}");
     assert!(copy.holds(e.atlas(), 0));
 
     shape(&mut e, "Hi", 20.0);
@@ -703,21 +712,21 @@ fn a_copy_that_takes_only_the_part_to_send_holds_the_whole_page() {
 
     shape(&mut e, "o", 20.0);
     let beside: AtlasPart = copy.take(e.atlas(), 0);
-    assert!(beside.rows.start == 0 && beside.rows.end < 64, "a new letter beside the first two: rows of their shelf, {beside:?}");
+    assert!(beside.rows.start == 1 && beside.rows.end < 64, "a new letter beside the first two: rows of their shelf, {beside:?}");
     assert!(beside.columns.start > 0 && beside.columns.end - beside.columns.start < 32, "and its own columns only, {beside:?}");
     assert!(copy.holds(e.atlas(), 0), "the copy after one new letter");
 
     // A taller letter in the same shelf makes that shelf taller.
     shape(&mut e, "Q", 48.0);
     let taller: AtlasPart = copy.take(e.atlas(), 0);
-    assert!(taller.columns.start >= beside.columns.end && taller.rows.start == 0 && taller.rows.end > beside.rows.end, "a taller letter in the same shelf: its columns, down to its foot, {taller:?}");
+    assert!(taller.columns.start >= beside.columns.end && taller.rows.start == 1 && taller.rows.end > beside.rows.end, "a taller letter in the same shelf: its columns, down to its foot, {taller:?}");
     assert!(copy.holds(e.atlas(), 0), "the copy after a taller letter");
 
     // 52 letters at 64 px are wider than the page: they fill the first
     // shelf and start others below it.
     shape(&mut e, ALPHABET, 64.0);
     let over_shelves: AtlasPart = copy.take(e.atlas(), 0);
-    assert!(over_shelves.columns == (0..1024) && over_shelves.rows.start == 0, "letters over several shelves: whole rows from the shelf that was being filled, {over_shelves:?}");
+    assert!(over_shelves.columns == (0..1024) && over_shelves.rows.start == 1, "letters over several shelves: whole rows from the shelf that was being filled, {over_shelves:?}");
     assert!(copy.holds(e.atlas(), 0), "the copy after letters over several shelves");
 
     shape(&mut e, "?", 64.0);
@@ -727,7 +736,7 @@ fn a_copy_that_takes_only_the_part_to_send_holds_the_whole_page() {
 
     let mut second_renderer = PageCopy::default();
     let second_first: AtlasPart = second_renderer.take(e.atlas(), 0);
-    assert!(second_first.columns == (0..1024) && second_first.rows.start == 0 && second_first.rows.end < 1024, "a second renderer's new texture: the rows used so far, {second_first:?}");
+    assert!(second_first.columns == (0..1024) && second_first.rows.start == 1 && second_first.rows.end < 1024, "a second renderer's new texture: the rows used so far, {second_first:?}");
     assert!(second_renderer.holds(e.atlas(), 0));
 
     // Another engine's page has the same size and other letters in the
@@ -789,6 +798,58 @@ fn an_emptied_page_is_sent_whole() {
     assert!(copies[index].holds(e.atlas(), index));
 }
 
+/// Every glyph in a page has an empty texel on all four sides: the
+/// page's first row and column stay empty, and each slot keeps its own
+/// right and bottom texel empty.
+///
+/// Red when a glyph sits against a page's top or left edge: turned or
+/// scaled, it shows a hard edge there, and on a sheet the texel past
+/// that edge is another page's.
+#[test]
+fn every_glyph_has_an_empty_texel_on_every_side() {
+    let mut e = engine();
+    let mut quads: Vec<GlyphQuad> = Vec::new();
+    for font_size in [20.0, 64.0, 120.0, 100.0, 90.0, 80.0, 70.0, 60.0, 50.0] {
+        quads.extend(e.shape(ALPHABET, px(font_size), None, None, 0.0, 0.0, 100_000.0, 0));
+    }
+    assert!(e.atlas().page_count() >= 2, "the precondition: glyphs on more than one page");
+    let side: usize = e.atlas().side() as usize;
+    let mut checked: usize = 0;
+    for quad in quads.iter().filter(|quad| quad.big_glyph.is_none()) {
+        let (x0, y0, x1, y1) = page_rect(e.atlas(), quad);
+        assert!(x0 >= 1 && y0 >= 1 && x1 < side && y1 < side, "a glyph inside its page, an empty texel from each edge: {quad:?}");
+        let texels: &[u8] = e.atlas().page(quad.page as usize);
+        let is_empty = |x: usize, y: usize| texels[y * side + x] == 0;
+        let ring_empty: bool = (x0 - 1..=x1).all(|x| is_empty(x, y0 - 1) && is_empty(x, y1)) && (y0 - 1..=y1).all(|y| is_empty(x0 - 1, y) && is_empty(x1, y));
+        assert!(ring_empty, "the texels around the glyph are empty: {quad:?}");
+        checked += 1;
+    }
+    assert!(checked > 300, "the precondition: glyphs checked, {checked}");
+}
+
+/// Four pages share a sheet, one texture a renderer binds once, as its
+/// quarters; a fifth page starts a second sheet. A glyph's uv is into
+/// the sheet, inside its page's quarter.
+///
+/// Red when each page is a sheet of its own: a label whose letters sit
+/// on two pages changes texture between them, one draw call more each
+/// time; panning a list of names in many scripts took 1.1 to 1.5 ms more
+/// a frame on an old phone.
+#[test]
+fn four_pages_share_a_sheet() {
+    let mut e = engine();
+    e.shape("Hi", px(20.0), None, None, 0.0, 0.0, 0.0, 0);
+    let first: GlyphQuad = e.shape("Hi", px(20.0), None, None, 0.0, 0.0, 0.0, 0)[0];
+    let (quads, _, _) = run_that_fills_the_first_page(&mut e);
+    let atlas: &Atlas = e.atlas();
+    assert_eq!(atlas.sheet_side(), 2 * ATLAS_PAGE_SIDE);
+    let side: u32 = ATLAS_PAGE_SIDE;
+    assert_eq!((0..5).map(|page| atlas.page_place(page)).collect::<Vec<_>>(), vec![(0, 0, 0), (0, side, 0), (0, 0, side), (0, side, side), (1, 0, 0)]);
+    assert!(first.page == 0 && first.uv[2] < 0.5 && first.uv[3] < 0.5, "the first page is the sheet's top left quarter: {first:?}");
+    let on_second_page: &GlyphQuad = quads.iter().find(|quad| quad.page == 1).expect("the precondition: a letter on the second page");
+    assert!(on_second_page.uv[0] > 0.5 && on_second_page.uv[2] < 1.0 && on_second_page.uv[3] < 0.5, "the second page is the sheet's top right quarter: {on_second_page:?}");
+}
+
 /// The emoji atlas is sent the same way: no page before the first emoji,
 /// what the page holds at the first, a new emoji's own columns after.
 #[test]
@@ -801,12 +862,12 @@ fn a_copy_that_takes_only_the_part_to_send_holds_the_whole_emoji_page() {
 
     e.shape("\u{1F600}", px(40.0), None, None, 0.0, 0.0, 0.0, 0);
     let first: AtlasPart = copy.take(e.color_atlas(), 0);
-    assert!(first.rows.start == 0 && first.columns.start == 0 && first != whole(COLOR_ATLAS_PAGE_SIDE), "the first emoji: what the page holds, {first:?}");
+    assert!(first.rows.start == 1 && first.columns.start == 0 && first != whole(COLOR_ATLAS_PAGE_SIDE), "the first emoji: what the page holds, {first:?}");
     assert!(copy.holds(e.color_atlas(), 0));
 
     e.shape("\u{1F388}", px(40.0), None, None, 0.0, 0.0, 0.0, 0);
     let beside: AtlasPart = copy.take(e.color_atlas(), 0);
-    assert!(beside.rows.start == 0 && beside.rows.end < 128 && beside.columns.start > 0, "a second emoji beside the first: its own columns of their shelf, {beside:?}");
+    assert!(beside.rows.start == 1 && beside.rows.end < 128 && beside.columns.start > 0, "a second emoji beside the first: its own columns of their shelf, {beside:?}");
     assert!(copy.holds(e.color_atlas(), 0), "the copy after a second emoji");
 }
 
