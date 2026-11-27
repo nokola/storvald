@@ -1,4 +1,4 @@
-# `slide_frame` at commit a26616f58fd93d5478640d9c3d10b1ed8fcac582: instructions by function, 3819 in all.
+# `slide_frame` at commit c521c0c4d4c5de7c5b383d6884a186eb15c6a1d9: instructions by function, 3819 in all.
 # A function's own code only: what it calls is counted at the called function.
 1656 <gogo_ui::runtime::Runtime>::set_screen
 371 __memcmp_avx2_movbe
