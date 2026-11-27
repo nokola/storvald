@@ -7,8 +7,10 @@
 //!
 //! Glyphs go into two atlases, shelf-packed: an 8-bit coverage atlas for
 //! letters, tinted by the text color, and an RGBA color atlas for emoji,
-//! drawn in their own colors. Each doubles when it fills, and every glyph
-//! of the grown one is rasterized again on demand. All sizes here are
+//! drawn in their own colors. An atlas is pages of one size (`Atlas`): a
+//! glyph that does not fit the page being filled starts a new page, and
+//! the pages before keep their glyphs. Past `ATLAS_PAGES_KEPT` pages the
+//! page used longest ago is emptied for new glyphs. All sizes here are
 //! DEVICE pixels: the caller converts epx (`TextPx::from_epx` for the
 //! size of a label's text; `EpxMeasure` does all of it for the layout).
 //!
@@ -120,13 +122,35 @@ pub const BOLD_GROW_PER_PX: f32 = 0.6 / 24.0;
 /// (`BigGlyph`).
 ///
 /// Needed because an atlas is packed in shelves as tall as their tallest
-/// glyph. One letter of 400 px takes a sixth of an atlas 1024 a side and
-/// leaves the rest of its shelf to small letters, so the atlas fills and
-/// doubles after a few of them.
+/// glyph. One letter of 400 px takes four tenths of a page 1024 a side
+/// and leaves the rest of its shelf to small letters, so a page fills
+/// after two of them.
 pub const ATLAS_GLYPH_MAX_PX: u32 = 128;
 
+/// The side of one page of the letters' atlas, in texels: 1 MB of
+/// coverage.
+///
+/// Needed as pages of one size so a full atlas never doubles. A doubling
+/// made a texture of 4 MB, sent it to the GPU whole and drew every letter
+/// on screen again: 20 to 40 ms in one frame on an old phone.
+pub const ATLAS_PAGE_SIDE: u32 = 1024;
+
+/// The side of one page of the emoji atlas, in texels: 1 MB of RGBA.
+pub const COLOR_ATLAS_PAGE_SIDE: u32 = 512;
+
+/// How many pages an atlas holds before it empties the page used longest
+/// ago for new glyphs.
+///
+/// Needed so a session that shows many fonts and sizes does not keep
+/// every letter it ever drew.
+///
+/// A page that a text of the frame being drawn uses is never emptied
+/// (`TextEngine::start_frame`): an atlas whose pages are all on screen
+/// gets one more.
+pub const ATLAS_PAGES_KEPT: usize = 4;
+
 /// The bytes of big glyphs' texels an engine keeps before
-/// `TextEngine::drop_unused_big_glyphs` drops some.
+/// `TextEngine::start_frame` drops some.
 ///
 /// Needed because a glyph stretched over a box (`TextEngine::glyph`) is
 /// a new raster at every size of the box: a box resized by a drag leaves
@@ -193,6 +217,8 @@ struct Slot {
     height: u32,
     /// In the color atlas (an emoji), not the coverage atlas.
     color: bool,
+    /// The page of its atlas the uv is into.
+    page: u32,
     /// The glyph is a big one: its uv is into that glyph's own raster,
     /// not into an atlas.
     big_glyph: Option<BigGlyphId>,
@@ -201,7 +227,13 @@ struct Slot {
 impl Slot {
     /// The slot of a glyph that draws nothing (a space).
     fn without_ink(color: bool) -> Slot {
-        Slot { u0: 0.0, v0: 0.0, u1: 0.0, v1: 0.0, left: 0, top: 0, width: 0, height: 0, color, big_glyph: None }
+        Slot { u0: 0.0, v0: 0.0, u1: 0.0, v1: 0.0, left: 0, top: 0, width: 0, height: 0, color, page: 0, big_glyph: None }
+    }
+
+    /// Whether the glyph's texels are on page `page` of its atlas: a
+    /// glyph with ink, not a big one.
+    fn is_on_page(&self, page: usize) -> bool {
+        self.big_glyph.is_none() && self.width > 0 && self.page as usize == page
     }
 }
 
@@ -220,6 +252,9 @@ pub struct GlyphQuad {
     /// (`TextEngine::color_atlas`) when true, into the letters' atlas
     /// (`TextEngine::atlas`) when false.
     pub color: bool,
+    /// The page of that atlas the uv is into (`Atlas::page`). 0 for a big
+    /// glyph and for one with no ink.
+    pub page: u32,
     /// The glyph is a big one (`BigGlyph`): the uv is into that glyph's
     /// own raster (`TextEngine::big_glyph`), not into an atlas.
     pub big_glyph: Option<BigGlyphId>,
@@ -319,33 +354,32 @@ pub struct HostColorGlyph {
 /// host draws nothing for it (the engine then tries swash).
 pub type HostColorGlyphPainter = Box<dyn FnMut(&str, f32) -> Option<HostColorGlyph>>;
 
-/// An atlas version no atlas of this process has had, never 0.
+/// A page id or a page version no page of this process has had, never 0.
 ///
 /// Needed for the whole process, not per engine, so a renderer that drew
 /// with one engine and is handed another never takes the second engine's
-/// atlas for the one it uploaded (`TextEngine::atlas_part_to_send`).
+/// page for the one it uploaded (`Atlas::part_to_send`).
 fn next_atlas_version() -> u64 {
     static NEXT_ATLAS_VERSION: AtomicU64 = AtomicU64::new(1);
     NEXT_ATLAS_VERSION.fetch_add(1, Ordering::Relaxed)
 }
 
-/// What a renderer has sent to its GPU of one atlas: it keeps one for
-/// the letters' atlas and one for the emoji atlas, and hands each to
-/// `TextEngine::atlas_part_to_send` or `color_atlas_part_to_send`.
+/// What a renderer has sent to its GPU of one page of an atlas: it keeps
+/// one per page texture it holds, and hands it to `Atlas::part_to_send`.
 ///
 /// Needed so a renderer sends only the part it has not sent. A new
-/// letter changes a small rectangle; the whole atlas is 4 MB at 2048 a
-/// side, and sending it took 11 to 17 ms on an old phone, for one
-/// letter.
+/// letter changes a small rectangle; sending 4 MB of letters took 11 to
+/// 17 ms on an old phone, for one letter.
 ///
-/// `AtlasSent::default()` says nothing was sent: the next send is the
-/// whole atlas.
+/// `AtlasSent::default()` stands for a texture that holds nothing yet: a
+/// renderer's new texture, all zeros. Its first send is what the page
+/// holds so far, not the whole page.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct AtlasSent {
-    /// The atlas's version at the send.
+    /// The page's version at the send.
     version: u64,
-    /// Which atlas was sent (`TextEngine::atlas_id`, `color_atlas_id`).
-    atlas_id: u64,
+    /// Which page was sent (`AtlasPage::id`); 0 for none.
+    page_id: u64,
     /// The first row of the shelf that was being filled at the send. A
     /// later glyph may have landed in that shelf; no row above it has
     /// changed.
@@ -355,12 +389,11 @@ pub struct AtlasSent {
     open_x: u32,
 }
 
-/// A rectangle of an atlas, in texels: the part a renderer has not sent
-/// to its GPU (`TextEngine::atlas_part_to_send`).
+/// A rectangle of an atlas page, in texels: the part a renderer has not
+/// sent to its GPU (`Atlas::part_to_send`).
 ///
 /// Needed as a rectangle, not as a run of rows: a new letter beside
-/// letters already sent changes a few columns of its shelf, and a shelf
-/// that holds one big letter is hundreds of rows tall.
+/// letters already sent changes a few columns of its shelf.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AtlasPart {
     pub columns: Range<u32>,
@@ -379,14 +412,11 @@ impl AtlasPart {
     }
 }
 
-/// The color atlas's first side; it doubles when it fills (`grow_color`).
-const COLOR_ATLAS_START: u32 = 512;
-
-/// A shelf packer over one square atlas: slots go left to right along a
+/// A shelf packer over one square page: slots go left to right along a
 /// row, a new row starts when one does not fit.
 ///
-/// Needed because both atlases (coverage and color) pack the same way and
-/// grow the same way — one packer, two sizes.
+/// Needed because both atlases (coverage and color) pack the same way:
+/// one packer, two sizes.
 #[derive(Clone, Copy, Debug)]
 struct Shelf {
     size: u32,
@@ -400,7 +430,7 @@ impl Shelf {
         Shelf { size, x: 0, y: 0, h: 0 }
     }
 
-    /// The top-left of a `w` × `h` slot, or `None` when the atlas is full.
+    /// The top-left of a `w` × `h` slot, or `None` when the page is full.
     fn pack(&mut self, w: u32, h: u32) -> Option<(u32, u32)> {
         if self.x + w > self.size {
             self.y += self.h;
@@ -416,10 +446,10 @@ impl Shelf {
         Some(pos)
     }
 
-    /// The part a renderer at `sent` has not got of the atlas `atlas_id`
+    /// The part a renderer at `sent` has not got of the page `page_id`
     /// this shelf packs, now at `version`.
     ///
-    /// Needed in one place because both atlases answer it the same way.
+    /// Needed in one place because every page answers it the same way.
     /// Slots are packed left to right, shelf below shelf. So nothing
     /// above the shelf that was being filled at the last send has
     /// changed, and in that shelf nothing to the left of where it was
@@ -430,21 +460,194 @@ impl Shelf {
     /// letter.
     ///
     /// Returns the part, and what the renderer has sent once it sent
-    /// it. Nothing when the version is the one sent. The whole atlas
-    /// when it is another than the one sent. The new slots' columns of
-    /// the shelf when that shelf is still being filled. Else whole rows,
-    /// from that shelf down to the last one used.
-    fn part_to_send(&self, atlas_id: u64, version: u64, sent: AtlasSent) -> (AtlasPart, AtlasSent) {
-        let part: AtlasPart = if sent.version == version {
+    /// it. Nothing when the version is the one sent. For a texture that
+    /// holds nothing, what the page holds so far: as if the page had
+    /// been sent when it was empty. The whole page for a texture that
+    /// holds another page. The new slots' columns of the shelf when that
+    /// shelf is still being filled. Else whole rows, from that shelf down
+    /// to the last one used.
+    fn part_to_send(&self, page_id: u64, version: u64, sent: AtlasSent) -> (AtlasPart, AtlasSent) {
+        let from: AtlasSent = if sent.page_id == 0 { AtlasSent { version: 0, page_id, open_row: 0, open_x: 0 } } else { sent };
+        let part: AtlasPart = if from.version == version {
             AtlasPart { columns: 0..0, rows: 0..0 }
-        } else if sent.atlas_id != atlas_id {
+        } else if from.page_id != page_id {
             AtlasPart { columns: 0..self.size, rows: 0..self.size }
-        } else if sent.open_row == self.y {
-            AtlasPart { columns: sent.open_x..self.x.min(self.size), rows: self.y..self.y + self.h }
+        } else if from.open_row == self.y {
+            AtlasPart { columns: from.open_x..self.x.min(self.size), rows: self.y..self.y + self.h }
         } else {
-            AtlasPart { columns: 0..self.size, rows: sent.open_row..self.y + self.h }
+            AtlasPart { columns: 0..self.size, rows: from.open_row..self.y + self.h }
         };
-        (part, AtlasSent { version, atlas_id, open_row: self.y, open_x: self.x })
+        (part, AtlasSent { version, page_id, open_row: self.y, open_x: self.x })
+    }
+}
+
+/// One page of an atlas: `side` x `side` texels, shelf-packed.
+struct AtlasPage {
+    texels: Vec<u8>,
+    shelf: Shelf,
+    /// A number no other page of this process has: new when the page is
+    /// made and each time it is emptied, since any texel may differ then.
+    id: u64,
+    /// New each time a slot is packed into the page.
+    version: u64,
+    /// `TextEngine::frame` when a text last used a glyph of the page.
+    used_in_frame: u64,
+}
+
+impl AtlasPage {
+    fn new(side: u32, texel_bytes: u32, frame: u64) -> AtlasPage {
+        AtlasPage { texels: vec![0; (side * side * texel_bytes) as usize], shelf: Shelf::new(side), id: next_atlas_version(), version: next_atlas_version(), used_in_frame: frame }
+    }
+
+    /// Clears every texel and packs from the top left again.
+    fn empty(&mut self, frame: u64) {
+        self.texels.fill(0);
+        self.shelf = Shelf::new(self.shelf.size);
+        self.id = next_atlas_version();
+        self.version = next_atlas_version();
+        self.used_in_frame = frame;
+    }
+}
+
+/// What a pack did to its atlas's pages besides packing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PageChange {
+    None,
+    /// The slot is on a new page.
+    Added,
+    /// The slot is on a page that held other glyphs, emptied for it.
+    Emptied,
+}
+
+/// Where `Atlas::pack` put a slot: its page and its top left corner.
+struct Packed {
+    page: usize,
+    x: u32,
+    y: u32,
+    change: PageChange,
+}
+
+/// The bit of page `page` in a set of pages (`KeptShape::letter_pages`).
+/// Page 63 and every page after it share the last bit.
+fn page_bit(page: u32) -> u64 {
+    1u64 << page.min(63)
+}
+
+/// One atlas of a text engine, the letters' (8-bit coverage) or the
+/// emoji's (straight RGBA), in pages of one size.
+///
+/// Needed as pages so a full atlas never doubles: a glyph that does not
+/// fit the page being filled starts a new page, and the glyphs on the
+/// pages before stay where they are. No glyph is drawn again, no text is
+/// shaped again, and a renderer sends only the new page's part.
+///
+/// A renderer holds a texture per page: it makes one the first time a
+/// quad names the page (`GlyphQuad::page`), and sends each page's new
+/// part once a frame (`part_to_send`).
+pub struct Atlas {
+    side: u32,
+    texel_bytes: u32,
+    pages: Vec<AtlasPage>,
+    /// The page slots are packed into.
+    filling: usize,
+}
+
+impl Atlas {
+    /// An atlas of no page yet: the first glyph makes one.
+    fn new(side: u32, texel_bytes: u32) -> Atlas {
+        Atlas { side, texel_bytes, pages: Vec::new(), filling: 0 }
+    }
+
+    /// The side of every page, in texels.
+    pub fn side(&self) -> u32 {
+        self.side
+    }
+
+    /// Bytes a texel: 1 for the letters' coverage, 4 for the emoji's
+    /// RGBA.
+    pub fn texel_bytes(&self) -> u32 {
+        self.texel_bytes
+    }
+
+    /// How many pages the atlas has: 0 until its first glyph.
+    pub fn page_count(&self) -> usize {
+        self.pages.len()
+    }
+
+    /// The texels of page `index`: rows from the top, `side` texels each.
+    /// The texel at column `x` of row `y` starts at byte
+    /// `(y * side + x) * texel_bytes`.
+    pub fn page(&self, index: usize) -> &[u8] {
+        &self.pages[index].texels
+    }
+
+    /// The part of page `index` that a renderer at `sent` has not sent to
+    /// its GPU. A renderer calls it once a frame for each page it holds a
+    /// texture of, after the frame's texts are shaped, and writes that
+    /// rectangle of `page(index)` into the texture: all the frame's new
+    /// glyphs on that page in one write.
+    ///
+    /// Needed because a frame that draws one new letter otherwise sends a
+    /// whole page. Each renderer keeps its own `AtlasSent` per page, so
+    /// several renderers over one engine each get the part they lack.
+    ///
+    /// Returns the part, and what the renderer keeps as sent once it
+    /// wrote it. An empty part when nothing was packed since `sent`. What
+    /// the page holds so far for a new texture (`AtlasSent::default()`).
+    /// The whole page for a texture that holds another page: another
+    /// engine's, or this one before it was emptied.
+    pub fn part_to_send(&self, index: usize, sent: AtlasSent) -> (AtlasPart, AtlasSent) {
+        let page: &AtlasPage = &self.pages[index];
+        page.shelf.part_to_send(page.id, page.version, sent)
+    }
+
+    /// A place for a `w` x `h` slot: on the page being filled, else on a
+    /// new page, and past `ATLAS_PAGES_KEPT` pages on the page used
+    /// longest ago, emptied. A page a text of frame `frame` used is never
+    /// emptied: then a new page is made.
+    ///
+    /// Panics on a slot larger than a page; `ATLAS_GLYPH_MAX_PX` keeps
+    /// every glyph far smaller.
+    fn pack(&mut self, w: u32, h: u32, frame: u64) -> Packed {
+        if let Some(page) = self.pages.get_mut(self.filling) {
+            if let Some((x, y)) = page.shelf.pack(w, h) {
+                page.version = next_atlas_version();
+                page.used_in_frame = frame;
+                return Packed { page: self.filling, x, y, change: PageChange::None };
+            }
+        }
+        let unused: Option<usize> = if self.pages.len() < ATLAS_PAGES_KEPT { None } else { self.pages.iter().enumerate().filter(|(_, page)| page.used_in_frame < frame).min_by_key(|(_, page)| page.used_in_frame).map(|(index, _)| index) };
+        let change: PageChange = match unused {
+            Some(index) => {
+                self.pages[index].empty(frame);
+                self.filling = index;
+                PageChange::Emptied
+            }
+            None => {
+                self.pages.push(AtlasPage::new(self.side, self.texel_bytes, frame));
+                self.filling = self.pages.len() - 1;
+                PageChange::Added
+            }
+        };
+        let page: &mut AtlasPage = &mut self.pages[self.filling];
+        let (x, y): (u32, u32) = page.shelf.pack(w, h).expect("a slot fits an empty page");
+        page.version = next_atlas_version();
+        Packed { page: self.filling, x, y, change }
+    }
+
+    /// Notes that a text of frame `frame` uses the pages `pages` names
+    /// (`page_bit`): none of them is emptied in that frame.
+    fn note_used(&mut self, pages: u64, frame: u64) {
+        let mut left: u64 = pages;
+        while left != 0 {
+            let index: usize = left.trailing_zeros() as usize;
+            left &= left - 1;
+            // The last bit stands for page 63 and every page after it.
+            let last: usize = if index == 63 { self.pages.len() } else { index + 1 };
+            for page in self.pages.iter_mut().take(last).skip(index) {
+                page.used_in_frame = frame;
+            }
+        }
     }
 }
 
@@ -469,8 +672,8 @@ struct KeptMeasure {
 }
 
 /// A text's shaped quads as the engine keeps them, the pen at the
-/// origin. Their uvs are into the atlases as they are now: a grow drops
-/// every kept shape.
+/// origin. Their uvs are into atlas pages: a page emptied for new glyphs
+/// drops every kept shape that names it.
 #[derive(Clone, Debug)]
 struct KeptShape {
     quads: Vec<GlyphQuad>,
@@ -480,10 +683,16 @@ struct KeptShape {
     /// glyphs each time it is asked for (`note_big_glyphs_shaped`), and
     /// is dropped with the first of them that is dropped.
     has_big_glyph: bool,
+    /// The pages of the letters' atlas its quads are on (`page_bit`).
+    /// The shape tells them each time it is asked for, so no page it
+    /// shows is emptied in that frame.
+    letter_pages: u64,
+    /// `letter_pages`, of the emoji atlas.
+    emoji_pages: u64,
 }
 
 /// Marks the big glyphs `quads` name as shaped now: they are the last
-/// that `TextEngine::drop_unused_big_glyphs` drops.
+/// that `TextEngine::start_frame` drops.
 ///
 /// A function over the two fields, not a method, so a caller can hold a
 /// kept shape of the same engine while it calls.
@@ -501,8 +710,7 @@ fn note_big_glyphs_shaped(big_glyphs: &mut HashMap<BigGlyphId, KeptBigGlyph>, cl
 ///
 /// Needed to see where a slow frame's text time goes, and whether a text
 /// is shaped more than once. A text is shaped when it is measured and
-/// again when it is drawn, and every text again when a letters' texture
-/// grew: each shows here as a count.
+/// again when it is drawn: each shows here as a count.
 ///
 /// A step is counted only when it ran. A text the engine has measured or
 /// shaped before costs a lookup and counts nothing, so a frame that
@@ -513,19 +721,23 @@ pub struct TextWork {
     /// a text, size, width and font not measured before.
     pub shapes_to_measure: u32,
     pub seconds_shaping_to_measure: f32,
-    /// Texts shaped to draw them (`shape`, `shape_into`): one a text not
-    /// shaped before, and one more each time a letters' texture grew
-    /// while it was shaped.
+    /// Texts shaped to draw them (`shape`, `shape_into`): each a text not
+    /// shaped before, or one whose kept shape went with its page or with
+    /// a big glyph.
     pub shapes_to_draw: u32,
     /// Time of those shapes, without the letters they drew.
     pub seconds_shaping_to_draw: f32,
-    /// Letters drawn into a letters' texture: at first sight, and again
-    /// after the texture grew.
+    /// Letters drawn into an atlas or as a big glyph: at first sight, and
+    /// again after their page was emptied or their big glyph dropped.
     pub letters_drawn: u32,
     pub seconds_drawing_letters: f32,
-    /// Times a letters' texture filled and doubled. Each drops every
-    /// kept shape and every letter's place: all are made again.
-    pub texture_grows: u32,
+    /// Atlas pages made (`ATLAS_PAGE_SIDE`, `COLOR_ATLAS_PAGE_SIDE`): a
+    /// renderer makes a texture for each.
+    pub pages_added: u32,
+    /// Atlas pages emptied for new glyphs (`ATLAS_PAGES_KEPT`). Each
+    /// drops the kept shapes and the glyphs on that page: a renderer
+    /// sends the page whole again.
+    pub pages_emptied: u32,
 }
 
 pub struct TextEngine {
@@ -534,20 +746,13 @@ pub struct TextEngine {
     /// path key (as written in the .gogo) → face.
     faces: HashMap<String, Face>,
     default_face: Option<Face>,
-    atlas: Vec<u8>,
-    atlas_size: u32,
-    /// A number no other atlas of this process has; a new one when the
-    /// atlas grows, since every row of the grown one differs.
-    atlas_id: u64,
-    shelf: Shelf,
+    /// The letters' atlas: 8-bit coverage.
+    letters: Atlas,
     /// (glyph, faux bold) → its coverage-atlas slot; a bold glyph is its
     /// own raster.
     slots: HashMap<(CacheKey, bool), Option<Slot>>,
-    /// The emoji atlas: straight RGBA, `color_shelf.size` square.
-    color_atlas: Vec<u8>,
-    /// `atlas_id`, for the emoji atlas.
-    color_atlas_id: u64,
-    color_shelf: Shelf,
+    /// The emoji atlas: straight RGBA.
+    emoji: Atlas,
     /// A swash-painted color glyph → its color-atlas slot.
     color_slots: HashMap<CacheKey, Option<Slot>>,
     /// A host-painted cluster (its text, the size's bits) → its
@@ -558,26 +763,13 @@ pub struct TextEngine {
     color_faces: HashMap<fontdb::ID, bool>,
     /// The host's emoji painter, when it has one (Android).
     host_color_glyph_painter: Option<HostColorGlyphPainter>,
-    /// `atlas_version`, for the emoji atlas. 0 until the first emoji
-    /// packs, where a renderer's `AtlasSent` starts too: a start without
-    /// an emoji sends no emoji atlas.
-    color_atlas_version: u64,
     /// The OS font scan ran (once per engine).
     system_loaded: bool,
     /// Family names the scan found, sorted, each once.
     system_families: Vec<String>,
-    /// A number that is new each time the letters' atlas changes: a
-    /// glyph packed into it, or the atlas grown. No two engines of a
-    /// process have the same one.
-    ///
-    /// Needed so each renderer knows by itself whether the atlas it
-    /// uploaded is still this one (`atlas_part_to_send` compares it with
-    /// the version that renderer sent). With one flag that the first
-    /// reader cleared, a second renderer over the same engine drew every
-    /// plate and picture and no letters.
-    atlas_version: u64,
-    /// Set when the atlas grew: every uv handed out before is stale.
-    pub generation: u32,
+    /// Goes up by one at each `start_frame`. A page a text used in this
+    /// frame (`AtlasPage::used_in_frame`) is not emptied.
+    frame: u64,
     /// Keyed by a hash of (text, size, width, font) — no String is built
     /// to look a measure up (a page lays out every animated frame). The
     /// engine serves every page, and their `StrId`s overlap, so the text
@@ -594,8 +786,8 @@ pub struct TextEngine {
     /// which big glyphs were last shaped is the order of their
     /// `shaped_at`.
     big_glyph_clock: u64,
-    /// `big_glyph_clock` at the last `drop_unused_big_glyphs`: a big
-    /// glyph shaped later was shaped since that call.
+    /// `big_glyph_clock` at the last `start_frame`: a big glyph shaped
+    /// later was shaped since that call.
     big_glyphs_checked_at: u64,
     /// What `take_work` returns.
     work: TextWork,
@@ -647,32 +839,21 @@ impl TextEngine {
             }
             faces.insert(key, f);
         }
-        let atlas_size = 1024;
         TextEngine {
             fs,
             cache: SwashCache::new(),
             faces,
             default_face,
-            atlas: vec![0; (atlas_size * atlas_size) as usize],
-            atlas_size,
-            atlas_id: next_atlas_version(),
-            shelf: Shelf::new(atlas_size),
+            letters: Atlas::new(ATLAS_PAGE_SIDE, 1),
             slots: HashMap::new(),
-            color_atlas: vec![0; (COLOR_ATLAS_START * COLOR_ATLAS_START * 4) as usize],
-            color_atlas_id: next_atlas_version(),
-            color_shelf: Shelf::new(COLOR_ATLAS_START),
+            emoji: Atlas::new(COLOR_ATLAS_PAGE_SIDE, 4),
             color_slots: HashMap::new(),
             host_slots: HashMap::new(),
             color_faces: HashMap::new(),
             host_color_glyph_painter: None,
-            // 0, where a renderer starts too: nothing points into it
-            // until the first emoji packs, so a boot without one uploads
-            // nothing.
-            color_atlas_version: 0,
             system_loaded: false,
             system_families: Vec::new(),
-            atlas_version: next_atlas_version(),
-            generation: 0,
+            frame: 0,
             measure_cache: HashMap::new(),
             shape_cache: HashMap::new(),
             big_glyphs: HashMap::new(),
@@ -859,13 +1040,14 @@ impl TextEngine {
         self.shape(ch, TextPx::one_line(font_size), None, font, 0.0, 0.0, 0.0, 0).into_iter().find(|g| g.w > 0.0 && g.h > 0.0)
     }
 
-    pub fn atlas(&self) -> (&[u8], u32) {
-        (&self.atlas, self.atlas_size)
+    /// The letters' atlas: 8-bit coverage, in pages.
+    pub fn atlas(&self) -> &Atlas {
+        &self.letters
     }
 
-    /// The emoji atlas: straight RGBA rows, `side` square.
-    pub fn color_atlas(&self) -> (&[u8], u32) {
-        (&self.color_atlas, self.color_shelf.size)
+    /// The emoji atlas: straight RGBA, in pages.
+    pub fn color_atlas(&self) -> &Atlas {
+        &self.emoji
     }
 
     /// Installs (or removes) the host's emoji painter. A load-time call:
@@ -888,33 +1070,37 @@ impl TextEngine {
     /// Needed by a renderer, to make the glyph's texture the first time
     /// it draws it, and to free that texture later: see `BigGlyph`.
     ///
-    /// Returns `None` once the engine dropped the glyph
-    /// (`drop_unused_big_glyphs`), and for another engine's id. An id
-    /// out of a quad shaped since the last `drop_unused_big_glyphs`
-    /// always has its raster.
+    /// Returns `None` once the engine dropped the glyph (`start_frame`),
+    /// and for another engine's id. An id out of a quad shaped since the
+    /// last `start_frame` always has its raster.
     pub fn big_glyph(&self, id: BigGlyphId) -> Option<BigGlyph<'_>> {
         self.big_glyphs.get(&id).map(|kept| BigGlyph { width: kept.width, height: kept.height, is_color: kept.is_color, texels: &kept.texels })
     }
 
+    /// Starts a frame. A renderer calls it once a frame, before it shapes
+    /// the frame's texts.
+    ///
     /// Drops big glyphs while their texels hold more than
     /// `BIG_GLYPH_KEPT_BYTES`: the one shaped longest ago first, and
-    /// never one a text shaped since the call before this one. A
-    /// renderer calls it once a frame, before it shapes the frame's
-    /// texts.
+    /// never one a text shaped since the call before this one. From the
+    /// call on, an atlas page a text of the frame uses is not emptied
+    /// for new glyphs (`ATLAS_PAGES_KEPT`).
     ///
-    /// Needed because the engine cannot tell by itself which big glyphs
-    /// are still shown, and a box resized by a drag leaves one behind
-    /// per frame (`BIG_GLYPH_KEPT_BYTES`). Between two calls a renderer
+    /// Needed because the engine cannot tell by itself what is still
+    /// shown, and a box resized by a drag leaves a big glyph behind per
+    /// frame (`BIG_GLYPH_KEPT_BYTES`). Between two calls a renderer
     /// shapes all it shows, so what the last frame showed is never
     /// dropped, however much it is: a screen of big letters does not
     /// have them drawn again every frame.
     ///
-    /// WARNING: without this call no big glyph is ever dropped.
+    /// WARNING: without this call no big glyph is ever dropped and no
+    /// page is emptied: an atlas whose pages are full gets more.
     ///
     /// A dropped glyph's id is dead: the kept shapes that name it are
     /// dropped with it, and the glyph is drawn again, under a new id,
     /// when a text next needs it.
-    pub fn drop_unused_big_glyphs(&mut self) {
+    pub fn start_frame(&mut self) {
+        self.frame += 1;
         let shaped_since: u64 = std::mem::replace(&mut self.big_glyphs_checked_at, self.big_glyph_clock);
         let mut is_any_dropped: bool = false;
         while self.big_glyph_bytes > BIG_GLYPH_KEPT_BYTES {
@@ -970,33 +1156,6 @@ impl TextEngine {
         self.fs = FontSystem::new_with_locale_and_db(bcp47.to_string(), db);
         self.measure_cache.clear();
         self.shape_cache.clear();
-    }
-
-    /// The part of the letters' atlas that a renderer at `sent` has not
-    /// sent to its GPU. A renderer calls it once a frame, after the
-    /// frame's texts are shaped, and writes that rectangle of `atlas`
-    /// into its texture: all the frame's new letters in one write.
-    ///
-    /// Needed because a frame that draws one new letter otherwise sends
-    /// the whole atlas: the largest part of such a frame's text time.
-    /// Each renderer keeps its own `AtlasSent`, so several renderers
-    /// over one engine each get the part they lack.
-    ///
-    /// Returns the part, and what the renderer keeps as sent once it
-    /// wrote it. An empty part when nothing was packed since `sent`. The
-    /// whole atlas when it is not the one `sent` names: nothing sent
-    /// yet, another engine's, or this one after it grew. The texel at
-    /// column `x` of row `y` is the byte `y * size + x` of `atlas`.
-    pub fn atlas_part_to_send(&self, sent: AtlasSent) -> (AtlasPart, AtlasSent) {
-        self.shelf.part_to_send(self.atlas_id, self.atlas_version, sent)
-    }
-
-    /// `atlas_part_to_send`, for the emoji atlas (4 bytes a texel).
-    ///
-    /// Returns an empty part until the first emoji packs: a start
-    /// without an emoji sends no emoji atlas.
-    pub fn color_atlas_part_to_send(&self, sent: AtlasSent) -> (AtlasPart, AtlasSent) {
-        self.color_shelf.part_to_send(self.color_atlas_id, self.color_atlas_version, sent)
     }
 
     /// The face `font` names (its style suffix ignored), else the default.
@@ -1144,6 +1303,8 @@ impl TextEngine {
             if kept.has_big_glyph {
                 note_big_glyphs_shaped(&mut self.big_glyphs, &mut self.big_glyph_clock, &kept.quads);
             }
+            self.letters.note_used(kept.letter_pages, self.frame);
+            self.emoji.note_used(kept.emoji_pages, self.frame);
             return;
         }
         let kept: KeptShape = self.shape_uncached(text, size, max_width, font, box_w, halign);
@@ -1154,36 +1315,27 @@ impl TextEngine {
         self.shape_cache.insert(key, kept);
     }
 
-    /// Shapes `text` into quads with the pen at the origin, every uv into
-    /// the atlas as it is when the run ends.
-    ///
-    /// Needed because a glyph packed past the atlas's edge grows the
-    /// atlas (`pack` → `grow`), and every uv handed out before, this
-    /// run's earlier glyphs included, is into the atlas that was. A run
-    /// kept that way shows without its first letters ("ve changes?" for
-    /// "Save changes?") and stays that way, because it goes into the
-    /// shape cache with the stale uvs.
-    ///
-    /// The run is shaped again against the grown atlas, in the same
-    /// buffer. A run that grows nothing (the usual one) is shaped once.
+    /// Shapes `text` into quads with the pen at the origin, and notes
+    /// which atlas pages and big glyphs they use.
     fn shape_uncached(&mut self, text: &str, size: TextPx, max_width: Option<f32>, font: Option<&str>, box_w: f32, halign: u8) -> KeptShape {
         let mut out: Vec<GlyphQuad> = Vec::new();
-        loop {
-            let generation: u32 = self.generation;
-            out.clear();
-            let is_settled: bool = self.shape_pass(text, size, max_width, font, box_w, halign, &mut out);
-            if self.generation == generation {
-                // A big glyph this run found drawn is shaped now, like
-                // one it drew.
-                note_big_glyphs_shaped(&mut self.big_glyphs, &mut self.big_glyph_clock, &out);
-                let has_big_glyph: bool = out.iter().any(|quad| quad.big_glyph.is_some());
-                return KeptShape { quads: out, is_settled, has_big_glyph };
+        let is_settled: bool = self.shape_pass(text, size, max_width, font, box_w, halign, &mut out);
+        // A big glyph this run found drawn is shaped now, like one it
+        // drew.
+        note_big_glyphs_shaped(&mut self.big_glyphs, &mut self.big_glyph_clock, &out);
+        let has_big_glyph: bool = out.iter().any(|quad| quad.big_glyph.is_some());
+        let (mut letter_pages, mut emoji_pages): (u64, u64) = (0, 0);
+        for quad in out.iter().filter(|quad| quad.big_glyph.is_none()) {
+            if quad.color {
+                emoji_pages |= page_bit(quad.page);
+            } else {
+                letter_pages |= page_bit(quad.page);
             }
         }
+        KeptShape { quads: out, is_settled, has_big_glyph, letter_pages, emoji_pages }
     }
 
-    /// One shaping pass into `out`; its uvs are good only if neither atlas
-    /// grew during it (`shape_uncached` checks and runs it again).
+    /// One shaping pass into `out`.
     ///
     /// Returns whether the text is settled (`is_settled`).
     fn shape_pass(&mut self, text: &str, size: TextPx, max_width: Option<f32>, font: Option<&str>, box_w: f32, halign: u8, out: &mut Vec<GlyphQuad>) -> bool {
@@ -1212,6 +1364,12 @@ impl TextEngine {
                 if slot.width == 0 || slot.height == 0 {
                     continue;
                 }
+                // Before the next glyph is packed: a glyph that empties a
+                // page for itself never takes this one's.
+                if slot.big_glyph.is_none() {
+                    let atlas: &mut Atlas = if slot.color { &mut self.emoji } else { &mut self.letters };
+                    atlas.note_used(page_bit(slot.page), self.frame);
+                }
                 out.push(GlyphQuad {
                     x: (x + shift).round() + g.x as f32 + slot.left as f32,
                     // cosmic-text puts half of the line gap above each
@@ -1222,6 +1380,7 @@ impl TextEngine {
                     h: slot.height as f32,
                     uv: [slot.u0, slot.v0, slot.u1, slot.v1],
                     color: slot.color,
+                    page: slot.page,
                     big_glyph: slot.big_glyph,
                 });
             }
@@ -1231,8 +1390,7 @@ impl TextEngine {
 
     /// The slot of one glyph, rasterizing it on first sight. An emoji (a
     /// glyph of a color face) goes to the host painter when there is one,
-    /// else to swash; a letter to swash. A raster that grew its atlas is
-    /// packed again into the grown one (`None` from the first try).
+    /// else to swash; a letter to swash.
     fn slot(&mut self, key: CacheKey, bold: bool, font_id: fontdb::ID, cluster: &str) -> Option<Slot> {
         if self.host_color_glyph_painter.is_some() && self.is_color_face(font_id) {
             let host_key = (cluster.to_string(), key.font_size_bits);
@@ -1251,15 +1409,8 @@ impl TextEngine {
         if let Some(s) = self.color_slots.get(&key) {
             return *s;
         }
-        let generation = self.generation;
         let started: Instant = Instant::now();
         let slot = self.rasterize(key, bold);
-        let slot = if slot.is_none() && self.generation != generation {
-            // An atlas grew under this glyph: pack it again into the new one.
-            self.rasterize(key, bold)
-        } else {
-            slot
-        };
         self.work.letters_drawn += 1;
         self.work.seconds_drawing_letters += started.elapsed().as_secs_f32();
         if slot.is_some_and(|s| s.color) {
@@ -1271,8 +1422,7 @@ impl TextEngine {
     }
 
     /// The host's raster of `cluster` packed into the color atlas; `None`
-    /// = the host drew nothing (the caller falls back to swash). A pack
-    /// that grows the atlas packs again into the grown one.
+    /// = the host drew nothing (the caller falls back to swash).
     fn host_slot(&mut self, cluster: &str, font_size_bits: u32) -> Option<Option<Slot>> {
         let painted: HostColorGlyph = (self.host_color_glyph_painter.as_mut()?)(cluster, f32::from_bits(font_size_bits))?;
         if painted.width == 0 || painted.height == 0 || painted.rgba.len() != (painted.width * painted.height * 4) as usize {
@@ -1281,8 +1431,7 @@ impl TextEngine {
         if painted.width.max(painted.height) > ATLAS_GLYPH_MAX_PX {
             return Some(Some(self.keep_big_glyph(&painted.rgba, painted.width, painted.height, painted.left, painted.top, true)));
         }
-        let first = self.pack_color(&painted.rgba, painted.width, painted.height, painted.left, painted.top, false);
-        Some(first.or_else(|| self.pack_color(&painted.rgba, painted.width, painted.height, painted.left, painted.top, false)))
+        Some(Some(self.pack_color(&painted.rgba, painted.width, painted.height, painted.left, painted.top, false)))
     }
 
     fn rasterize(&mut self, key: CacheKey, bold: bool) -> Option<Slot> {
@@ -1302,7 +1451,7 @@ impl TextEngine {
                     self.cache.image_cache.remove(&key);
                     return Some(self.keep_big_glyph(&straight, w, h, left, top, true));
                 }
-                return self.pack_color(&img.data, w, h, left, top, true);
+                return Some(self.pack_color(&img.data, w, h, left, top, true));
             }
             if img.content != SwashContent::Mask {
                 return None;
@@ -1325,15 +1474,16 @@ impl TextEngine {
                 self.cache.image_cache.remove(&key);
                 return Some(self.keep_big_glyph(&data, w, h, left, top, false));
             }
-            let (px, py) = self.pack(w + 1, h + 1)?;
+            let (page, px, py): (usize, u32, u32) = self.pack(false, w + 1, h + 1);
+            let side: u32 = self.letters.side;
+            let texels: &mut [u8] = &mut self.letters.pages[page].texels;
             for row in 0..h {
                 let src = &data[(row * w) as usize..((row + 1) * w) as usize];
-                let dst = ((py + row) * self.atlas_size + px) as usize;
-                self.atlas[dst..dst + w as usize].copy_from_slice(src);
+                let dst = ((py + row) * side + px) as usize;
+                texels[dst..dst + w as usize].copy_from_slice(src);
             }
-            self.atlas_version = next_atlas_version();
-            let s = self.atlas_size as f32;
-            Some(Slot { u0: px as f32 / s, v0: py as f32 / s, u1: (px + w) as f32 / s, v1: (py + h) as f32 / s, left, top, width: w, height: h, color: false, big_glyph: None })
+            let s = side as f32;
+            Some(Slot { u0: px as f32 / s, v0: py as f32 / s, u1: (px + w) as f32 / s, v1: (py + h) as f32 / s, left, top, width: w, height: h, color: false, page: page as u32, big_glyph: None })
         });
         slot
     }
@@ -1363,77 +1513,58 @@ impl TextEngine {
         self.big_glyph_bytes += bordered.len();
         self.big_glyphs.insert(id, KeptBigGlyph { width, height, is_color, texels: bordered, shaped_at: self.big_glyph_clock });
         let (width, height): (f32, f32) = (width as f32, height as f32);
-        Slot { u0: 1.0 / width, v0: 1.0 / height, u1: (w + 1) as f32 / width, v1: (h + 1) as f32 / height, left, top, width: w, height: h, color: is_color, big_glyph: Some(id) }
+        Slot { u0: 1.0 / width, v0: 1.0 / height, u1: (w + 1) as f32 / width, v1: (h + 1) as f32 / height, left, top, width: w, height: h, color: is_color, page: 0, big_glyph: Some(id) }
     }
 
     /// `rgba` (`w` x `h`) into the color atlas, which holds STRAIGHT
     /// color (the renderer's image quads premultiply on sample):
-    /// `premultiplied` rows (swash's) are divided out on the way in. `None`
-    /// after a grow (the caller packs again).
-    fn pack_color(&mut self, rgba: &[u8], w: u32, h: u32, left: i32, top: i32, premultiplied: bool) -> Option<Slot> {
-        let Some((px, py)) = self.color_shelf.pack(w + 1, h + 1) else {
-            self.grow_color();
-            return None;
-        };
-        let side = self.color_shelf.size;
+    /// `premultiplied` rows (swash's) are divided out on the way in.
+    fn pack_color(&mut self, rgba: &[u8], w: u32, h: u32, left: i32, top: i32, premultiplied: bool) -> Slot {
+        let (page, px, py): (usize, u32, u32) = self.pack(true, w + 1, h + 1);
+        let side: u32 = self.emoji.side;
+        let texels: &mut [u8] = &mut self.emoji.pages[page].texels;
         for row in 0..h {
             let src = &rgba[(row * w * 4) as usize..((row + 1) * w * 4) as usize];
             let dst = (((py + row) * side + px) * 4) as usize;
-            let out = &mut self.color_atlas[dst..dst + (w * 4) as usize];
+            let out = &mut texels[dst..dst + (w * 4) as usize];
             out.copy_from_slice(src);
             if premultiplied {
                 straight_from_premultiplied(out);
             }
         }
-        self.color_atlas_version = next_atlas_version();
         let s = side as f32;
-        Some(Slot { u0: px as f32 / s, v0: py as f32 / s, u1: (px + w) as f32 / s, v1: (py + h) as f32 / s, left, top, width: w, height: h, color: true, big_glyph: None })
+        Slot { u0: px as f32 / s, v0: py as f32 / s, u1: (px + w) as f32 / s, v1: (py + h) as f32 / s, left, top, width: w, height: h, color: true, page: page as u32, big_glyph: None }
     }
 
-    /// Shelf packing into the coverage atlas; `None` after a grow (the
-    /// caller retries via `slot`).
-    fn pack(&mut self, w: u32, h: u32) -> Option<(u32, u32)> {
-        let pos = self.shelf.pack(w, h);
-        if pos.is_none() {
-            self.grow();
-        }
-        pos
-    }
-
-    /// The letters' atlas doubles its side and starts empty: every slot
-    /// in it and every kept shape is dropped, and a uv handed out before
-    /// is stale (`generation`).
+    /// A place for a `w` x `h` slot in the letters' atlas, or in the
+    /// emoji atlas when `is_color` (`Atlas::pack`).
     ///
-    /// Needed because the atlas fills up, a few times in a program's
-    /// life. A glyph on screen is drawn again when its text is next
-    /// shaped. A big glyph is not in the atlas: its slot stays, and it
-    /// is not drawn again.
-    fn grow(&mut self) {
-        self.work.texture_grows += 1;
-        self.shape_cache.clear();
-        self.atlas_size *= 2;
-        self.atlas = vec![0; (self.atlas_size * self.atlas_size) as usize];
-        self.shelf = Shelf::new(self.atlas_size);
-        self.slots.retain(|_, slot| slot.is_some_and(|s| s.big_glyph.is_some()));
-        self.generation += 1;
-        self.atlas_version = next_atlas_version();
-        self.atlas_id = next_atlas_version();
-    }
-
-    /// The color atlas doubles: every emoji slot in it is stale, the
-    /// shape cache with them (`generation`, the same stale-uv law as the
-    /// coverage atlas's `grow`). A big emoji's slot stays.
-    fn grow_color(&mut self) {
-        self.work.texture_grows += 1;
-        self.shape_cache.clear();
-        let side: u32 = self.color_shelf.size * 2;
-        self.color_atlas = vec![0; (side * side * 4) as usize];
-        self.color_shelf = Shelf::new(side);
-        self.color_slots.retain(|_, slot| slot.is_some_and(|s| s.big_glyph.is_some()));
-        self.host_slots.retain(|_, slot| slot.is_some_and(|s| s.big_glyph.is_some()));
-        self.generation += 1;
-        self.color_atlas_version = next_atlas_version();
-        self.color_atlas_id = next_atlas_version();
+    /// Needed in one place because a page emptied for the slot takes the
+    /// slots of its glyphs and every kept shape that names it along: a
+    /// text that showed them is shaped again, and its letters drawn again
+    /// on another page, when it is next shown.
+    ///
+    /// Returns the slot's page and its top left corner.
+    fn pack(&mut self, is_color: bool, w: u32, h: u32) -> (usize, u32, u32) {
+        let atlas: &mut Atlas = if is_color { &mut self.emoji } else { &mut self.letters };
+        let packed: Packed = atlas.pack(w, h, self.frame);
+        match packed.change {
+            PageChange::None => {}
+            PageChange::Added => self.work.pages_added += 1,
+            PageChange::Emptied => {
+                self.work.pages_emptied += 1;
+                let bit: u64 = page_bit(packed.page as u32);
+                if is_color {
+                    self.color_slots.retain(|_, slot| !slot.is_some_and(|s| s.is_on_page(packed.page)));
+                    self.host_slots.retain(|_, slot| !slot.is_some_and(|s| s.is_on_page(packed.page)));
+                    self.shape_cache.retain(|_, kept| kept.emoji_pages & bit == 0);
+                } else {
+                    self.slots.retain(|_, slot| !slot.is_some_and(|s| s.is_on_page(packed.page)));
+                    self.shape_cache.retain(|_, kept| kept.letter_pages & bit == 0);
+                }
+            }
+        }
+        (packed.page, packed.x, packed.y)
     }
 
     /// Rasterizes every glyph of `chars` at `font_size`.

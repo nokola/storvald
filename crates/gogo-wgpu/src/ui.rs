@@ -6,7 +6,8 @@
 //!
 //! The page's rects are epx and are scaled to device pixels here
 //! (`gogo-ui` never sees a device pixel). Text is shaped by `gogo-text`
-//! into glyph quads over its coverage atlas (texture 0); images are RGBA
+//! into glyph quads over the pages of its atlases (a texture per page,
+//! `UiRenderer::page_slot`); images are RGBA
 //! textures the host uploads by `ImageKey` (`write_image_texture_only`).
 //! A gradient is ONE quad whose stops sit in a row of the gradient tables
 //! (`GradientTable`); a `RotatePush` turns every quad until its pop about
@@ -24,7 +25,7 @@ use gogo_ui::layout::Rect;
 use gogo_ui::locale::Locale;
 use gogo_ui::page::{NO_STR, NodeId, Page};
 use gogo_ui::ImageKey;
-use gogo_text::{AtlasPart, AtlasSent, BigGlyph, BigGlyphId, GlyphQuad, TextEngine, TextPx};
+use gogo_text::{Atlas, AtlasPart, AtlasSent, BigGlyph, BigGlyphId, GlyphQuad, TextEngine, TextPx};
 
 /// A frame's draw lists, in draw order, each with the page that owns its
 /// strings. A slice, an array or a `Vec` of `(draws, page)` pairs is one.
@@ -102,14 +103,24 @@ struct Screen {
     _pad: [f32; 2],
 }
 
-/// Texture slot: 0 = the glyph coverage atlas, 1 = the emoji color atlas,
-/// 2.. = images as they were first written, and the text engine's big
-/// glyphs as they were first drawn.
+/// Texture slot: 0 = the first page of the glyph coverage atlas, 1 = the
+/// first page of the emoji color atlas, 2.. = images as they were first
+/// written, the atlases' later pages, and the text engine's big glyphs,
+/// each as it was first drawn.
 type TexId = u32;
 const ATLAS: TexId = 0;
-/// The text engine's color atlas (emoji): straight RGBA, drawn as image
-/// quads with a white tint.
+/// The first page of the text engine's color atlas (emoji): straight
+/// RGBA, drawn as image quads with a white tint.
 const COLOR_ATLAS: TexId = 1;
+
+/// One page of a text engine's glyph atlas, as a renderer holds it.
+struct AtlasPageTexture {
+    /// The page's texture slot.
+    slot: TexId,
+    texture: wgpu::Texture,
+    /// What of the page the texture holds.
+    sent: AtlasSent,
+}
 
 struct Batch {
     first: u32,
@@ -156,7 +167,7 @@ struct Texture {
     height: u32,
     /// The texture itself, so a same-size re-upload writes in place
     /// (`write_image_texture_only`); None for the externals' entries and
-    /// the atlas.
+    /// the atlas pages (`AtlasPageTexture` holds theirs).
     texture: Option<wgpu::Texture>,
 }
 
@@ -287,21 +298,18 @@ pub struct UiRenderer {
     /// a Surface allocates nothing once warm.
     surface_draws: Vec<Draw>,
     screen: (u32, u32),
-    /// Slot 0 is the atlas (rebuilt when the engine's atlas changes size).
+    /// Slots 0 and 1 are the first page of the letters' and of the emoji
+    /// atlas (a 1x1 blank until the engine's first glyph of each).
     textures: Vec<Texture>,
     /// Slots `release_image` emptied (they hold a 1x1 blank), taken again
     /// by the next picture so a page that comes and goes does not grow
     /// the table.
     free_slots: Vec<TexId>,
-    atlas_texture: Option<wgpu::Texture>,
-    atlas_size: u32,
-    /// What of the engine's letters' atlas is in slot 0's texture.
-    atlas_sent: AtlasSent,
-    /// Slot 1: the engine's emoji atlas (rebuilt when it changes size).
-    color_atlas_texture: Option<wgpu::Texture>,
-    color_atlas_size: u32,
-    /// What of the engine's emoji atlas is in slot 1's texture.
-    color_atlas_sent: AtlasSent,
+    /// The pages of the engine's letters' atlas this renderer has drawn
+    /// from, by page (`GlyphQuad::page`).
+    letter_pages: Vec<AtlasPageTexture>,
+    /// `letter_pages`, of the emoji atlas.
+    emoji_pages: Vec<AtlasPageTexture>,
     /// What `debug_atlas_texels_written` returns.
     atlas_texels_written: u64,
     /// The texture slot of each big glyph of the text engine that this
@@ -459,12 +467,8 @@ impl UiRenderer {
             screen: (1, 1),
             textures: Vec::new(),
             free_slots: Vec::new(),
-            atlas_texture: None,
-            atlas_size: 0,
-            atlas_sent: AtlasSent::default(),
-            color_atlas_texture: None,
-            color_atlas_size: 0,
-            color_atlas_sent: AtlasSent::default(),
+            letter_pages: Vec::new(),
+            emoji_pages: Vec::new(),
             atlas_texels_written: 0,
             big_glyphs: HashMap::new(),
             big_glyphs_to_send: Vec::new(),
@@ -481,14 +485,15 @@ impl UiRenderer {
             culled: 0,
             draw_calls: 0,
         };
-        // Slot 0: a 1×1 white atlas until the text engine uploads one.
-        let (tex, entry) = r.make_texture(device, 1, 1, wgpu::TextureFormat::R8Unorm);
+        // Slot 0: a 1×1 blank until the text engine's first letter makes
+        // the letters' first page (`page_slot`).
+        let (tex, mut entry) = r.make_texture(device, 1, 1, wgpu::TextureFormat::R8Unorm);
+        entry.texture = Some(tex);
         r.textures.push(entry);
-        r.atlas_texture = Some(tex);
-        // Slot 1: the emoji atlas, the same way.
-        let (tex, entry) = r.make_texture(device, 1, 1, wgpu::TextureFormat::Rgba8Unorm);
+        // Slot 1: the emoji atlas's first page, the same way.
+        let (tex, mut entry) = r.make_texture(device, 1, 1, wgpu::TextureFormat::Rgba8Unorm);
+        entry.texture = Some(tex);
         r.textures.push(entry);
-        r.color_atlas_texture = Some(tex);
         r
     }
 
@@ -693,7 +698,7 @@ impl UiRenderer {
     }
 
     /// For tests: how many texture slots this renderer has made so far,
-    /// the two glyph atlases and the slots `release_image` emptied
+    /// the glyph atlases' pages and the slots `release_image` emptied
     /// included.
     ///
     /// Needed so that a test can check that a picture uploaded again, at
@@ -803,8 +808,8 @@ impl UiRenderer {
     ///
     /// Returns `None` when the engine does not keep the glyph. That does
     /// not happen for a quad shaped in this frame: the engine drops big
-    /// glyphs only in `drop_unused_big_glyphs`, which `prepare_pages`
-    /// calls before the walk.
+    /// glyphs only in `start_frame`, which `prepare_pages` calls before
+    /// the walk.
     fn big_glyph_slot(&mut self, device: &wgpu::Device, text: &TextEngine, id: BigGlyphId) -> Option<TexId> {
         if let Some(slot) = self.big_glyphs.get(&id) {
             return Some(*slot);
@@ -842,22 +847,59 @@ impl UiRenderer {
         self.big_glyphs = big_glyphs;
     }
 
+    /// The texture slot of page `page` of `text`'s letters' atlas, or of
+    /// its emoji atlas when `is_color`, with a texture of the page's size
+    /// made in it the first time. `sync_atlas` sends the page's texels
+    /// after the walk.
+    ///
+    /// Needed because the engine adds pages as glyphs fill them, and a
+    /// batch names its texture slot while the frame is walked. The first
+    /// page of each atlas takes slot 0 or 1; later pages take any free
+    /// slot.
+    ///
+    /// A texture made here holds zeros: its first send is what the page
+    /// holds so far (`AtlasSent::default()`), not the whole page.
+    fn page_slot(&mut self, device: &wgpu::Device, text: &TextEngine, is_color: bool, page: u32) -> TexId {
+        let (atlas, format): (&Atlas, wgpu::TextureFormat) = if is_color { (text.color_atlas(), wgpu::TextureFormat::Rgba8Unorm) } else { (text.atlas(), wgpu::TextureFormat::R8Unorm) };
+        loop {
+            let held: usize = if is_color { self.emoji_pages.len() } else { self.letter_pages.len() };
+            if let Some(slot) = (if is_color { &self.emoji_pages } else { &self.letter_pages }).get(page as usize).map(|held| held.slot) {
+                return slot;
+            }
+            let (texture, entry) = self.make_texture(device, atlas.side(), atlas.side(), format);
+            let slot: TexId = match (held, is_color) {
+                (0, false) => {
+                    self.textures[ATLAS as usize] = entry;
+                    ATLAS
+                }
+                (0, true) => {
+                    self.textures[COLOR_ATLAS as usize] = entry;
+                    COLOR_ATLAS
+                }
+                _ => self.take_slot(entry),
+            };
+            let pages: &mut Vec<AtlasPageTexture> = if is_color { &mut self.emoji_pages } else { &mut self.letter_pages };
+            pages.push(AtlasPageTexture { slot, texture, sent: AtlasSent::default() });
+        }
+    }
+
     /// Where one glyph quad draws from: its texture slot, the kind of
     /// quad, and its tint for text of `color`.
     ///
     /// An emoji is an image quad: its own colors, the text's alpha (so a
     /// label that fades out fades its emoji too). A letter is coverage
-    /// tinted by the text color. Either comes from its atlas, or from
-    /// its own texture when it is a big glyph.
+    /// tinted by the text color. Either comes from its page of its
+    /// atlas, or from its own texture when it is a big glyph.
     ///
     /// Returns `None` for a big glyph the engine does not keep
     /// (`big_glyph_slot`): the quad is not drawn.
     fn glyph_source(&mut self, device: &wgpu::Device, text: &TextEngine, glyph: &GlyphQuad, color: [f32; 4]) -> Option<(TexId, f32, [f32; 4])> {
-        let (atlas, kind, tint) = if glyph.color { (COLOR_ATLAS, KIND_IMAGE, [1.0, 1.0, 1.0, color[3]]) } else { (ATLAS, KIND_GLYPH, color) };
-        match glyph.big_glyph {
-            Some(id) => self.big_glyph_slot(device, text, id).map(|slot| (slot, kind, tint)),
-            None => Some((atlas, kind, tint)),
-        }
+        let (kind, tint) = if glyph.color { (KIND_IMAGE, [1.0, 1.0, 1.0, color[3]]) } else { (KIND_GLYPH, color) };
+        let slot: TexId = match glyph.big_glyph {
+            Some(id) => self.big_glyph_slot(device, text, id)?,
+            None => self.page_slot(device, text, glyph.color, glyph.page),
+        };
+        Some((slot, kind, tint))
     }
 
     /// Writes an image's pixels (straight sRGB RGBA8 rows): the TEXTURE
@@ -900,53 +942,19 @@ impl UiRenderer {
         }
     }
 
-    /// Sends the part of each glyph atlas of `text` that this renderer's
-    /// texture lacks: the rectangle of the letters new since its last
-    /// send, or the whole of an atlas it has not sent. Then the texels
-    /// of the big glyphs the frame's walk made a texture for.
+    /// Sends, for each atlas page of `text` this renderer has a texture
+    /// of, the part that texture lacks: the rectangle of the glyphs new
+    /// since its last send, what the page holds for a texture made this
+    /// frame, or the whole page when the texture holds another. Then the
+    /// texels of the big glyphs the frame's walk made a texture for.
     ///
     /// Needed per renderer (`AtlasSent`): a text engine may meet several
     /// renderers (one per picture a host takes, a new one after the GPU
     /// was lost), and a renderer may be handed another engine. Each of
-    /// them must end up with the atlas its glyph quads point into.
-    fn sync_atlas(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &TextEngine) {
-        let (part, sent): (AtlasPart, AtlasSent) = text.atlas_part_to_send(self.atlas_sent);
-        self.atlas_sent = sent;
-        if !part.is_empty() {
-            let (data, size) = text.atlas();
-            // A texture made here holds nothing: it takes the whole atlas.
-            let part: AtlasPart = if size != self.atlas_size {
-                let (tex, entry) = self.make_texture(device, size, size, wgpu::TextureFormat::R8Unorm);
-                self.textures[ATLAS as usize] = entry;
-                self.atlas_texture = Some(tex);
-                self.atlas_size = size;
-                AtlasPart { columns: 0..size, rows: 0..size }
-            } else {
-                part
-            };
-            if let Some(tex) = &self.atlas_texture {
-                Self::write_part(queue, tex, data, size, &part, 1);
-                self.atlas_texels_written += part.texel_count();
-            }
-        }
-        let (part, sent): (AtlasPart, AtlasSent) = text.color_atlas_part_to_send(self.color_atlas_sent);
-        self.color_atlas_sent = sent;
-        if !part.is_empty() {
-            let (data, size) = text.color_atlas();
-            let part: AtlasPart = if size != self.color_atlas_size {
-                let (tex, entry) = self.make_texture(device, size, size, wgpu::TextureFormat::Rgba8Unorm);
-                self.textures[COLOR_ATLAS as usize] = entry;
-                self.color_atlas_texture = Some(tex);
-                self.color_atlas_size = size;
-                AtlasPart { columns: 0..size, rows: 0..size }
-            } else {
-                part
-            };
-            if let Some(tex) = &self.color_atlas_texture {
-                Self::write_part(queue, tex, data, size, &part, 4);
-                self.atlas_texels_written += part.texel_count();
-            }
-        }
+    /// them must end up with the pages its glyph quads point into.
+    fn sync_atlas(&mut self, queue: &wgpu::Queue, text: &TextEngine) {
+        Self::send_pages(queue, text.atlas(), &mut self.letter_pages, &mut self.atlas_texels_written);
+        Self::send_pages(queue, text.color_atlas(), &mut self.emoji_pages, &mut self.atlas_texels_written);
         // The list steps out of self for the loop and goes back empty,
         // with its capacity.
         let mut to_send: Vec<BigGlyphId> = std::mem::take(&mut self.big_glyphs_to_send);
@@ -958,6 +966,23 @@ impl UiRenderer {
             }
         }
         self.big_glyphs_to_send = to_send;
+    }
+
+    /// Writes into each texture of `held` the part of its page of `atlas`
+    /// that it lacks (`Atlas::part_to_send`), and counts the texels in
+    /// `texels_written`.
+    ///
+    /// Needed in one place because the letters' and the emoji atlas are
+    /// sent the same way.
+    fn send_pages(queue: &wgpu::Queue, atlas: &Atlas, held: &mut [AtlasPageTexture], texels_written: &mut u64) {
+        for (index, page) in held.iter_mut().enumerate().take(atlas.page_count()) {
+            let (part, sent): (AtlasPart, AtlasSent) = atlas.part_to_send(index, page.sent);
+            page.sent = sent;
+            if !part.is_empty() {
+                Self::write_part(queue, &page.texture, atlas.page(index), atlas.side(), &part, atlas.texel_bytes());
+                *texels_written += part.texel_count();
+            }
+        }
     }
 
     /// Turns the draw list into instances (epx × `epx` = device px), shapes
@@ -973,25 +998,16 @@ impl UiRenderer {
     /// was measured (`None` = the literals).
     #[allow(clippy::too_many_arguments)]
     pub fn prepare_pages<L: DrawLists + ?Sized>(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, pages: &L, epx: f32, screen: (u32, u32), text: &mut TextEngine, locale: Option<&Locale>) {
-        // A glyph that grows the atlas during the pass leaves every run
-        // shaped before it this frame, the cache's included, with uvs into
-        // the atlas that was: the pass runs again against the grown one.
-        // Needed because the user otherwise sees a button with no letters
-        // until the next redraw. A grow doubles the atlas, a few times in
-        // an app's life; the usual frame pays nothing.
-        let generation: u32 = text.generation;
         self.stage_begins(PrepareStage::Pass);
         // Before the walk, never during it: a big glyph a quad of this
-        // frame names keeps its raster until `sync_atlas` has sent it.
-        text.drop_unused_big_glyphs();
+        // frame names keeps its raster until `sync_atlas` has sent it, and
+        // no atlas page a quad of this frame names is emptied.
+        text.start_frame();
         self.free_dropped_big_glyphs(device, text);
         self.prepare_pass(device, pages, epx, screen, text, locale);
-        if text.generation != generation {
-            self.prepare_pass(device, pages, epx, screen, text, locale);
-        }
         self.stage_ends(PrepareStage::Pass);
         self.stage_begins(PrepareStage::Atlas);
-        self.sync_atlas(device, queue, text);
+        self.sync_atlas(queue, text);
         self.gradients.flush(queue);
         self.stage_ends(PrepareStage::Atlas);
         if self.class_log {

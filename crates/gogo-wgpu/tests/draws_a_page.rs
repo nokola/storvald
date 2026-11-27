@@ -23,7 +23,7 @@ use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use gogo_text::{BIG_GLYPH_KEPT_BYTES, BigGlyph, EpxMeasure, GlyphQuad, TextEngine, TextPx};
+use gogo_text::{AtlasSent, BIG_GLYPH_KEPT_BYTES, BigGlyph, EpxMeasure, GlyphQuad, TextEngine, TextPx};
 use gogo_ui::layout::Rect;
 use gogo_ui::runtime::{Runtime, resolve};
 use gogo_ui::{Compiled, Draw, ImageKey, KeptFrame, Page, compile, draw, has_errors};
@@ -383,7 +383,7 @@ fn a_second_renderer_over_one_text_engine_draws_its_letters() {
 /// A renderer handed another text engine draws that engine's letters.
 ///
 /// Needed because a renderer keeps the version of the atlas it uploaded
-/// (`TextEngine::atlas_part_to_send`). Two engines that each packed two glyphs
+/// (`gogo_text::Atlas::part_to_send`). Two engines that each packed two glyphs
 /// would share a count kept per engine: the renderer would keep the first
 /// engine's atlas and draw the second engine's letters from the wrong
 /// places in it.
@@ -432,22 +432,67 @@ fn a_new_letter_sends_only_its_part_of_the_atlas() {
     // left corner.
     text.borrow_mut().warm("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", 64.0, None);
     drawn_tile(PAGE, &mut ui, &device, &queue, &text);
-    let atlas_side: u64 = u64::from(text.borrow().atlas().1);
-    let atlas_texels: u64 = atlas_side * atlas_side;
-    assert_eq!(ui.debug_atlas_texels_written(), atlas_texels, "the first frame sends the whole atlas");
+    let first_send: u64 = text.borrow().atlas().part_to_send(0, AtlasSent::default()).0.texel_count();
+    assert!(first_send < 1024 * 1024, "the precondition: the letters use part of the page, {first_send} texels");
+    assert_eq!(ui.debug_atlas_texels_written(), first_send, "the first frame sends the rows of the page its letters use, not the whole page");
 
     let (pixels, label) = drawn_tile(PAGE_OTHER_LETTERS, &mut ui, &device, &queue, &text);
-    let texels_of_new_letters: u64 = ui.debug_atlas_texels_written() - atlas_texels;
+    let texels_of_new_letters: u64 = ui.debug_atlas_texels_written() - first_send;
     assert!(texels_of_new_letters > 0 && texels_of_new_letters < 100 * 100, "two new letters at 32 px: {texels_of_new_letters} texels sent");
     assert!(white_pixels(&pixels, label) > 20, "the new letters are drawn");
     let new_letter: GlyphQuad = text.borrow_mut().glyph("o", 32.0, None).expect("the letter drawn above");
     assert!(new_letter.uv[0] > 0.0 && new_letter.uv[1] > 0.0, "the precondition: the new letters are below the atlas's first shelf and right of its left edge");
     let mut fresh: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
     let (want, _) = drawn_tile(PAGE_OTHER_LETTERS, &mut fresh, &device, &queue, &text);
-    assert!(pixels == want, "the picture of a renderer that sent the whole atlas");
+    assert!(pixels == want, "the picture of a renderer that sent the page in one go");
 
     drawn_tile(PAGE_OTHER_LETTERS, &mut ui, &device, &queue, &text);
-    assert_eq!(ui.debug_atlas_texels_written(), atlas_texels + texels_of_new_letters, "a frame with no new letter sends nothing");
+    assert_eq!(ui.debug_atlas_texels_written(), first_send + texels_of_new_letters, "a frame with no new letter sends nothing");
+}
+
+/// Two labels: "Hi" at the top left, "ok" at the bottom right.
+const PAGE_TWO_LABELS: &str = r#"
+View card {
+    Panel plate width=160, height=100, halign=left, valign=top, background=#E51400 {
+        Label hello text="Hi", font_size=32, font_color=#FFFFFF, halign=left, valign=top
+        Label other text="ok", font_size=32, font_color=#FFFFFF, halign=right, valign=bottom
+    }
+}
+"#;
+
+/// A frame whose letters are on both pages of the letters' atlas draws
+/// each letter from its own page's texture: the picture is the one of an
+/// engine that has all those letters on one page.
+///
+/// Needed because a full page starts a new one (`gogo_text::Atlas`).
+/// Red when a quad is drawn from another page's texture: the user sees
+/// pieces of other letters where the letters are.
+#[test]
+#[ignore = "needs a GPU adapter: run with --include-ignored on a machine that has one"]
+fn letters_on_two_pages_are_drawn_each_from_its_page() {
+    let (device, queue) = device();
+    let mut ui: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
+    let text: RefCell<TextEngine> = engine();
+    drawn_tile(PAGE, &mut ui, &device, &queue, &text);
+    {
+        let mut engine = text.borrow_mut();
+        let mut font_size: f32 = 120.0;
+        while engine.atlas().page_count() < 2 {
+            assert!(font_size > 30.0, "the precondition: the sizes fill the first page");
+            engine.warm("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", font_size, None);
+            font_size -= 1.0;
+        }
+    }
+    let (pixels, label) = drawn_tile(PAGE_TWO_LABELS, &mut ui, &device, &queue, &text);
+    let old_letter: GlyphQuad = text.borrow_mut().glyph("H", 32.0, None).expect("ink");
+    let new_letter: GlyphQuad = text.borrow_mut().glyph("k", 32.0, None).expect("ink");
+    assert_eq!((old_letter.page, new_letter.page), (0, 1), "the precondition: \"Hi\" on the first page, \"ok\" on the second");
+    assert!(white_pixels(&pixels, label) > 20, "the letters are drawn");
+    let one_page: RefCell<TextEngine> = engine();
+    let mut fresh: UiRenderer = UiRenderer::new(&device, wgpu::TextureFormat::Rgba8Unorm, None);
+    let (want, _) = drawn_tile(PAGE_TWO_LABELS, &mut fresh, &device, &queue, &one_page);
+    assert_eq!(one_page.borrow().atlas().page_count(), 1, "the precondition: the other engine has one page");
+    assert!(pixels == want, "the picture of an engine with every letter on one page");
 }
 
 /// The tile the big letters are drawn on.
@@ -484,7 +529,7 @@ fn a_letter_too_big_for_the_atlas_is_drawn_from_a_texture_of_its_own() {
         let quad: GlyphQuad = text.borrow_mut().shape("W", TextPx::from_epx(200.0, 1.0), None, None, label.x, label.y, label.w, 0)[0];
         let engine = text.borrow();
         let glyph: BigGlyph = engine.big_glyph(quad.big_glyph.expect("the precondition: a big glyph")).expect("the engine keeps it");
-        assert_eq!(texels_sent, 1024 * 1024 + u64::from(glyph.width * glyph.height), "the first frame sends the atlas, with no letter in it, and the big letter's raster");
+        assert_eq!(texels_sent, u64::from(glyph.width * glyph.height), "the first frame sends the big letter's raster only: no letter went into an atlas");
         // The texel one right and one down of the raster's corner is
         // the quad's first pixel: the raster has an empty border.
         let (mut covered, mut empty): (u32, u32) = (0, 0);

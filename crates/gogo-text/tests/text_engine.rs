@@ -8,27 +8,110 @@
 //! file out of the package (`exclude`), so `cargo test` on a downloaded
 //! package runs only what the package can feed.
 
-use gogo_text::{ATLAS_GLYPH_MAX_PX, AtlasPart, AtlasSent, BIG_GLYPH_KEPT_BYTES, BigGlyph, BigGlyphId, EpxMeasure, FaceMetrics, GlyphQuad, HostColorGlyph, TextEngine, TextPx, TextWork, styled_key};
+use gogo_text::{ATLAS_GLYPH_MAX_PX, ATLAS_PAGE_SIDE, ATLAS_PAGES_KEPT, Atlas, AtlasPart, AtlasSent, BIG_GLYPH_KEPT_BYTES, BigGlyph, BigGlyphId, COLOR_ATLAS_PAGE_SIDE, EpxMeasure, FaceMetrics, GlyphQuad, HostColorGlyph, TextEngine, TextPx, TextWork, styled_key};
 use gogo_ui::layout::TextMeasure;
 use std::cell::RefCell;
 use std::path::Path;
 
-/// A run whose glyph grows the atlas mid-way comes out whole against
-/// the grown atlas: its uvs equal a re-shape's. Red when the glyphs
-/// shaped before the grow keep uvs into the atlas that was and the run
-/// sits in the cache that way: the user sees a label without its first
-/// letters ("ve changes?" for "Save changes?").
+/// A run that fills a page of the letters' atlas goes on on a new page:
+/// it is shaped once, no letter is drawn twice, and a text shown before
+/// keeps its kept shape and its letters' places.
+///
+/// Red when a full atlas doubles: every text is shaped again and every
+/// letter on screen drawn again, 20 to 40 ms in one frame on an old
+/// phone.
 #[test]
-fn a_run_that_grows_the_atlas_is_shaped_whole_against_the_grown_one() {
+fn a_run_that_fills_a_page_goes_on_on_a_new_page() {
     let mut e = engine();
-    let (shaped, work, font_size) = run_that_grows_the_letters_atlas(&mut e);
-    assert!(work.letters_drawn > ALPHABET.len() as u32, "the precondition: the atlas grew mid-way, so letters drawn before the grow were drawn again: {work:?}");
+    let before: Vec<GlyphQuad> = e.shape("Save changes?", px(40.0), None, None, 0.0, 0.0, 0.0, 0);
+    let (shaped, work, font_size) = run_that_fills_the_first_page(&mut e);
+    assert_eq!((work.pages_added, work.pages_emptied, work.shapes_to_draw), (1, 0, 1), "one page more, the run shaped once: {work:?}");
+    assert!(work.letters_drawn <= ALPHABET.len() as u32, "no letter drawn twice: {work:?}");
+    assert!(shaped.iter().any(|quad| quad.page == 1), "the run goes on on the new page");
+    e.take_work();
+    let after: Vec<GlyphQuad> = e.shape("Save changes?", px(40.0), None, None, 0.0, 0.0, 0.0, 0);
+    assert_eq!(e.take_work(), TextWork::default(), "the text shown before costs a lookup");
+    let places = |quads: &[GlyphQuad]| -> Vec<([f32; 4], u32)> { quads.iter().map(|quad| (quad.uv, quad.page)).collect() };
+    assert_eq!(places(&after), places(&before), "its letters where they were, on the first page");
     // Shaped again past the cache: the box width is part of the cache
     // key and moves no glyph of a start-aligned line.
     let again: Vec<GlyphQuad> = e.shape(ALPHABET, px(font_size), None, None, 0.0, 0.0, 100_001.0, 0);
-    assert_eq!(shaped.len(), again.len());
-    for (a, b) in shaped.iter().zip(&again) {
-        assert_eq!(a.uv, b.uv, "a glyph of the run that grew the atlas, shaped whole: {a:?} vs {b:?}");
+    assert_eq!(places(&again), places(&shaped), "the run that started the page, shaped whole");
+}
+
+/// Past `ATLAS_PAGES_KEPT` pages, a glyph that needs room empties the
+/// page used longest ago: the texts on it are shaped and drawn again
+/// when next shown. A page a text of the frame being drawn uses is never
+/// emptied: when every page is in use, the atlas gets one more.
+///
+/// Red when a page in use is emptied: the frame shows letters from the
+/// glyphs packed over them. Red when no page is ever emptied: a session
+/// that shows many fonts keeps every letter it drew.
+#[test]
+fn past_the_kept_pages_the_page_used_longest_ago_is_emptied() {
+    /// Shapes the alphabet at `font_size`, makes the size a pixel
+    /// smaller, and keeps the run's size for each page its letters are on
+    /// (`size_on_page`).
+    ///
+    /// Returns the run's work.
+    fn show_next_size(e: &mut TextEngine, font_size: &mut f32, size_on_page: &mut Vec<f32>) -> TextWork {
+        assert!(*font_size > 30.0, "the precondition: the sizes fill the pages");
+        e.take_work();
+        for quad in e.shape(ALPHABET, px(*font_size), None, None, 0.0, 0.0, 100_000.0, 0) {
+            size_on_page.resize(size_on_page.len().max(quad.page as usize + 1), 0.0);
+            size_on_page[quad.page as usize] = *font_size;
+        }
+        *font_size -= 1.0;
+        e.take_work()
+    }
+    let mut e = engine();
+    e.start_frame();
+    e.shape("Hello", px(24.0), None, None, 0.0, 0.0, 0.0, 0);
+    // One frame per size of the alphabet, each showing that size only.
+    let mut size_on_page: Vec<f32> = Vec::new();
+    let mut font_size: f32 = 120.0;
+    while e.atlas().page_count() < ATLAS_PAGES_KEPT {
+        e.start_frame();
+        show_next_size(&mut e, &mut font_size, &mut size_on_page);
+    }
+    loop {
+        e.start_frame();
+        let work: TextWork = show_next_size(&mut e, &mut font_size, &mut size_on_page);
+        assert_eq!(work.pages_added, 0, "past the kept pages no page is added while one is unused: {work:?}");
+        if work.pages_emptied > 0 {
+            assert_eq!(work.pages_emptied, 1);
+            break;
+        }
+    }
+    assert_eq!(e.atlas().page_count(), ATLAS_PAGES_KEPT);
+    assert!(size_on_page[0] == font_size + 1.0, "the new letters went on the page used longest ago: the first");
+    e.start_frame();
+    e.take_work();
+    e.shape("Hello", px(24.0), None, None, 0.0, 0.0, 0.0, 0);
+    let work: TextWork = e.take_work();
+    assert!(work.shapes_to_draw == 1 && work.letters_drawn >= 4, "the text on the emptied page is shaped and drawn again: {work:?}");
+    // A text on the third page has no letter on the emptied one.
+    e.shape(ALPHABET, px(size_on_page[2]), None, None, 0.0, 0.0, 100_000.0, 0);
+    assert_eq!(e.take_work(), TextWork::default(), "a text on another page keeps its kept shape");
+
+    // A frame that shows a text on every page, then needs room: a page
+    // more, none emptied. Once with the texts' kept shapes, once with
+    // each text shaped anew (another box width), finding its letters
+    // drawn: both ways tell the engine the pages are in use.
+    for (box_w, way) in [(100_000.0, "kept shapes"), (100_002.0, "texts shaped anew")] {
+        e.start_frame();
+        for size in size_on_page.clone() {
+            e.shape(ALPHABET, px(size), None, None, 0.0, 0.0, box_w, 0);
+        }
+        let pages: usize = e.atlas().page_count();
+        loop {
+            let work: TextWork = show_next_size(&mut e, &mut font_size, &mut size_on_page);
+            assert_eq!(work.pages_emptied, 0, "{way}: no page this frame uses is emptied: {work:?}");
+            if work.pages_added > 0 {
+                break;
+            }
+        }
+        assert_eq!(e.atlas().page_count(), pages + 1, "{way}");
     }
 }
 
@@ -66,25 +149,26 @@ fn engine() -> TextEngine {
 const ALPHABET: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
 /// Shapes the alphabet at 120 px, then a pixel smaller each time, until
-/// one run fills the letters' atlas and it grows.
+/// one run fills the first page of the letters' atlas and starts a
+/// second.
 ///
-/// Needed by the tests of a grow. Letters of 120 px are the biggest that
-/// still go into the atlas: a bigger one is a big glyph and fills
+/// Needed by the tests of a full page. Letters of 120 px are the biggest
+/// that still go into the atlas: a bigger one is a big glyph and fills
 /// nothing.
 ///
-/// Returns the quads of the run that grew the atlas, that run's work,
-/// and its font size.
-fn run_that_grows_the_letters_atlas(e: &mut TextEngine) -> (Vec<GlyphQuad>, TextWork, f32) {
+/// Returns the quads of the run that started the second page, that
+/// run's work, and its font size.
+fn run_that_fills_the_first_page(e: &mut TextEngine) -> (Vec<GlyphQuad>, TextWork, f32) {
     for font_size in (40..=120).rev().map(|size| size as f32) {
-        let generation: u32 = e.generation;
+        let pages: usize = e.atlas().page_count().max(1);
         e.take_work();
         let quads: Vec<GlyphQuad> = e.shape(ALPHABET, px(font_size), None, None, 0.0, 0.0, 100_000.0, 0);
         assert!(quads.iter().all(|quad| quad.big_glyph.is_none()), "the precondition: letters of {font_size} px go into the atlas");
-        if e.generation > generation {
+        if e.atlas().page_count() > pages {
             return (quads, e.take_work(), font_size);
         }
     }
-    panic!("the atlas grows before the sizes run out");
+    panic!("the first page fills before the sizes run out");
 }
 
 /// Text of `font_size` device pixels on a screen with 1 device pixel per
@@ -109,7 +193,7 @@ fn engine_with_emoji() -> TextEngine {
 
 /// The color atlas texel at the top-left of `q`'s slot, RGBA.
 fn color_texel_of(e: &TextEngine, q: &GlyphQuad) -> [u8; 4] {
-    let (atlas, side) = e.color_atlas();
+    let (atlas, side): (&[u8], u32) = (e.color_atlas().page(q.page as usize), e.color_atlas().side());
     let (x, y) = ((q.uv[0] * side as f32).round() as usize, (q.uv[1] * side as f32).round() as usize);
     let i = (y * side as usize + x) * 4;
     [atlas[i], atlas[i + 1], atlas[i + 2], atlas[i + 3]]
@@ -124,16 +208,15 @@ fn color_texel_of(e: &TextEngine, q: &GlyphQuad) -> [u8; 4] {
 #[ignore = "needs Windows' Segoe UI Emoji font: run with --include-ignored on Windows"]
 fn an_emoji_lands_in_the_color_atlas_beside_the_letters() {
     let mut e: TextEngine = engine_with_emoji();
-    assert!(e.color_atlas_part_to_send(AtlasSent::default()).0.is_empty(), "nothing packed yet");
-    let (_, letters_before): (AtlasPart, AtlasSent) = e.atlas_part_to_send(AtlasSent::default());
+    assert_eq!((e.atlas().page_count(), e.color_atlas().page_count()), (0, 0), "nothing packed yet");
     let quads: Vec<GlyphQuad> = e.shape("a😀", px(40.0), None, None, 0.0, 0.0, 0.0, 0);
     assert_eq!(quads.len(), 2, "{quads:?}");
     assert!(!quads[0].color, "the letter: coverage atlas");
     assert!(quads[1].color, "the emoji: color atlas");
     assert!(quads[1].w > 20.0 && quads[1].h > 20.0, "an emoji at 40 px is a real box: {:?}", quads[1]);
-    assert!(!e.atlas_part_to_send(letters_before).0.is_empty() && !e.color_atlas_part_to_send(AtlasSent::default()).0.is_empty());
+    assert!(!e.atlas().part_to_send(0, AtlasSent::default()).0.is_empty() && !e.color_atlas().part_to_send(0, AtlasSent::default()).0.is_empty());
     // Somewhere in the emoji's slot a texel is opaque and colored.
-    let (atlas, side) = e.color_atlas();
+    let (atlas, side): (&[u8], u32) = (e.color_atlas().page(quads[1].page as usize), e.color_atlas().side());
     let (x0, y0, x1, y1) = ((quads[1].uv[0] * side as f32) as usize, (quads[1].uv[1] * side as f32) as usize, (quads[1].uv[2] * side as f32) as usize, (quads[1].uv[3] * side as f32) as usize);
     let colored = (y0..y1).flat_map(|y| (x0..x1).map(move |x| (x, y))).any(|(x, y)| {
         let i = (y * side as usize + x) * 4;
@@ -182,26 +265,86 @@ fn the_host_paints_an_emoji_when_it_has_one() {
     assert!(declined[1].color && declined[1].w > 20.0, "swash's own raster: {declined:?}");
 }
 
-/// A host raster that fills the color atlas grows it, and the run is
-/// shaped whole against the grown one (the coverage atlas's law,
-/// `a_run_that_grows_the_atlas_is_shaped_whole_against_the_grown_one`).
+/// A host raster that fills a page of the emoji atlas goes on on a new
+/// page, as letters do (`a_run_that_fills_a_page_goes_on_on_a_new_page`):
+/// the run is shaped once, and each emoji's uv is into its own page.
 #[test]
 #[ignore = "needs Windows' Segoe UI Emoji font: run with --include-ignored on Windows"]
-fn a_host_emoji_that_fills_the_color_atlas_grows_it() {
+fn a_host_emoji_that_fills_an_emoji_page_goes_on_on_a_new_page() {
     let mut e: TextEngine = engine_with_emoji();
     e.set_host_color_glyph_painter(Some(Box::new(|_: &str, _: f32| Some(HostColorGlyph { width: 120, height: 120, left: 0, top: 120, rgba: [255, 0, 0, 255].repeat(120 * 120) }))));
-    let before: u32 = e.generation;
-    // Sixteen 120-px squares fill a 512 atlas, four to a shelf: twenty
-    // double it mid-run. (A bigger square is a big glyph and goes into
-    // no atlas.)
+    e.take_work();
+    // Sixteen 120-px squares fill a page 512 a side, four to a shelf:
+    // the last four go on a second page. (A bigger square is a big glyph
+    // and goes into no atlas.)
     let quads: Vec<GlyphQuad> = e.shape("\u{1F600}\u{1F601}\u{1F602}\u{1F603}\u{1F604}\u{1F605}\u{1F606}\u{1F607}\u{1F608}\u{1F609}\u{1F60A}\u{1F60B}\u{1F60C}\u{1F60D}\u{1F60E}\u{1F60F}\u{1F610}\u{1F611}\u{1F612}\u{1F613}", px(40.0), None, None, 0.0, 0.0, 0.0, 0);
-    assert!(e.generation > before, "the precondition: the run grew the color atlas");
-    assert_eq!(e.color_atlas().1, 1024);
+    let work: TextWork = e.take_work();
+    assert_eq!((work.pages_added, work.shapes_to_draw), (2, 1), "the first page and one more, the run shaped once: {work:?}");
+    assert_eq!((e.color_atlas().page_count(), e.color_atlas().side()), (2, COLOR_ATLAS_PAGE_SIDE));
     assert_eq!(quads.len(), 20, "{quads:?}");
+    assert!(quads[..16].iter().all(|q| q.page == 0) && quads[16..].iter().all(|q| q.page == 1), "sixteen on the first page, four on the second: {quads:?}");
     for q in &quads {
         assert!(q.color && q.big_glyph.is_none());
-        assert_eq!(color_texel_of(&e, q), [255, 0, 0, 255], "every slot is into the grown atlas: {q:?}");
+        assert_eq!(color_texel_of(&e, q), [255, 0, 0, 255], "every slot is into its own page: {q:?}");
     }
+}
+
+/// Past `ATLAS_PAGES_KEPT` pages of emoji, the page used longest ago is
+/// emptied as a letters' page is
+/// (`past_the_kept_pages_the_page_used_longest_ago_is_emptied`): an emoji
+/// on it is shaped and painted again when next shown.
+///
+/// Red when an emptied emoji page keeps the kept shapes or the host's
+/// slots on it: the emoji is drawn from texels other emoji were packed
+/// over.
+#[test]
+#[ignore = "needs Windows' Segoe UI Emoji font: run with --include-ignored on Windows"]
+fn past_the_kept_pages_an_emoji_page_used_longest_ago_is_emptied() {
+    let mut e: TextEngine = engine_with_emoji();
+    let painted: std::rc::Rc<std::cell::Cell<u32>> = std::rc::Rc::new(std::cell::Cell::new(0));
+    let count = painted.clone();
+    e.set_host_color_glyph_painter(Some(Box::new(move |_: &str, _: f32| {
+        count.set(count.get() + 1);
+        Some(HostColorGlyph { width: 120, height: 120, left: 0, top: 120, rgba: [255, 0, 0, 255].repeat(120 * 120) })
+    })));
+    e.start_frame();
+    e.shape("\u{1F600}", px(40.0), None, None, 0.0, 0.0, 0.0, 0);
+    // Sixteen 120-px squares fill a page: each frame shows sixteen emoji
+    // at a new size, a page each, until one is emptied.
+    let sixteen: String = (0x1F600..0x1F610).filter_map(char::from_u32).collect();
+    let mut font_size: f32 = 40.0;
+    loop {
+        assert!(font_size < 50.0, "the precondition: the sizes fill the pages");
+        e.start_frame();
+        e.take_work();
+        e.shape(&sixteen, px(font_size), None, None, 0.0, 0.0, 0.0, 0);
+        font_size += 1.0;
+        let work: TextWork = e.take_work();
+        if work.pages_emptied > 0 {
+            assert_eq!(work.pages_added, 0, "{work:?}");
+            break;
+        }
+    }
+    assert_eq!(e.color_atlas().page_count(), ATLAS_PAGES_KEPT);
+    e.start_frame();
+    e.take_work();
+    let painted_before: u32 = painted.get();
+    e.shape("\u{1F600}", px(40.0), None, None, 0.0, 0.0, 0.0, 0);
+    assert_eq!((e.take_work().shapes_to_draw, painted.get() - painted_before), (1, 1), "the emoji on the emptied page is shaped and painted again");
+
+    // A frame that shows the kept shapes of every page, then needs room:
+    // a page more, none emptied. The sixteen of the three sizes before
+    // are each on a page of their own, the one emoji on the fourth.
+    e.start_frame();
+    for size in [font_size - 3.0, font_size - 2.0, font_size - 1.0] {
+        e.shape(&sixteen, px(size), None, None, 0.0, 0.0, 0.0, 0);
+    }
+    e.shape("\u{1F600}", px(40.0), None, None, 0.0, 0.0, 0.0, 0);
+    e.take_work();
+    e.shape(&sixteen, px(font_size), None, None, 0.0, 0.0, 0.0, 0);
+    let work: TextWork = e.take_work();
+    assert_eq!((work.pages_added, work.pages_emptied), (1, 0), "no page this frame uses is emptied: {work:?}");
+    assert_eq!(e.color_atlas().page_count(), ATLAS_PAGES_KEPT + 1);
 }
 
 /// A fallback file serves the glyphs no page font has: Roboto has no
@@ -252,24 +395,22 @@ fn measures_wraps_and_rasterizes() {
     assert_eq!(m.font_height(20.0), 24.0);
     let (_, h2) = e.measure("one two three four five six seven", px(20.0), Some(100.0), None);
     assert!(h2 >= 48.0, "{h2}");
-    let (_, before): (AtlasPart, AtlasSent) = e.atlas_part_to_send(AtlasSent::default());
+    assert_eq!(e.atlas().page_count(), 0, "no letter yet: no page");
     let quads = e.shape("Hi", px(20.0), None, None, 10.0, 5.0, 0.0, 0);
     assert_eq!(quads.len(), 2);
     assert!(quads[0].x >= 10.0 && quads[1].x > quads[0].x);
-    let (atlas, size) = e.atlas();
-    assert!(atlas.iter().any(|b| *b > 128), "atlas has ink");
-    assert_eq!(size, 1024);
-    // The atlas has a part to send when glyphs are packed into it, none
+    assert_eq!((e.atlas().page_count(), e.atlas().side(), e.atlas().texel_bytes()), (1, ATLAS_PAGE_SIDE, 1));
+    assert!(e.atlas().page(0).iter().any(|b| *b > 128), "the page has ink");
+    // The page has a part to send when glyphs are packed into it, none
     // when a text's glyphs are in it already, and the whole of it for a
-    // renderer that sent another engine's atlas.
-    let (part, packed): (AtlasPart, AtlasSent) = e.atlas_part_to_send(before);
+    // renderer that sent another engine's page.
+    let (part, packed): (AtlasPart, AtlasSent) = e.atlas().part_to_send(0, AtlasSent::default());
     assert!(!part.is_empty(), "two glyphs were packed");
     e.shape("Hi", px(20.0), None, None, 40.0, 5.0, 0.0, 0);
-    assert!(e.atlas_part_to_send(packed).0.is_empty(), "nothing new was packed");
+    assert!(e.atlas().part_to_send(0, packed).0.is_empty(), "nothing new was packed");
     let mut other = engine();
-    assert_eq!(other.atlas_part_to_send(before).0, whole(1024), "a second engine's blank atlas");
     other.shape("Hi", px(20.0), None, None, 10.0, 5.0, 0.0, 0);
-    assert_eq!(other.atlas_part_to_send(packed).0, whole(1024), "a second engine with the same two glyphs");
+    assert_eq!(other.atlas().part_to_send(0, packed).0, whole(1024), "a second engine with the same two glyphs");
 }
 
 /// A style suffix on the font key is a faux style: bold grows the
@@ -310,7 +451,7 @@ fn a_face_added_later_shapes_under_its_key() {
 /// count here is a lookup that found nothing.
 #[test]
 fn the_work_counts_each_shape_and_each_letter_drawn() {
-    let counts = |work: gogo_text::TextWork| (work.shapes_to_measure, work.shapes_to_draw, work.letters_drawn, work.texture_grows);
+    let counts = |work: gogo_text::TextWork| (work.shapes_to_measure, work.shapes_to_draw, work.letters_drawn, work.pages_added);
     let mut e = engine();
     assert_eq!(e.take_work(), gogo_text::TextWork::default(), "a new engine did nothing");
     e.measure("Hello", px(24.0), None, None);
@@ -319,18 +460,17 @@ fn the_work_counts_each_shape_and_each_letter_drawn() {
     assert!(work.seconds_shaping_to_measure > 0.0);
     e.shape("Hello", px(24.0), None, None, 0.0, 0.0, 0.0, 0);
     let work = e.take_work();
-    assert_eq!((work.shapes_to_measure, work.shapes_to_draw, work.texture_grows), (0, 1, 0), "the draw shapes the same text once more");
+    assert_eq!((work.shapes_to_measure, work.shapes_to_draw, work.pages_added), (0, 1, 1), "the draw shapes the same text once more, and its letters make the atlas's first page");
     assert!((4..=5).contains(&work.letters_drawn), "H, e, l, o, and the second l when it sits at another part of a pixel: {}", work.letters_drawn);
     e.measure("Hello", px(24.0), None, None);
     e.shape("Hello", px(24.0), None, None, 0.0, 0.0, 0.0, 0);
     assert_eq!(e.take_work(), gogo_text::TextWork::default(), "a text seen before costs two lookups");
     e.narrowest_wrap("Hello there", px(24.0), None);
     assert_eq!(counts(e.take_work()), (1, 0, 0, 0), "the narrowest width of a wrapping text is a shape of its own");
-    // The run that fills the letters' texture: it doubles, the text is
-    // shaped again against the grown one, and the letters drawn before
-    // the grow are drawn again.
-    let (_, work, _) = run_that_grows_the_letters_atlas(&mut e);
-    assert!(work.texture_grows == 1 && work.shapes_to_draw == 2 && work.letters_drawn > ALPHABET.len() as u32, "{work:?}");
+    // The run that fills the first page: one page more, the text shaped
+    // once, no letter drawn twice.
+    let (_, work, _) = run_that_fills_the_first_page(&mut e);
+    assert!(work.pages_added == 1 && work.shapes_to_draw == 1 && work.letters_drawn <= ALPHABET.len() as u32, "{work:?}");
 }
 
 /// The OS scan runs once, names each family once, and a family can
@@ -498,146 +638,176 @@ fn a_wrapping_label_in_a_tight_row_keeps_its_longest_word_whole() {
     assert_eq!(label.h, measure.measure("hello wonderful world", 15.0, Some(word + 0.01), None).1, "one word to a line");
 }
 
-/// The whole of an atlas `size` texels a side.
+/// The whole of an atlas page `size` texels a side.
 fn whole(size: u32) -> AtlasPart {
     AtlasPart { columns: 0..size, rows: 0..size }
 }
 
-/// What a renderer's texture holds of an atlas: it starts empty and
-/// takes only the part the engine names.
+/// What a renderer's texture holds of one atlas page: it starts as a new
+/// texture does, all zeros, and takes only the part the engine names.
 ///
-/// Needed by the tests of `atlas_part_to_send`: the part is right when
-/// such a copy equals the engine's atlas after every take.
+/// Needed by the tests of `Atlas::part_to_send`: the part is right when
+/// such a copy equals the engine's page after every take.
 #[derive(Clone, Default)]
-struct AtlasCopy {
+struct PageCopy {
     sent: AtlasSent,
     bytes: Vec<u8>,
-    size: u32,
 }
 
-impl AtlasCopy {
-    /// Copies `part` of `atlas` (`size` a side, `texel_bytes` a texel)
-    /// and keeps `sent`. An atlas of another size starts a new, empty
-    /// copy, as a renderer makes a new texture, and must be sent whole.
-    fn take(&mut self, atlas: &[u8], size: u32, texel_bytes: u32, part: &AtlasPart, sent: AtlasSent) {
-        self.sent = sent;
-        if size != self.size {
-            assert_eq!(*part, whole(size), "an atlas of another size is sent whole");
-            self.bytes = vec![0; (size * size * texel_bytes) as usize];
-            self.size = size;
-        }
-        for row in part.rows.clone() {
-            let (from, to) = (((row * size + part.columns.start) * texel_bytes) as usize, ((row * size + part.columns.end) * texel_bytes) as usize);
-            self.bytes[from..to].copy_from_slice(&atlas[from..to]);
-        }
-    }
-
-    /// Takes the part of `e`'s letters' atlas this copy lacks.
+impl PageCopy {
+    /// Copies the part of page `index` of `atlas` this copy lacks.
     ///
     /// Returns the part the engine named.
-    fn take_letters(&mut self, e: &TextEngine) -> AtlasPart {
-        let (part, sent) = e.atlas_part_to_send(self.sent);
-        let (atlas, size) = e.atlas();
-        self.take(atlas, size, 1, &part, sent);
+    fn take(&mut self, atlas: &Atlas, index: usize) -> AtlasPart {
+        let (part, sent): (AtlasPart, AtlasSent) = atlas.part_to_send(index, self.sent);
+        let (side, texel_bytes): (u32, u32) = (atlas.side(), atlas.texel_bytes());
+        if self.bytes.is_empty() {
+            self.bytes = vec![0; (side * side * texel_bytes) as usize];
+        }
+        let page: &[u8] = atlas.page(index);
+        for row in part.rows.clone() {
+            let (from, to) = (((row * side + part.columns.start) * texel_bytes) as usize, ((row * side + part.columns.end) * texel_bytes) as usize);
+            self.bytes[from..to].copy_from_slice(&page[from..to]);
+        }
+        self.sent = sent;
         part
     }
 
-    /// `take_letters`, for the emoji atlas.
-    fn take_emoji(&mut self, e: &TextEngine) -> AtlasPart {
-        let (part, sent) = e.color_atlas_part_to_send(self.sent);
-        let (atlas, size) = e.color_atlas();
-        self.take(atlas, size, 4, &part, sent);
-        part
+    /// Whether the copy equals page `index` of `atlas`.
+    fn holds(&self, atlas: &Atlas, index: usize) -> bool {
+        self.bytes == atlas.page(index)
     }
 }
 
-/// A renderer that sends only the part `atlas_part_to_send` names holds
-/// the engine's whole atlas after each send: nothing for nothing new, a
-/// new letter's own columns of its shelf for a new letter, whole rows
-/// when letters start new shelves, the whole atlas for one it has not
-/// got. Red when a texel that changed is not named: the user sees a new
-/// letter as an empty box, or cut off.
+/// A renderer that sends only the part `Atlas::part_to_send` names holds
+/// the engine's whole page after each send: nothing for nothing new, what
+/// the page holds so far for a new texture, a new letter's own columns of
+/// its shelf for a new letter, whole rows when letters start new shelves,
+/// the whole page for a texture that holds another page. Red when a
+/// texel that changed is not named: the user sees a new letter as an
+/// empty box, or cut off.
 #[test]
-fn a_copy_that_takes_only_the_part_to_send_holds_the_whole_atlas() {
+fn a_copy_that_takes_only_the_part_to_send_holds_the_whole_page() {
     let mut e = engine();
-    let mut copy = AtlasCopy::default();
+    let mut copy = PageCopy::default();
     let shape = |e: &mut TextEngine, text: &str, font_size: f32| {
         e.shape(text, px(font_size), None, None, 0.0, 0.0, 100_000.0, 0);
     };
     shape(&mut e, "Hi", 20.0);
-    assert_eq!(copy.take_letters(&e), whole(1024), "nothing was sent yet: the whole atlas");
-    assert!(copy.bytes == e.atlas().0);
+    let first: AtlasPart = copy.take(e.atlas(), 0);
+    assert!(first.rows.start == 0 && first.columns.start == 0 && first.texel_count() < 64 * 64, "a new texture: what the page holds so far, not the whole page, {first:?}");
+    assert!(copy.holds(e.atlas(), 0));
 
     shape(&mut e, "Hi", 20.0);
-    assert!(copy.take_letters(&e).is_empty(), "nothing new was packed");
+    assert!(copy.take(e.atlas(), 0).is_empty(), "nothing new was packed");
 
     shape(&mut e, "o", 20.0);
-    let beside: AtlasPart = copy.take_letters(&e);
+    let beside: AtlasPart = copy.take(e.atlas(), 0);
     assert!(beside.rows.start == 0 && beside.rows.end < 64, "a new letter beside the first two: rows of their shelf, {beside:?}");
     assert!(beside.columns.start > 0 && beside.columns.end - beside.columns.start < 32, "and its own columns only, {beside:?}");
-    assert!(copy.bytes == e.atlas().0, "the copy after one new letter");
+    assert!(copy.holds(e.atlas(), 0), "the copy after one new letter");
 
     // A taller letter in the same shelf makes that shelf taller.
     shape(&mut e, "Q", 48.0);
-    let taller: AtlasPart = copy.take_letters(&e);
+    let taller: AtlasPart = copy.take(e.atlas(), 0);
     assert!(taller.columns.start >= beside.columns.end && taller.rows.start == 0 && taller.rows.end > beside.rows.end, "a taller letter in the same shelf: its columns, down to its foot, {taller:?}");
-    assert!(copy.bytes == e.atlas().0, "the copy after a taller letter");
+    assert!(copy.holds(e.atlas(), 0), "the copy after a taller letter");
 
-    // 52 letters at 64 px are wider than the atlas: they fill the first
+    // 52 letters at 64 px are wider than the page: they fill the first
     // shelf and start others below it.
-    shape(&mut e, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", 64.0);
-    let over_shelves: AtlasPart = copy.take_letters(&e);
+    shape(&mut e, ALPHABET, 64.0);
+    let over_shelves: AtlasPart = copy.take(e.atlas(), 0);
     assert!(over_shelves.columns == (0..1024) && over_shelves.rows.start == 0, "letters over several shelves: whole rows from the shelf that was being filled, {over_shelves:?}");
-    assert!(copy.bytes == e.atlas().0, "the copy after letters over several shelves");
+    assert!(copy.holds(e.atlas(), 0), "the copy after letters over several shelves");
 
     shape(&mut e, "?", 64.0);
-    let lower: AtlasPart = copy.take_letters(&e);
+    let lower: AtlasPart = copy.take(e.atlas(), 0);
     assert!(lower.rows.start > 0 && lower.columns.start > 0 && lower.texel_count() < 128 * 128, "a letter in a shelf below the first: no row of the first shelf and no column sent before, {lower:?}");
-    assert!(copy.bytes == e.atlas().0, "the copy after a letter in a lower shelf");
+    assert!(copy.holds(e.atlas(), 0), "the copy after a letter in a lower shelf");
 
-    let mut second_renderer = AtlasCopy::default();
-    assert_eq!(second_renderer.take_letters(&e), whole(1024), "a second renderer over the same engine: the whole atlas");
-    assert!(second_renderer.bytes == e.atlas().0);
+    let mut second_renderer = PageCopy::default();
+    let second_first: AtlasPart = second_renderer.take(e.atlas(), 0);
+    assert!(second_first.columns == (0..1024) && second_first.rows.start == 0 && second_first.rows.end < 1024, "a second renderer's new texture: the rows used so far, {second_first:?}");
+    assert!(second_renderer.holds(e.atlas(), 0));
 
-    // Another engine's atlas has the same size and other letters in the
+    // Another engine's page has the same size and other letters in the
     // same places.
     let mut other = engine();
     shape(&mut other, "xyz", 20.0);
-    let mut handed_another_engine: AtlasCopy = copy.clone();
-    assert_eq!(handed_another_engine.take_letters(&other), whole(1024), "another engine's atlas: the whole of it");
-    assert!(handed_another_engine.bytes == other.atlas().0);
+    let mut handed_another_engine: PageCopy = copy.clone();
+    assert_eq!(handed_another_engine.take(other.atlas(), 0), whole(1024), "another engine's page: the whole of it");
+    assert!(handed_another_engine.holds(other.atlas(), 0));
 
-    run_that_grows_the_letters_atlas(&mut e);
-    let size: u32 = e.atlas().1;
-    assert_eq!(size, 2048, "the precondition: the atlas grew");
-    assert_eq!(copy.take_letters(&e), whole(size), "the grown atlas: the whole of it");
-    assert!(copy.bytes == e.atlas().0);
+    run_that_fills_the_first_page(&mut e);
+    assert_eq!(e.atlas().page_count(), 2, "the precondition: the first page is full");
+    copy.take(e.atlas(), 0);
+    assert!(copy.holds(e.atlas(), 0), "the copy of the full first page");
+    let mut second_page = PageCopy::default();
+    let new_page: AtlasPart = second_page.take(e.atlas(), 1);
+    assert!(!new_page.is_empty() && new_page != whole(1024), "a new page: what it holds so far, not the whole of it, {new_page:?}");
+    assert!(second_page.holds(e.atlas(), 1));
 
     shape(&mut e, "#", 20.0);
-    let in_grown: AtlasPart = copy.take_letters(&e);
-    assert!(!in_grown.is_empty() && in_grown != whole(size), "a new letter in the grown atlas: not the whole of it, {in_grown:?}");
-    assert!(copy.bytes == e.atlas().0, "the copy after a letter in the grown atlas");
+    assert!(copy.take(e.atlas(), 0).is_empty(), "a new letter on the second page: nothing of the first");
+    let on_new_page: AtlasPart = second_page.take(e.atlas(), 1);
+    assert!(!on_new_page.is_empty() && on_new_page.texel_count() < 64 * 64, "its own part of the second page, {on_new_page:?}");
+    assert!(second_page.holds(e.atlas(), 1), "the copy after a letter on the second page");
 }
 
-/// The emoji atlas is sent the same way: nothing before the first
-/// emoji, the whole of it at the first, a new emoji's own columns after.
+/// A page emptied for new glyphs is a page the renderer's texture does
+/// not hold: the next send is the whole of it, and the copy then equals
+/// it. Red when only the new letters are named: the texture keeps the
+/// letters of the page before, under quads that point elsewhere now.
+#[test]
+fn an_emptied_page_is_sent_whole() {
+    let mut e = engine();
+    let mut copies: Vec<PageCopy> = Vec::new();
+    let mut font_size: f32 = 120.0;
+    let mut emptied: Option<usize> = None;
+    while emptied.is_none() {
+        assert!(font_size > 30.0, "the precondition: the sizes fill the pages");
+        e.start_frame();
+        e.take_work();
+        let quads: Vec<GlyphQuad> = e.shape(ALPHABET, px(font_size), None, None, 0.0, 0.0, 100_000.0, 0);
+        font_size -= 1.0;
+        if e.take_work().pages_emptied > 0 {
+            emptied = quads.last().map(|quad| quad.page as usize);
+            break;
+        }
+        copies.resize(e.atlas().page_count(), PageCopy::default());
+        for (index, copy) in copies.iter_mut().enumerate() {
+            copy.take(e.atlas(), index);
+        }
+    }
+    let index: usize = emptied.expect("a page was emptied");
+    // Below the rows the new letters use, the emptied page holds no ink
+    // of the letters before: a new letter's edge would show it.
+    let used: AtlasPart = e.atlas().part_to_send(index, AtlasSent::default()).0;
+    let first_unused: usize = (used.rows.end * ATLAS_PAGE_SIDE) as usize;
+    assert!(e.atlas().page(index)[first_unused..].iter().all(|texel| *texel == 0), "the emptied page is cleared below row {}", used.rows.end);
+    assert_eq!(copies[index].take(e.atlas(), index), whole(1024), "the emptied page: the whole of it");
+    assert!(copies[index].holds(e.atlas(), index));
+}
+
+/// The emoji atlas is sent the same way: no page before the first emoji,
+/// what the page holds at the first, a new emoji's own columns after.
 #[test]
 #[ignore = "needs Windows' Segoe UI Emoji font: run with --include-ignored on Windows"]
-fn a_copy_that_takes_only_the_part_to_send_holds_the_whole_emoji_atlas() {
+fn a_copy_that_takes_only_the_part_to_send_holds_the_whole_emoji_page() {
     let mut e: TextEngine = engine_with_emoji();
-    let mut copy = AtlasCopy::default();
+    let mut copy = PageCopy::default();
     e.shape("a", px(40.0), None, None, 0.0, 0.0, 0.0, 0);
-    assert!(e.color_atlas_part_to_send(copy.sent).0.is_empty(), "no emoji was packed: nothing to send");
+    assert_eq!(e.color_atlas().page_count(), 0, "no emoji was packed: no page to send");
 
     e.shape("\u{1F600}", px(40.0), None, None, 0.0, 0.0, 0.0, 0);
-    let size: u32 = e.color_atlas().1;
-    assert_eq!(copy.take_emoji(&e), whole(size), "the first emoji: the whole atlas");
-    assert!(copy.bytes == e.color_atlas().0);
+    let first: AtlasPart = copy.take(e.color_atlas(), 0);
+    assert!(first.rows.start == 0 && first.columns.start == 0 && first != whole(COLOR_ATLAS_PAGE_SIDE), "the first emoji: what the page holds, {first:?}");
+    assert!(copy.holds(e.color_atlas(), 0));
 
     e.shape("\u{1F388}", px(40.0), None, None, 0.0, 0.0, 0.0, 0);
-    let beside: AtlasPart = copy.take_emoji(&e);
+    let beside: AtlasPart = copy.take(e.color_atlas(), 0);
     assert!(beside.rows.start == 0 && beside.rows.end < 128 && beside.columns.start > 0, "a second emoji beside the first: its own columns of their shelf, {beside:?}");
-    assert!(copy.bytes == e.color_atlas().0, "the copy after a second emoji");
+    assert!(copy.holds(e.color_atlas(), 0), "the copy after a second emoji");
 }
 
 /// Measures `text` both ways and shapes it, as a layout and a renderer
@@ -740,12 +910,11 @@ fn check_big_glyph(e: &TextEngine, quad: &GlyphQuad) -> BigGlyphId {
 #[test]
 fn a_glyph_too_big_for_the_atlas_is_kept_by_itself() {
     let mut e = engine();
-    let (_, sent): (AtlasPart, AtlasSent) = e.atlas_part_to_send(AtlasSent::default());
     e.take_work();
     let quads: Vec<GlyphQuad> = e.shape("Wg", px(400.0), None, None, 0.0, 0.0, 0.0, 0);
     let work: TextWork = e.take_work();
-    assert_eq!((quads.len(), work.letters_drawn, work.texture_grows), (2, 2, 0));
-    assert!(e.atlas_part_to_send(sent).0.is_empty(), "nothing went into the letters' atlas");
+    assert_eq!((quads.len(), work.letters_drawn, work.pages_added), (2, 2, 0));
+    assert_eq!(e.atlas().page_count(), 0, "nothing went into the letters' atlas");
     let ids: Vec<BigGlyphId> = quads.iter().map(|quad| check_big_glyph(&e, quad)).collect();
     assert_ne!(ids[0], ids[1], "each big glyph has its own id");
 
@@ -754,9 +923,9 @@ fn a_glyph_too_big_for_the_atlas_is_kept_by_itself() {
     assert_eq!(e.take_work(), TextWork::default());
     assert_eq!(again.iter().map(|quad| quad.big_glyph).collect::<Vec<_>>(), ids.iter().map(|id| Some(*id)).collect::<Vec<_>>());
 
-    // 26 letters of 400 px filled and doubled the atlas before.
+    // 26 letters of 400 px would fill most of five pages.
     e.shape("ABCDEFGHIJKLMNOPQRSTUVWXYZ", px(400.0), None, None, 0.0, 0.0, 100_000.0, 0);
-    assert_eq!((e.take_work().texture_grows, e.atlas().1), (0, 1024), "big letters fill no atlas");
+    assert_eq!((e.take_work().pages_added, e.atlas().page_count()), (0, 0), "big letters fill no atlas");
 
     // The limit is on the raster's sides, not on the font size.
     let (mut in_the_atlas, mut big): (u32, u32) = (0, 0);
@@ -773,7 +942,7 @@ fn a_glyph_too_big_for_the_atlas_is_kept_by_itself() {
         }
     }
     assert!(in_the_atlas >= 5 && big >= 5, "the precondition: glyphs on both sides of the limit, {in_the_atlas} and {big}");
-    assert!(!e.atlas_part_to_send(sent).0.is_empty(), "the small ones went into the atlas");
+    assert!(e.atlas().page_count() == 1 && !e.atlas().part_to_send(0, AtlasSent::default()).0.is_empty(), "the small ones went into the atlas");
 
     // A faux bold big glyph is kept at its grown size: 8 px more on
     // every side at 320 px.
@@ -784,20 +953,19 @@ fn a_glyph_too_big_for_the_atlas_is_kept_by_itself() {
     assert_ne!(check_big_glyph(&e, &plain), check_big_glyph(&e, &bold));
 }
 
-/// A big glyph is not drawn again when the letters' atlas grows: it is
-/// not in the atlas. Red when a grow drops every slot: each big glyph on
-/// screen is drawn again in the frame of the grow, 10 ms or more for one
-/// of 400 px on an old phone.
+/// A big glyph and the kept shape of its text stay when a page of the
+/// letters' atlas fills: the glyph is in no atlas. Red when a full page
+/// drops the kept shapes: the text is shaped again in that frame.
 #[test]
-fn a_big_glyph_is_not_drawn_again_when_the_letters_atlas_grows() {
+fn a_big_glyph_is_not_drawn_again_when_a_page_fills() {
     let mut e = engine();
     let before: Vec<GlyphQuad> = e.shape("W", px(400.0), None, None, 0.0, 0.0, 0.0, 0);
     let id: BigGlyphId = check_big_glyph(&e, &before[0]);
-    run_that_grows_the_letters_atlas(&mut e);
+    run_that_fills_the_first_page(&mut e);
     e.take_work();
     let after: Vec<GlyphQuad> = e.shape("W", px(400.0), None, None, 0.0, 0.0, 0.0, 0);
     let work: TextWork = e.take_work();
-    assert_eq!((work.shapes_to_draw, work.letters_drawn), (1, 0), "shaped anew, since a grow drops every kept shape; its glyph is found drawn");
+    assert_eq!((work.shapes_to_draw, work.letters_drawn), (0, 0), "its kept shape, its glyph drawn");
     assert_eq!(after[0].big_glyph, Some(id));
     assert_eq!((after[0].uv, after[0].w, after[0].h), (before[0].uv, before[0].w, before[0].h));
     check_big_glyph(&e, &after[0]);
@@ -823,7 +991,7 @@ fn big_glyphs_of_earlier_frames_are_dropped_over_the_kept_bytes() {
     let shown_in_a_moving_box: BigGlyphId = e.shape("O", px(300.0), None, None, 0.0, 0.0, 0.0, 0)[0].big_glyph.expect("a big glyph");
     let mut resized: Vec<BigGlyphId> = Vec::new();
     for frame in 0..40 {
-        e.drop_unused_big_glyphs();
+        e.start_frame();
         e.take_work();
         assert_eq!(e.shape("S", px(300.0), None, None, 0.0, 0.0, 0.0, 0)[0].big_glyph, Some(shown), "frame {frame}: the glyph shown every frame is kept");
         assert_eq!(e.take_work(), TextWork::default(), "frame {frame}: and costs nothing");
@@ -869,21 +1037,21 @@ fn big_glyphs_of_earlier_frames_are_dropped_over_the_kept_bytes() {
 fn the_big_glyphs_a_frame_shows_are_kept_however_many() {
     let mut e = engine();
     let screen = |e: &mut TextEngine| -> Vec<BigGlyphId> { e.shape("ABCDEFGHIJKLMNOPQRSTUVWXYZ", px(700.0), None, None, 0.0, 0.0, 100_000.0, 0).iter().map(|quad| quad.big_glyph.expect("a big glyph")).collect() };
-    e.drop_unused_big_glyphs();
+    e.start_frame();
     let first: Vec<BigGlyphId> = screen(&mut e);
     assert!(kept_bytes(&e, &first) > BIG_GLYPH_KEPT_BYTES, "the precondition: one frame's big glyphs are more than the kept bytes, {}", kept_bytes(&e, &first));
     for frame in 1..4 {
-        e.drop_unused_big_glyphs();
+        e.start_frame();
         e.take_work();
         assert_eq!(screen(&mut e), first, "frame {frame}: the same glyphs");
         assert_eq!(e.take_work(), TextWork::default(), "frame {frame}: nothing shaped, no letter drawn");
     }
     // Two frames that show something else: the first of them still
     // keeps what the frame before it showed.
-    e.drop_unused_big_glyphs();
+    e.start_frame();
     e.shape("x", px(20.0), None, None, 0.0, 0.0, 0.0, 0);
     assert_eq!(first.iter().filter(|id| e.big_glyph(**id).is_some()).count(), first.len());
-    e.drop_unused_big_glyphs();
+    e.start_frame();
     assert!(kept_bytes(&e, &first) <= BIG_GLYPH_KEPT_BYTES, "no frame shapes them: dropped down to the kept bytes, {}", kept_bytes(&e, &first));
 }
 
@@ -896,7 +1064,7 @@ fn a_big_emoji_is_kept_by_itself_in_color() {
     let mut e: TextEngine = engine_with_emoji();
     let quads: Vec<GlyphQuad> = e.shape("a\u{1F600}", px(300.0), None, None, 0.0, 0.0, 0.0, 0);
     assert!(quads.len() == 2 && !quads[0].color && quads[1].color, "{quads:?}");
-    assert!(e.color_atlas_part_to_send(AtlasSent::default()).0.is_empty(), "nothing went into the color atlas");
+    assert_eq!(e.color_atlas().page_count(), 0, "nothing went into the color atlas");
     check_big_glyph(&e, &quads[0]);
     let emoji: BigGlyph = e.big_glyph(check_big_glyph(&e, &quads[1])).expect("kept");
     assert!(emoji.texels.chunks_exact(4).any(|texel| texel[3] >= 250 && (texel[0] != texel[1] || texel[1] != texel[2])), "the emoji's own colors");
@@ -911,7 +1079,7 @@ fn a_big_emoji_is_kept_by_itself_in_color() {
     let id: BigGlyphId = check_big_glyph(&e, &host[1]);
     let painted: BigGlyph = e.big_glyph(id).expect("kept");
     assert_eq!((big_texel(&painted, 1, 1), big_texel(&painted, 300, 200)), (&[0u8, 255, 0, 255][..], &[0u8, 255, 0, 255][..]), "the host's pixels, inside the border");
-    assert!(e.color_atlas_part_to_send(AtlasSent::default()).0.is_empty(), "nothing went into the color atlas");
+    assert_eq!(e.color_atlas().page_count(), 0, "nothing went into the color atlas");
 
     e.set_host_color_glyph_painter(None);
     assert!(e.big_glyph(id).is_none(), "the old painter's big glyph went with it");

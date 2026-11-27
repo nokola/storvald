@@ -5,7 +5,7 @@
 compile_controls_page allocations 3517
 compile_controls_page nodes_placed 0
 compile_controls_page nodes_measured 0
-start_program allocations 343
+start_program allocations 341
 start_program nodes_placed 6
 start_program nodes_measured 8
 open_controls_page allocations 67
