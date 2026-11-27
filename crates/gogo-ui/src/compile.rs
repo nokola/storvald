@@ -162,6 +162,10 @@ struct WidgetDef {
     /// The `signal` lines' declared names — what GP52's behavior may
     /// raise (`drag_started`/`drag_ended` when declared).
     signals: Vec<String>,
+    /// The `report` lines' names: what the widget's code tells the page
+    /// that places it (`report size_changed, opacity_changed`). The build
+    /// checks them against the code's report enum (`emit_widget_code`).
+    reports: Vec<String>,
     /// A `control` declaration (vs a `widget`): its own scoped anims may
     /// drive `slot.<name>.<motion word>` lanes.
     control: bool,
@@ -972,6 +976,13 @@ pub struct Compiled {
     /// was not found is listed too. A hot reload watches these beside the
     /// page's own file.
     pub uses: Vec<String>,
+    /// Every widget and control this compile declared, by name, with the
+    /// names of its `report` lines, sorted by widget name.
+    ///
+    /// Needed by the build that gives a widget its code
+    /// (`BuildOptions::widget_code`): it checks the code's report enum
+    /// against these names.
+    pub widget_reports: Vec<(String, Vec<String>)>,
 }
 
 /// `compile` with no host options.
@@ -1137,7 +1148,9 @@ pub(crate) fn compile_keeping_numbers<'a>(source: &str, loader: Loader<'a>, opti
     };
     c.page.slices = std::borrow::Cow::Owned(slices);
     c.page.file_nodes = c.page.nodes.len() as u32;
-    Compiled { page: c.page, diags: c.diags, keys: c.local_keys, images: c.local_images, uses: c.uses_read }
+    let mut widget_reports: Vec<(String, Vec<String>)> = c.widgets.iter().map(|(name, def)| (name.clone(), def.reports.clone())).collect();
+    widget_reports.sort();
+    Compiled { page: c.page, diags: c.diags, keys: c.local_keys, images: c.local_images, uses: c.uses_read, widget_reports }
 }
 
 /// A number for what an `atlas` line says: its name, its words and the
@@ -3189,6 +3202,17 @@ impl<'a> Compiler<'a> {
                 // by `behavior` — refused, never dropped (todo-bugs.md #4:
                 // a dropped `script` line left the effect page's switch
                 // deaf to taps).
+                // What the widget's code reports to the page that places
+                // it: names only, the types are the code's report enum.
+                "report" => {
+                    let mut seen: Vec<&str> = Vec::new();
+                    for word in b.args.iter().filter_map(|a| a.as_ident()) {
+                        if seen.contains(&word) {
+                            self.error("G0077", b.line, format!("`report {word}` is listed twice — each report is named once"));
+                        }
+                        seen.push(word);
+                    }
+                }
                 "script" => {
                     self.error("G0082", b.line, format!("`script` is the Godot addon's word — a control names its input behavior here: `behavior <name> by $value in $min..$max` ({}); code-behind input is `on:pointer=` + `keys`", self.behavior_names()));
                 }
@@ -3276,7 +3300,7 @@ impl<'a> Compiler<'a> {
                 _ => {}
             }
         }
-        let bodies: Vec<&AstNode> = n.children.iter().filter_map(|i| if let AstItem::Node(b) = i { Some(b) } else { None }).filter(|b| !matches!(b.type_word.as_str(), "script" | "state" | "state_builtin" | "signal" | "keys" | "behavior" | "transition" | "when" | "anim" | "style" | "arrangement")).collect();
+        let bodies: Vec<&AstNode> = n.children.iter().filter_map(|i| if let AstItem::Node(b) = i { Some(b) } else { None }).filter(|b| !matches!(b.type_word.as_str(), "script" | "state" | "state_builtin" | "signal" | "report" | "keys" | "behavior" | "transition" | "when" | "anim" | "style" | "arrangement")).collect();
         if bodies.len() != 1 {
             self.error("G0028", n.line, format!("widget `{name}` needs exactly one root node in its body"));
             return;
@@ -3357,6 +3381,12 @@ impl<'a> Compiler<'a> {
         let states: Vec<String> = n.children.iter().filter_map(|i| if let AstItem::Node(b) = i { Some(b) } else { None }).filter(|b| b.type_word == "state").flat_map(|b| b.args.iter().filter_map(|a| a.as_ident()).map(str::to_string)).collect();
         let state_builtins: Vec<String> = n.children.iter().filter_map(|i| if let AstItem::Node(b) = i { Some(b) } else { None }).filter(|b| b.type_word == "state_builtin").flat_map(|b| b.args.iter().filter_map(|a| a.as_ident()).map(str::to_string)).collect();
         let signals: Vec<String> = n.children.iter().filter_map(|i| if let AstItem::Node(b) = i { Some(b) } else { None }).filter(|b| b.type_word == "signal").flat_map(|b| b.args.iter().filter_map(|a| a.as_ident()).map(str::to_string)).collect();
+        let mut reports: Vec<String> = Vec::new();
+        for word in n.children.iter().filter_map(|i| if let AstItem::Node(b) = i { Some(b) } else { None }).filter(|b| b.type_word == "report").flat_map(|b| b.args.iter().filter_map(|a| a.as_ident())) {
+            if !reports.iter().any(|r| r == word) {
+                reports.push(word.to_string());
+            }
+        }
         // One word, one meaning: `when <word>` in the body could not say
         // which of the two it answers.
         if let Some(word) = states.iter().find(|w| arrangements.contains(w)) {
@@ -3371,7 +3401,7 @@ impl<'a> Compiler<'a> {
                 keys_mask &= !spec.keys;
             }
         }
-        self.widgets.insert(name, WidgetDef { params: n.params.clone(), body: bodies[0].clone(), anims, host, props, whens, transitions, styles, states, state_builtins, arrangements, signals, keys: keys_mask, behavior, control: n.type_word == "control", line: n.line });
+        self.widgets.insert(name, WidgetDef { params: n.params.clone(), body: bodies[0].clone(), anims, host, props, whens, transitions, styles, states, state_builtins, arrangements, signals, reports, keys: keys_mask, behavior, control: n.type_word == "control", line: n.line });
     }
 
     /// `easing=name` plus its parameter words on the same line

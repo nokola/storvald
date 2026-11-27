@@ -44,7 +44,7 @@ painting) is in REFERENCE.md, "Host API".
    bare numbers *are* epx.
 4. **Dumb parser, smart resolver**: the parser knows only the grammar. `theme`, `style`,
    `widget`, `control`, `uses`, `slot`, `signals`, `behavior`, `state`, `state_builtin`,
-   `signal` are ordinary nodes/flags that the *resolver* interprets. Property typing,
+   `signal`, `report` are ordinary nodes/flags that the *resolver* interprets. Property typing,
    unit meaning, enum validation and did-you-mean suggestions all live in
    the resolver, against one table of words per kind.
 
@@ -315,6 +315,12 @@ These are ordinary nodes to the parser; the resolver gives them meaning:
   - **`signals`** — a flag on one node inside a widget body marking the event surface:
     an `on:` entry written on an instance lands on this node.
     Omitted ⇒ the root is the surface.
+  - **`report <names>`** — beside the body: what the widget's Rust struct tells the
+    page that places it (a widget with code, named by the build script:
+    `BuildOptions::widget_code`). Names only; the struct's report enum must have
+    exactly these, or the build stops. Each instance's events go to its struct
+    first, and its reports reach the page as a variant of the page's `Handler`
+    (REFERENCE "Widgets with code"). A name listed twice is G0077.
   - Widgets may use other widgets; cycles are a build error (cycle path printed).
   - **`for=<Host>` (D276)** — the announced host contract: `widget Name for=Radio, $p=v
     { ... }` says the body fills a stateful host's body (hosts: `Button`, `Radio`,

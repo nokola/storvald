@@ -36,6 +36,7 @@ pub mod reload;
 pub mod runtime;
 pub mod surface;
 pub mod tree;
+pub mod widget;
 
 pub use compile::{CompileOptions, Compiled, compile, compile_with};
 pub use diag::{Diagnostic, Severity, has_errors};
@@ -50,6 +51,7 @@ pub use anim::{Easing, Finish, Motion};
 pub use runtime::{Resolved, Runtime, resolve, resolve_animated};
 pub use popup::{PopupAlign, PopupSide};
 pub use surface::{CommandSurface, GpuSurface, PictureSurface, SurfaceAsk, SurfaceCommands, SurfaceDraw};
+pub use widget::{NoReport, NothingInside, Reports, Rows, Widget, WidgetCx, WidgetEvent, WidgetSet, WidgetShape};
 
 use std::path::{Path, PathBuf};
 
@@ -138,13 +140,23 @@ pub struct BuildOptions<'a> {
     /// crate hands gogo on under its own name (`engine::gogo`), and
     /// `gogo_ui::` alone names a crate the program does not have.
     pub gogo_path: &'a str,
+    /// (widget, path of its struct) for every widget with code:
+    /// `("BrushOptions", "crate::ui::code::brush_options::BrushOptions")`.
+    /// The struct implements `gogo_ui::Widget`; the build writes the rest
+    /// (`gogo_ui::widget`). Default: none.
+    ///
+    /// Needed so a page cannot forget to hand a widget its events: each
+    /// page gets a `Widgets` struct with a field per instance and the
+    /// routing to them, and its `Handler` a variant per instance that
+    /// reports.
+    pub widget_code: &'a [(&'a str, &'a str)],
 }
 
 impl<'a> BuildOptions<'a> {
     /// The defaults with `res_root` set: `.ignore` fence, no default
     /// font, no host options.
     pub fn new(res_root: &'a Path) -> Self {
-        BuildOptions { res_root, default_font: None, ignore_marker: Some(".ignore"), compile: CompileOptions::default(), runtime_keys: &[], code_images: &[], gogo_path: "::gogo_ui" }
+        BuildOptions { res_root, default_font: None, ignore_marker: Some(".ignore"), compile: CompileOptions::default(), runtime_keys: &[], code_images: &[], gogo_path: "::gogo_ui", widget_code: &[] }
     }
 }
 
@@ -210,6 +222,10 @@ pub fn build_pages(dir: &Path, out: &Path, options: BuildOptions<'_>) -> Result<
     let mut fonts: Vec<String> = Vec::new();
     // Every compiled page, for the build-wide `<Widget>Names` structs.
     let mut compiled_pages: Vec<(String, Page)> = Vec::new();
+    // Every widget a compile declared, with its `report` names.
+    let mut widget_reports: Vec<(String, Vec<String>)> = Vec::new();
+    // (module, compiled page, path) to emit once every page compiled.
+    let mut to_emit: Vec<(String, std::path::PathBuf)> = Vec::new();
     // Every page with its file, the files it `uses` and what they all say:
     // the `BUILD` table a hot reload compares the files with.
     let mut built: Vec<emit::BuiltPageRow> = Vec::new();
@@ -260,11 +276,12 @@ pub fn build_pages(dir: &Path, out: &Path, options: BuildOptions<'_>) -> Result<
             }
         }
         println!("cargo:rerun-if-changed={}", path.display());
-        match emit::emit_rust(&compiled.page, &module) {
-            Ok(code) => source.push_str(&code),
-            Err(e) => errors.push_str(&format!("{}: {e}", path.display())),
+        for (widget, reports) in &compiled.widget_reports {
+            if !widget_reports.iter().any(|(w, _)| w == widget) {
+                widget_reports.push((widget.clone(), reports.clone()));
+            }
         }
-        source.push('\n');
+        to_emit.push((module.clone(), path.clone()));
         compiled_pages.push((module, compiled.page));
     }
     // The built-in edit bar page, compiled with the app's key table so
@@ -283,17 +300,29 @@ pub fn build_pages(dir: &Path, out: &Path, options: BuildOptions<'_>) -> Result<
         modules.push(EDIT_BAR_MODULE.to_string());
         // The edit bar's text is inside gogo: it has no file to follow.
         built.push(emit::BuiltPageRow { module: EDIT_BAR_MODULE.to_string(), file: String::new(), uses: Vec::new(), text: 0 });
-        match emit::emit_rust(&compiled.page, EDIT_BAR_MODULE) {
-            Ok(code) => source.push_str(&code),
-            Err(e) => errors.push_str(&e),
+        compiled_pages.push((EDIT_BAR_MODULE.to_string(), compiled.page));
+    }
+    // Every page's code, now that every widget's report names are known.
+    let code: emit::WidgetCode<'_> = emit::WidgetCode { structs: options.widget_code, reports: &widget_reports };
+    for (module, page) in &compiled_pages {
+        let shown: String = match to_emit.iter().find(|(m, _)| m == module) {
+            Some((_, path)) => path.display().to_string(),
+            None => "edit_bar.gogo (built-in)".to_string(),
+        };
+        match emit::emit_rust_with(page, module, &code) {
+            Ok(text) => source.push_str(&text),
+            Err(e) => errors.push_str(&format!("{shown}: {e}")),
         }
         source.push('\n');
-        compiled_pages.push((EDIT_BAR_MODULE.to_string(), compiled.page));
     }
     // One `<Widget>Names` struct per widget the build instances.
     {
         let pages: Vec<(&str, &Page)> = compiled_pages.iter().map(|(m, p)| (m.as_str(), p)).collect();
         match emit::emit_widget_names(&pages) {
+            Ok(code) => source.push_str(&code),
+            Err(e) => errors.push_str(&e),
+        }
+        match emit::emit_widget_code(&pages, &code) {
             Ok(code) => source.push_str(&code),
             Err(e) => errors.push_str(&e),
         }

@@ -25,7 +25,27 @@ pub const BUILT_PAGES_FILE: &str = "turbodot_pages.rs";
 /// WARNING: stops build script with exit code 1 when a page does not
 /// compile, after printing gogo's errors.
 pub fn pages(folder: &str) {
-    if let Err(why) = write_pages(folder) {
+    pages_with_widget_code(folder, &[]);
+}
+
+/// `pages`, for a program with widgets that have code: `widget_code`
+/// names each such widget's struct, as the crate reaches it.
+///
+/// ```text
+/// fn main() {
+///     turbodot::build::pages_with_widget_code("ui", &[("Stepper", "crate::stepper::Stepper")]);
+/// }
+/// ```
+///
+/// Needed so a page cannot forget to hand a widget its events: each page
+/// gets a `Widgets` struct with a field per instance of such a widget,
+/// and its `Handler` a variant per instance that reports
+/// (`gogo_ui::Widget`, `Page::widgets`).
+///
+/// WARNING: stops build script with exit code 1 when a page does not
+/// compile, after printing gogo's errors.
+pub fn pages_with_widget_code(folder: &str, widget_code: &[(&str, &str)]) {
+    if let Err(why) = write_pages(folder, widget_code) {
         eprintln!("{why}");
         std::process::exit(1);
     }
@@ -35,13 +55,13 @@ pub fn pages(folder: &str) {
 ///
 /// Returns gogo's errors, or that cargo named no crate folder or no output
 /// folder.
-fn write_pages(folder: &str) -> Result<(), String> {
+fn write_pages(folder: &str, widget_code: &[(&str, &str)]) -> Result<(), String> {
     let crate_dir: PathBuf = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").map_err(|_| "`turbodot::build::pages` is called from a build script: cargo names no crate folder here")?);
     let out: PathBuf = PathBuf::from(std::env::var("OUT_DIR").map_err(|_| "`turbodot::build::pages` is called from a build script: cargo names no output folder here")?).join(BUILT_PAGES_FILE);
     let dir: PathBuf = crate_dir.join(folder);
     // Page added to folder: cargo builds program again.
     println!("cargo:rerun-if-changed={}", dir.display());
-    gogo_ui::build_pages(&dir, &out, BuildOptions { gogo_path: "turbodot::gogo", ..BuildOptions::new(&crate_dir) })?;
+    gogo_ui::build_pages(&dir, &out, BuildOptions { gogo_path: "turbodot::gogo", widget_code, ..BuildOptions::new(&crate_dir) })?;
     let mut source: String = std::fs::read_to_string(&out).map_err(|e| format!("{}: {e}", out.display()))?;
     let folder_as_text: String = dir.display().to_string().replace('\\', "/");
     let _ = write!(source, "/// What `turbodot::Program` starts from: this build's fonts and tables, and the folder its pages came from.\npub static BUILT: turbodot::Built = turbodot::Built {{ fonts: FONTS, tables: &BUILD, release_unused: RELEASE_UNUSED, folder: {folder_as_text:?}, has_depth_surface: HAS_DEPTH_SURFACE }};\n");

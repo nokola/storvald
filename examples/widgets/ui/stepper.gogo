@@ -1,0 +1,12 @@
+// A whole number with a minus and a plus button: a widget with code
+// (`src/stepper.rs`). It tells the page that places it when the user
+// stepped the number.
+widget Stepper {
+    report changed
+    Row spacing=8 {
+        Button minus text="-", width=40, height=40
+        // Empty until the code loads: it writes the number.
+        Label value text="", width=60, horizontal_alignment=center
+        Button plus text="+", width=40, height=40
+    }
+}

@@ -132,4 +132,5 @@ pub mod prelude {
     pub use crate::{Back, BuiltPage, CachedPage, Fonts, Host, OffScreenPage, Page, PageEvent, PageGpu, PageKind};
     pub use gogo_ui::runtime::{Item, ItemKey, ItemValue};
     pub use gogo_ui::{Buttons, CommandSurface, EventKind, GpuSurface, HoverPhase, Mods, NodeId, Phase, PictureSurface, PointerSample, SurfaceCommands, Tool};
+    pub use gogo_ui::{NoReport, NothingInside, Widget, WidgetCx, WidgetEvent, WidgetSet};
 }

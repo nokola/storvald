@@ -1,0 +1,13 @@
+// A width and a height, each a Stepper: a widget with code that holds
+// two widgets with code (`src/size_picker.rs`). It tells the page the
+// size whenever the user steps either number.
+uses "stepper.gogo"
+
+widget SizePicker {
+    report size_changed
+    Column spacing=8 {
+        Label text="Size"
+        Stepper widthStepper
+        Stepper heightStepper
+    }
+}

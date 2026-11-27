@@ -72,8 +72,31 @@ pub fn pascal_case(name: &str) -> String {
 /// with a `behavior` line and no `on:change` (`instance_that_hears`), plus
 /// every signal a control on the page declares.
 pub fn handler_names(page: &Page) -> Vec<String> {
+    handler_names_with(page, &WidgetCode::default())
+}
+
+/// `handler_names` for a build where some widgets have code (`code`): a
+/// name raised inside an instance of one is that instance's code's, not
+/// the page's, and is left out. The instance itself has a variant only
+/// when its widget reports (`report_variants`).
+pub fn handler_names_with(page: &Page, code: &WidgetCode<'_>) -> Vec<String> {
+    let inside: Vec<bool> = inside_code(page, code);
+    // Which handlers sit on a node inside an instance with code.
+    let mut is_code_handler: Vec<bool> = vec![false; page.handlers.len()];
+    for (index, node) in page.nodes.iter().enumerate() {
+        if inside[index] {
+            for h in node.handlers.0..node.handlers.0 + node.handlers.1 {
+                if let Some(flag) = is_code_handler.get_mut(h as usize) {
+                    *flag = true;
+                }
+            }
+        }
+    }
     let mut names: Vec<String> = Vec::new();
-    for h in &page.handlers {
+    for (index, h) in page.handlers.iter().enumerate() {
+        if is_code_handler[index] {
+            continue;
+        }
         if let Action::Named(id) | Action::Emit(id) = h.action {
             let n = page.str(id).to_string();
             if !names.contains(&n) {
@@ -92,7 +115,10 @@ pub fn handler_names(page: &Page) -> Vec<String> {
     }
     let activate = page.intern_lookup("activate");
     let change = page.intern_lookup("change");
-    for node in &page.nodes {
+    for (index, node) in page.nodes.iter().enumerate() {
+        if inside[index] {
+            continue;
+        }
         let value_control = matches!(node.kind, Kind::Slider | Kind::Input);
         if (node.kind.is_press_surface() || value_control) && node.name != NO_STR && !page.str(node.name).contains('/') {
             let wired = if value_control { change } else { activate };
@@ -108,6 +134,9 @@ pub fn handler_names(page: &Page) -> Vec<String> {
     // Instance names come last, so a page's other variants keep their
     // order when a widget is placed on it.
     for (index, node) in page.nodes.iter().enumerate() {
+        if inside[index] {
+            continue;
+        }
         // A control with a `behavior` line reports its value as a Slider does.
         let value_control: bool = matches!(node.kind, Kind::Slider | Kind::Input) || page.behaviors.iter().any(|behavior| behavior.root.index() == index);
         if !(node.kind.is_press_surface() || value_control) {
@@ -128,6 +157,9 @@ pub fn handler_names(page: &Page) -> Vec<String> {
     // A key a control claims (`keys` line) is reported like its value.
     let key: StrId = page.intern_lookup("key");
     for (root, _) in &page.key_claims {
+        if inside[root.index()] {
+            continue;
+        }
         let node: &Node = &page.nodes[root.index()];
         let is_heard_by_own_line: bool = page.handlers[node.handlers.0 as usize..(node.handlers.0 + node.handlers.1) as usize].iter().any(|h| h.event == key);
         if is_heard_by_own_line {
@@ -143,6 +175,9 @@ pub fn handler_names(page: &Page) -> Vec<String> {
     // A control's declared signal is reported under the signal's own
     // name, as an `emit()` is.
     for behavior in &page.behaviors {
+        if inside[behavior.root.index()] {
+            continue;
+        }
         for signal in [behavior.drag_started, behavior.drag_ended] {
             if signal != NO_STR {
                 let n: String = page.str(signal).to_string();
@@ -643,6 +678,13 @@ fn repeat_templates(page: &Page) -> Vec<(NodeId, String)> {
 /// generated code could not carry (two anims spelling one variant, two
 /// nodes spelling one field, a body node named `root`).
 pub fn emit_rust(page: &Page, module: &str) -> Result<String, String> {
+    emit_rust_with(page, module, &WidgetCode::default())
+}
+
+/// `emit_rust` for a build where some widgets have code (`code`): the
+/// page's `Handler` gets a variant per instance with code that reports,
+/// and the page gets its `Widgets` struct with the routing to them.
+pub fn emit_rust_with(page: &Page, module: &str, code: &WidgetCode<'_>) -> Result<String, String> {
     let mut out = String::new();
     out.push_str(&format!("#[allow(unused_imports, clippy::all)]\npub mod {module} {{\n"));
     out.push_str("    use super::gogo_ui;\n    use gogo_ui::page::*;\n    use gogo_ui::page::{Kind::*, Len::*, Align::*, PropKey::*, Value::*, State::*, Action::*, Auto::*, Payload::*};\n\n");
@@ -682,23 +724,56 @@ pub fn emit_rust(page: &Page, module: &str) -> Result<String, String> {
     out.push_str("        slices: &super::SLICES,\n");
     out.push_str("    };\n\n");
 
+    // Names struct entries, read first: the instances with code among
+    // them give the Handler enum its report variants.
+    let entries = name_entries(page, "").map_err(|e| format!("{module}: {e}"))?;
+    let mut slots: Vec<CodeSlot> = Vec::new();
+    code_slots(&entries, "", "", code, &mut slots);
+    let rows: Vec<CodeRows> = code_rows(page, code).map_err(|e| format!("{module}: {e}"))?;
+    check_code_reached(page, &entries, code).map_err(|e| format!("{module}: {e}"))?;
+
     // Handler enum.
-    let names = handler_names(page);
-    out.push_str("    /// The file's handler names; the app matches on these.\n");
-    out.push_str("    #[derive(Clone, Copy, Debug, PartialEq, Eq)]\n    pub enum Handler {\n");
+    let names = handler_names_with(page, code);
+    let reporting: Vec<&CodeSlot> = slots.iter().filter(|slot| slot.has_reports).collect();
+    for slot in &reporting {
+        if names.iter().any(|n| pascal_case(n) == slot.variant) {
+            return Err(format!("{module}: the instance `{}` of widget `{}` reports as `Handler::{}`, and a handler of the file has that name too — rename one\n", slot.names, slot.widget, slot.variant));
+        }
+    }
+    let reporting_rows: Vec<&CodeRows> = rows.iter().filter(|rows| rows.slots.iter().any(|slot| slot.has_reports)).collect();
+    for rows in &reporting_rows {
+        if names.iter().any(|n| pascal_case(n) == rows.variant) || reporting.iter().any(|slot| slot.variant == rows.variant) {
+            return Err(format!("{module}: the rows of `repeat {}` report as `Handler::{}`, and a handler of the file has that name too — rename one\n", rows.repeat_name, rows.variant));
+        }
+    }
+    out.push_str("    /// The file's handler names; the app matches on these. An instance of a widget with code that reports has a variant carrying its report.\n");
+    if reporting.is_empty() && reporting_rows.is_empty() {
+        out.push_str("    #[derive(Clone, Copy, Debug, PartialEq, Eq)]\n    pub enum Handler {\n");
+    } else {
+        out.push_str("    #[derive(Clone, Debug, PartialEq)]\n    pub enum Handler {\n");
+    }
     for n in &names {
         out.push_str(&format!("        {},\n", pascal_case(n)));
+    }
+    for slot in &reporting {
+        out.push_str(&format!("        {}(<{} as gogo_ui::Widget>::Report),\n", slot.variant, slot.path));
+    }
+    for rows in &reporting_rows {
+        out.push_str(&format!("        /// A report of a widget in row `.0` of `repeat {}`, by the row's place among the rows it made.\n        {}(usize, {}),\n", rows.repeat_name, rows.variant, rows.inside_enum));
     }
     out.push_str("    }\n\n    impl Handler {\n        pub fn from_name(name: &str) -> Option<Handler> {\n            match name {\n");
     for n in &names {
         out.push_str(&format!("                {n:?} => Some(Handler::{}),\n", pascal_case(n)));
     }
     out.push_str("                _ => None,\n            }\n        }\n    }\n\n");
-    out.push_str("    impl gogo_ui::HandlerName for Handler {\n        fn from_name(name: &str) -> Option<Handler> {\n            Handler::from_name(name)\n        }\n    }\n\n");
+    out.push_str("    impl gogo_ui::HandlerName for Handler {\n");
+    if !slots.is_empty() || !rows.is_empty() {
+        out.push_str("        const HAS_WIDGET_CODE: bool = true;\n\n");
+    }
+    out.push_str("        fn from_name(name: &str) -> Option<Handler> {\n            Handler::from_name(name)\n        }\n    }\n\n");
 
     // Names struct: plain nodes by id; a widget instance as its
     // `<Widget>Names` (root + body), nested for a widget inside a widget.
-    let entries = name_entries(page, "").map_err(|e| format!("{module}: {e}"))?;
     out.push_str("    /// Every named node, by id; a widget instance by its `<Widget>Names`.\n    #[allow(dead_code)]\n    #[derive(Clone, Copy, Debug)]\n    pub struct Names {\n");
     for (f, e) in &entries {
         out.push_str(&format!("        pub {f}: {},\n", entry_type(e)));
@@ -708,6 +783,9 @@ pub fn emit_rust(page: &Page, module: &str) -> Result<String, String> {
         out.push_str(&format!("        {f}: {},\n", entry_value(e, 8)));
     }
     out.push_str("    };\n");
+    if !slots.is_empty() || !rows.is_empty() {
+        out.push_str(&emit_page_widgets(&slots, &rows));
+    }
     emit_slots(page, &mut out).map_err(|e| format!("{module}: {e}"))?;
     out.push_str("}\n");
     Ok(out)
@@ -918,6 +996,450 @@ pub fn emit_atlases(atlases: &[AtlasDecl]) -> Result<String, String> {
     }
     out.push_str("}\n\n");
     Ok(out)
+}
+
+/// What a build knows of the widgets that have code: each one's struct,
+/// as the app's build script names it (`BuildOptions::widget_code`), and
+/// the names of its `report` lines (`Compiled::widget_reports`).
+#[derive(Clone, Copy, Default)]
+pub struct WidgetCode<'a> {
+    /// (widget, path of its struct: `crate::ui::code::Lamp`).
+    pub structs: &'a [(&'a str, &'a str)],
+    /// (widget, its `report` names), for every widget the build declared.
+    pub reports: &'a [(String, Vec<String>)],
+}
+
+impl WidgetCode<'_> {
+    /// The path of `widget`'s struct, when the widget has code.
+    pub fn path(&self, widget: &str) -> Option<&str> {
+        self.structs.iter().find(|(w, _)| *w == widget).map(|(_, path)| *path)
+    }
+
+    /// The names of `widget`'s `report` lines, empty when it has none.
+    pub fn reports_of(&self, widget: &str) -> &[String] {
+        self.reports.iter().find(|(w, _)| w == widget).map(|(_, reports)| reports.as_slice()).unwrap_or(&[])
+    }
+}
+
+/// One instance with code that a level (a page, or a widget's body)
+/// routes to.
+#[derive(Clone, Debug)]
+struct CodeSlot {
+    /// The field of the level's `Widgets` (`brush_options`, or
+    /// `panel_slider` for one inside an instance without code).
+    field: String,
+    /// Its variant in the level's `Handler` or `<Widget>Inside`.
+    variant: String,
+    widget: String,
+    /// The path of the widget's struct.
+    path: String,
+    /// The instance's names below the level's names (`brush_options`,
+    /// `panel.slider`).
+    names: String,
+    has_reports: bool,
+}
+
+/// The instances with code among `entries`, a level's names: each one is
+/// a slot; the body of an instance without code is searched, and a slot
+/// found there is named by its path (`panel_slider`).
+fn code_slots(entries: &[(String, NameEntry)], field_prefix: &str, names_prefix: &str, code: &WidgetCode<'_>, out: &mut Vec<CodeSlot>) {
+    for (field, entry) in entries {
+        let NameEntry::Instance { widget, body, .. } = entry else { continue };
+        let field_here: String = if field_prefix.is_empty() { field.trim_start_matches("r#").to_string() } else { format!("{field_prefix}_{}", field.trim_start_matches("r#")) };
+        let names_here: String = if names_prefix.is_empty() { field.clone() } else { format!("{names_prefix}.{field}") };
+        match code.path(widget) {
+            Some(path) => out.push(CodeSlot { variant: pascal_case(&field_here), field: field_here, widget: widget.clone(), path: path.to_string(), names: names_here, has_reports: !code.reports_of(widget).is_empty() }),
+            None => code_slots(body, &field_here, &names_here, code, out),
+        }
+    }
+}
+
+/// For each node of `page`: whether it is an instance of a widget with
+/// code, or inside one.
+fn inside_code(page: &Page, code: &WidgetCode<'_>) -> Vec<bool> {
+    let mut inside: Vec<bool> = vec![false; page.nodes.len()];
+    if code.structs.is_empty() {
+        return inside;
+    }
+    for index in 0..page.nodes.len() {
+        let mut at: NodeId = NodeId::from_index(index);
+        loop {
+            let here: &Node = &page.nodes[at.index()];
+            if here.widget != NO_STR && code.path(page.str(here.widget)).is_some() {
+                inside[index] = true;
+                break;
+            }
+            if here.parent == NO_NODE {
+                break;
+            }
+            at = here.parent;
+        }
+    }
+    inside
+}
+
+/// `Err` naming an instance of a widget with code that no routing
+/// reaches: an instance with no name, or one in a repeat's row. Its code
+/// would never hear a tap.
+fn check_code_reached(page: &Page, entries: &[(String, NameEntry)], code: &WidgetCode<'_>) -> Result<(), String> {
+    if code.structs.is_empty() {
+        return Ok(());
+    }
+    let mut reached: Vec<NodeId> = Vec::new();
+    fn walk(entries: &[(String, NameEntry)], code: &WidgetCode<'_>, reached: &mut Vec<NodeId>) {
+        for (_, entry) in entries {
+            if let NameEntry::Instance { root, widget, body } = entry {
+                if code.path(widget).is_some() {
+                    reached.push(*root);
+                }
+                walk(body, code, reached);
+            }
+        }
+    }
+    walk(entries, code, &mut reached);
+    let inside: Vec<bool> = inside_code(page, code);
+    for (repeat, prefix) in repeat_templates(page) {
+        if !inside[repeat.index()] {
+            if let Ok(row) = row_entries(page, repeat, &prefix) {
+                walk(&row, code, &mut reached);
+            }
+        }
+    }
+    for (index, node) in page.nodes.iter().enumerate() {
+        if node.widget == NO_STR || code.path(page.str(node.widget)).is_none() || reached.contains(&NodeId::from_index(index)) {
+            continue;
+        }
+        let name: &str = if node.name == NO_STR { "(no name)" } else { page.str(node.name) };
+        return Err(format!("the instance `{name}` of widget `{}` has code, and no routing reaches it: give it a name; in a repeat's row, put it inside a node of the row (a row that is itself the widget is not routed), and keep the repeat out of a widget with code\n", page.str(node.widget)));
+    }
+    Ok(())
+}
+
+/// The routing loop of a level: walks up from `event.node`, and keeps the
+/// outermost slot whose root it passes (a slot inside a slot is the outer
+/// slot's to route). `names` is how the level reaches its names (`NAMES`,
+/// `self.names`); `stop` ends the walk at the level's own root, or `None`
+/// for a page.
+fn route_body(slots: &[CodeSlot], names: &str, stop: Option<&str>, heard: &dyn Fn(&CodeSlot) -> String, indent: &str) -> String {
+    let mut s = String::new();
+    s.push_str(&format!("{indent}let mut at: gogo_ui::NodeId = event.node;\n"));
+    s.push_str(&format!("{indent}let mut slot: usize = usize::MAX;\n"));
+    s.push_str(&format!("{indent}while at != gogo_ui::NO_NODE && at.index() < page.nodes.len() {{\n"));
+    if let Some(stop) = stop {
+        s.push_str(&format!("{indent}    if at == {stop} {{\n{indent}        break;\n{indent}    }}\n"));
+    }
+    for (index, slot) in slots.iter().enumerate() {
+        s.push_str(&format!("{indent}    if at == {names}.{}.root {{\n{indent}        slot = {index};\n{indent}    }}\n", slot.names));
+    }
+    s.push_str(&format!("{indent}    at = page.nodes[at.index()].parent;\n{indent}}}\n"));
+    s.push_str(&format!("{indent}match slot {{\n"));
+    for (index, slot) in slots.iter().enumerate() {
+        s.push_str(&format!("{indent}    {index} => {{\n{indent}        gogo_ui::Widget::route(&mut self.{}, page, rt, event, &mut |report| {});\n{indent}        true\n{indent}    }}\n", slot.field, heard(slot)));
+    }
+    s.push_str(&format!("{indent}    _ => false,\n{indent}}}\n"));
+    s
+}
+
+/// The rest of a `WidgetSet` impl: `load`, `frame` and `after_layout` of
+/// every slot, in the file's order.
+fn set_forwards(slots: &[CodeSlot], indent: &str) -> String {
+    let mut s = String::new();
+    s.push_str(&format!("{indent}fn load(&mut self, page: &mut gogo_ui::Page, rt: &mut gogo_ui::Runtime) {{\n"));
+    for slot in slots {
+        s.push_str(&format!("{indent}    gogo_ui::Widget::load_all(&mut self.{}, page, rt);\n", slot.field));
+    }
+    s.push_str(&format!("{indent}}}\n\n"));
+    s.push_str(&format!("{indent}fn frame(&mut self, page: &mut gogo_ui::Page, rt: &mut gogo_ui::Runtime, dt_sec: f32) -> bool {{\n{indent}    let mut is_moving: bool = false;\n"));
+    for slot in slots {
+        s.push_str(&format!("{indent}    is_moving |= gogo_ui::Widget::frame_all(&mut self.{}, page, rt, dt_sec);\n", slot.field));
+    }
+    s.push_str(&format!("{indent}    is_moving\n{indent}}}\n\n"));
+    s.push_str(&format!("{indent}fn after_layout(&mut self, page: &mut gogo_ui::Page, rt: &mut gogo_ui::Runtime, rects: &[gogo_ui::Rect]) {{\n"));
+    for slot in slots {
+        s.push_str(&format!("{indent}    gogo_ui::Widget::after_layout_all(&mut self.{}, page, rt, rects);\n", slot.field));
+    }
+    s.push_str(&format!("{indent}}}\n"));
+    s
+}
+
+/// A page's `Widgets`: one field per instance with code, made from the
+/// page's `NAMES`, and its `WidgetSet<Handler>` (the routing).
+fn emit_page_widgets(slots: &[CodeSlot], rows: &[CodeRows]) -> String {
+    let mut s = String::new();
+    for row in rows {
+        s.push_str(&emit_row_widgets(row));
+    }
+    s.push_str("\n    /// The page's instances of widgets with code, one field each, and one struct per row of each repeat with such widgets in its rows. The page's code owns it, calls an instance directly, and hands it the page's events (`gogo_ui::WidgetSet::route`).\n    pub struct Widgets {\n");
+    for slot in slots {
+        s.push_str(&format!("        pub {}: {},\n", slot.field, slot.path));
+    }
+    for row in rows {
+        s.push_str(&format!("        /// One per row `repeat {}` made, in the order they were made.\n        pub {}: gogo_ui::Rows<{}>,\n", row.repeat_name, row.field, row.row_struct));
+    }
+    s.push_str("    }\n\n    impl Widgets {\n        /// Every instance over its names; nothing is written into the page until `load`.\n        pub fn new() -> Widgets {\n            Widgets {\n");
+    for slot in slots {
+        s.push_str(&format!("                {}: <{} as gogo_ui::Widget>::new(&NAMES.{}),\n", slot.field, slot.path, slot.names));
+    }
+    for row in rows {
+        s.push_str(&format!("                {}: gogo_ui::Rows::new(),\n", row.field));
+    }
+    s.push_str("            }\n        }\n\n");
+    s.push_str("        /// Makes and loads the struct of every row made since the last call. The routing calls it at load, before each event and after each layout; a page that made rows and writes into their widgets at once calls it first.\n        pub fn sync_rows(&mut self, page: &mut gogo_ui::Page, rt: &mut gogo_ui::Runtime) {\n");
+    for row in rows {
+        s.push_str(&format!("            self.{}.sync(page, rt, NAMES.{}, |root| {}::new(&{}::at(root)), |row, page, rt| gogo_ui::WidgetSet::load(row, page, rt));\n", row.field, row.repeat_names, row.row_struct, row.slot_struct));
+    }
+    let _ = rows;
+    s.push_str("        }\n    }\n\n    impl Default for Widgets {\n        fn default() -> Widgets {\n            Widgets::new()\n        }\n    }\n\n");
+    s.push_str("    impl gogo_ui::WidgetSet<Handler> for Widgets {\n        fn route(&mut self, page: &mut gogo_ui::Page, rt: &mut gogo_ui::Runtime, event: &gogo_ui::Event, heard: &mut dyn FnMut(Handler)) -> bool {\n");
+    s.push_str("            self.sync_rows(page, rt);\n");
+    let heard = |slot: &CodeSlot| if slot.has_reports { format!("heard(Handler::{}(report))", slot.variant) } else { "match report {}".to_string() };
+    s.push_str(&route_body_with_rows(slots, rows, &heard, "            "));
+    s.push_str("        }\n\n");
+    s.push_str(&set_forwards_with_rows(slots, rows, "        "));
+    s.push_str("    }\n");
+    s
+}
+
+/// A repeat at page level whose rows hold widgets with code.
+#[derive(Clone, Debug)]
+struct CodeRows {
+    /// The repeat's name in the file (`bigRows`, `zoom/list`).
+    repeat_name: String,
+    /// Its field of the page's `Widgets` (`big_rows`).
+    field: String,
+    /// Its variant of the page's `Handler` (`BigRows`).
+    variant: String,
+    /// How the page's names reach the repeat node (`big_rows`, `zoom.list`).
+    repeat_names: String,
+    /// The build's struct of one row's names (`BigRowsSlot`).
+    slot_struct: String,
+    /// One row's widgets with code (`BigRowsWidgets`).
+    row_struct: String,
+    /// The reports of one row's widgets, by instance (`BigRowsInside`).
+    inside_enum: String,
+    /// `.node()` when the row's root is a Surface, else nothing.
+    root_suffix: String,
+    /// The instances with code of one row, below the row's names.
+    slots: Vec<CodeSlot>,
+}
+
+/// The names of one row of `repeat` below the row's root (`prefix` is
+/// `<repeat>/item`): the root is the row itself, the `root` field of its
+/// `<Repeat>Slot`, never one of these.
+fn row_entries(page: &Page, repeat: NodeId, prefix: &str) -> Result<Vec<(String, NameEntry)>, String> {
+    let template: NodeId = page.repeats.iter().find(|r| r.node == repeat).map(|r| r.template).expect("a repeat has a template");
+    Ok(name_entries(page, prefix)?.into_iter().filter(|(_, e)| !matches!(e, NameEntry::Node(n) | NameEntry::Surface(n, _) if *n == template) && !matches!(e, NameEntry::Instance { root, .. } if *root == template)).collect())
+}
+
+/// The repeats of `page`, outside every instance with code, whose rows
+/// hold instances with code.
+fn code_rows(page: &Page, code: &WidgetCode<'_>) -> Result<Vec<CodeRows>, String> {
+    let mut out: Vec<CodeRows> = Vec::new();
+    if code.structs.is_empty() {
+        return Ok(out);
+    }
+    let inside: Vec<bool> = inside_code(page, code);
+    for (repeat, prefix) in repeat_templates(page) {
+        if inside[repeat.index()] {
+            continue;
+        }
+        let template: NodeId = page.repeats.iter().find(|r| r.node == repeat).map(|r| r.template).expect("a repeat has a template");
+        let entries: Vec<(String, NameEntry)> = row_entries(page, repeat, &prefix)?;
+        let mut slots: Vec<CodeSlot> = Vec::new();
+        code_slots(&entries, "", "", code, &mut slots);
+        if slots.is_empty() {
+            continue;
+        }
+        let name: String = page.str(page.nodes[repeat].name).to_string();
+        let joined: String = name.replace('/', "_");
+        let pascal: String = pascal_case(&joined);
+        let root_suffix: String = if matches!(node_entry(page, template), NameEntry::Surface(..)) { ".node()".to_string() } else { String::new() };
+        out.push(CodeRows { field: snake_case(&joined), variant: pascal.clone(), repeat_names: name.split('/').map(field_name).collect::<Vec<String>>().join("."), slot_struct: format!("{pascal}Slot"), row_struct: format!("{pascal}Widgets"), inside_enum: format!("{pascal}Inside"), root_suffix, repeat_name: name, slots });
+    }
+    Ok(out)
+}
+
+/// One row's struct of a repeat with widgets with code: `<Repeat>Inside`,
+/// `<Repeat>Widgets` over the row's names, and its routing.
+fn emit_row_widgets(row: &CodeRows) -> String {
+    let mut s = String::new();
+    s.push_str(&format!("\n    /// The reports of the widgets with code in one row of `repeat {}`, by instance.\n    #[allow(dead_code)]\n    #[derive(Clone, Debug, PartialEq)]\n    pub enum {} {{\n", row.repeat_name, row.inside_enum));
+    for slot in row.slots.iter().filter(|slot| slot.has_reports) {
+        s.push_str(&format!("        {}(<{} as gogo_ui::Widget>::Report),\n", slot.variant, slot.path));
+    }
+    s.push_str("    }\n\n");
+    s.push_str(&format!("    /// The widgets with code in one row of `repeat {}`, and the row's names.\n    pub struct {} {{\n        pub names: {},\n", row.repeat_name, row.row_struct, row.slot_struct));
+    for slot in &row.slots {
+        s.push_str(&format!("        pub {}: {},\n", slot.field, slot.path));
+    }
+    s.push_str(&format!("    }}\n\n    impl {} {{\n        /// Every instance of the row `names` names.\n        pub fn new(names: &{}) -> {} {{\n            {} {{\n                names: *names,\n", row.row_struct, row.slot_struct, row.row_struct, row.row_struct));
+    for slot in &row.slots {
+        s.push_str(&format!("                {}: <{} as gogo_ui::Widget>::new(&names.{}),\n", slot.field, slot.path, slot.names));
+    }
+    s.push_str("            }\n        }\n    }\n\n");
+    s.push_str(&format!("    impl gogo_ui::WidgetSet<{}> for {} {{\n        fn route(&mut self, page: &mut gogo_ui::Page, rt: &mut gogo_ui::Runtime, event: &gogo_ui::Event, heard: &mut dyn FnMut({})) -> bool {{\n", row.inside_enum, row.row_struct, row.inside_enum));
+    let inside_enum: String = row.inside_enum.clone();
+    let heard = move |slot: &CodeSlot| if slot.has_reports { format!("heard({inside_enum}::{}(report))", slot.variant) } else { "match report {}".to_string() };
+    let stop: String = format!("self.names.root{}", row.root_suffix);
+    s.push_str(&route_body(&row.slots, "self.names", Some(&stop), &heard, "            "));
+    s.push_str("        }\n\n");
+    s.push_str(&set_forwards(&row.slots, "        "));
+    s.push_str("    }\n");
+    s
+}
+
+/// The page's routing loop with rows: as `route_body`, and a row root it
+/// passes picks that row's struct.
+fn route_body_with_rows(slots: &[CodeSlot], rows: &[CodeRows], heard: &dyn Fn(&CodeSlot) -> String, indent: &str) -> String {
+    let mut s = String::new();
+    s.push_str(&format!("{indent}let mut at: gogo_ui::NodeId = event.node;\n"));
+    s.push_str(&format!("{indent}let mut slot: usize = usize::MAX;\n"));
+    s.push_str(&format!("{indent}let mut row: usize = 0;\n"));
+    s.push_str(&format!("{indent}while at != gogo_ui::NO_NODE && at.index() < page.nodes.len() {{\n"));
+    for (index, slot) in slots.iter().enumerate() {
+        s.push_str(&format!("{indent}    if at == NAMES.{}.root {{\n{indent}        slot = {index};\n{indent}    }}\n", slot.names));
+    }
+    for (place, rows_here) in rows.iter().enumerate() {
+        let index: usize = slots.len() + place;
+        s.push_str(&format!("{indent}    if let Some(found) = self.{}.iter().position(|one| one.names.root{} == at) {{\n{indent}        slot = {index};\n{indent}        row = found;\n{indent}    }}\n", rows_here.field, rows_here.root_suffix));
+    }
+    s.push_str(&format!("{indent}    at = page.nodes[at.index()].parent;\n{indent}}}\n"));
+    s.push_str(&format!("{indent}let _ = row;\n"));
+    s.push_str(&format!("{indent}match slot {{\n"));
+    for (index, slot) in slots.iter().enumerate() {
+        s.push_str(&format!("{indent}    {index} => {{\n{indent}        gogo_ui::Widget::route(&mut self.{}, page, rt, event, &mut |report| {});\n{indent}        true\n{indent}    }}\n", slot.field, heard(slot)));
+    }
+    for (place, rows_here) in rows.iter().enumerate() {
+        let index: usize = slots.len() + place;
+        let reports: bool = rows_here.slots.iter().any(|slot| slot.has_reports);
+        let to_page: String = if reports { format!("heard(Handler::{}(row, inside))", rows_here.variant) } else { "match inside {}".to_string() };
+        s.push_str(&format!("{indent}    {index} => gogo_ui::WidgetSet::route(&mut self.{}[row], page, rt, event, &mut |inside| {to_page}),\n", rows_here.field));
+    }
+    s.push_str(&format!("{indent}    _ => false,\n{indent}}}\n"));
+    s
+}
+
+/// The rest of the page's `WidgetSet` impl with rows: the slots and every
+/// row. `load` and `after_layout` first make the rows made since the last
+/// call; `frame` does not: a row made since the last layout is made after
+/// the next one, and its first `frame` comes the frame after.
+fn set_forwards_with_rows(slots: &[CodeSlot], rows: &[CodeRows], indent: &str) -> String {
+    let mut s = String::new();
+    s.push_str(&format!("{indent}fn load(&mut self, page: &mut gogo_ui::Page, rt: &mut gogo_ui::Runtime) {{\n"));
+    for slot in slots {
+        s.push_str(&format!("{indent}    gogo_ui::Widget::load_all(&mut self.{}, page, rt);\n", slot.field));
+    }
+    s.push_str(&format!("{indent}    self.sync_rows(page, rt);\n{indent}}}\n\n"));
+    s.push_str(&format!("{indent}fn frame(&mut self, page: &mut gogo_ui::Page, rt: &mut gogo_ui::Runtime, dt_sec: f32) -> bool {{\n{indent}    let mut is_moving: bool = false;\n"));
+    for slot in slots {
+        s.push_str(&format!("{indent}    is_moving |= gogo_ui::Widget::frame_all(&mut self.{}, page, rt, dt_sec);\n", slot.field));
+    }
+    for row in rows {
+        s.push_str(&format!("{indent}    for one in self.{}.iter_mut() {{\n{indent}        is_moving |= gogo_ui::WidgetSet::frame(one, page, rt, dt_sec);\n{indent}    }}\n", row.field));
+    }
+    s.push_str(&format!("{indent}    is_moving\n{indent}}}\n\n"));
+    s.push_str(&format!("{indent}fn after_layout(&mut self, page: &mut gogo_ui::Page, rt: &mut gogo_ui::Runtime, rects: &[gogo_ui::Rect]) {{\n{indent}    self.sync_rows(page, rt);\n"));
+    for slot in slots {
+        s.push_str(&format!("{indent}    gogo_ui::Widget::after_layout_all(&mut self.{}, page, rt, rects);\n", slot.field));
+    }
+    for row in rows {
+        s.push_str(&format!("{indent}    for one in self.{}.iter_mut() {{\n{indent}        gogo_ui::WidgetSet::after_layout(one, page, rt, rects);\n{indent}    }}\n", row.field));
+    }
+    s.push_str(&format!("{indent}}}\n"));
+    s
+}
+
+/// Per widget with code that the build's pages place: its `WidgetShape`
+/// (its names, the instances with code inside it and their routing, as
+/// `<Widget>Widgets` and `<Widget>Inside`), and a check that its report
+/// enum has exactly the widget's `report` names. `Err` for a widget the
+/// build script names that no compile declared.
+pub fn emit_widget_code(pages: &[(&str, &Page)], code: &WidgetCode<'_>) -> Result<String, String> {
+    let mut out = String::new();
+    for (widget, path) in code.structs {
+        if !code.reports.iter().any(|(w, _)| w == widget) {
+            return Err(format!("`widget_code` names widget `{widget}` ({path}), and no page or `uses` file declares it\n"));
+        }
+        // The widget's body names, read from its first instance.
+        let mut body: Option<Vec<(String, NameEntry)>> = None;
+        for (module, page) in pages {
+            let entries = name_entries(page, "").map_err(|e| format!("{module}: {e}"))?;
+            if let Some(found) = find_body(&entries, widget) {
+                body = Some(found);
+                break;
+            }
+            for (_, template) in repeat_templates(page) {
+                let entries = name_entries(page, &template).map_err(|e| format!("{module}: {e}"))?;
+                if let Some(found) = find_body(&entries, widget) {
+                    body = Some(found);
+                    break;
+                }
+            }
+            if body.is_some() {
+                break;
+            }
+        }
+        // A widget no page places has no `<Widget>Names`: nothing to write.
+        let Some(body) = body else { continue };
+        let mut slots: Vec<CodeSlot> = Vec::new();
+        code_slots(&body, "", "", code, &mut slots);
+        let names_struct: String = widget_struct(widget);
+        let inside_enum: String = format!("{}Inside", pascal_case(widget));
+        let set_struct: String = format!("{}Widgets", pascal_case(widget));
+        let pascal: String = pascal_case(widget);
+        if slots.is_empty() {
+            out.push_str(&format!("impl gogo_ui::WidgetShape for {path} {{\n    type Names = {names_struct};\n    type InsideReport = gogo_ui::NothingInside;\n\n    fn route_inside(&mut self, _page: &mut gogo_ui::Page, _rt: &mut gogo_ui::Runtime, _event: &gogo_ui::Event, _heard: &mut dyn FnMut(gogo_ui::NothingInside)) -> bool {{\n        false\n    }}\n\n    fn load_inside(&mut self, _page: &mut gogo_ui::Page, _rt: &mut gogo_ui::Runtime) {{}}\n\n    fn frame_inside(&mut self, _page: &mut gogo_ui::Page, _rt: &mut gogo_ui::Runtime, _dt_sec: f32) -> bool {{\n        false\n    }}\n\n    fn after_layout_inside(&mut self, _page: &mut gogo_ui::Page, _rt: &mut gogo_ui::Runtime, _rects: &[gogo_ui::Rect]) {{}}\n}}\n\n"));
+        } else {
+            let reporting: Vec<&CodeSlot> = slots.iter().filter(|slot| slot.has_reports).collect();
+            out.push_str(&format!("/// The reports of the instances with code inside `{widget}`, by instance.\n#[allow(dead_code)]\n#[derive(Clone, Debug, PartialEq)]\npub enum {inside_enum} {{\n"));
+            for slot in &reporting {
+                out.push_str(&format!("    {}(<{} as gogo_ui::Widget>::Report),\n", slot.variant, slot.path));
+            }
+            out.push_str("}\n\n");
+            out.push_str(&format!("/// The instances with code inside one `{widget}`: the widget's struct keeps it in a field named `widgets`.\npub struct {set_struct} {{\n    names: {names_struct},\n"));
+            for slot in &slots {
+                out.push_str(&format!("    pub {}: {},\n", slot.field, slot.path));
+            }
+            out.push_str(&format!("}}\n\nimpl {set_struct} {{\n    /// Every instance inside the one `names` names.\n    pub fn new(names: &{names_struct}) -> {set_struct} {{\n        {set_struct} {{\n            names: *names,\n"));
+            for slot in &slots {
+                out.push_str(&format!("            {}: <{} as gogo_ui::Widget>::new(&names.{}),\n", slot.field, slot.path, slot.names));
+            }
+            out.push_str("        }\n    }\n}\n\n");
+            out.push_str(&format!("impl gogo_ui::WidgetSet<{inside_enum}> for {set_struct} {{\n    fn route(&mut self, page: &mut gogo_ui::Page, rt: &mut gogo_ui::Runtime, event: &gogo_ui::Event, heard: &mut dyn FnMut({inside_enum})) -> bool {{\n"));
+            let heard = |slot: &CodeSlot| if slot.has_reports { format!("heard({inside_enum}::{}(report))", slot.variant) } else { "match report {}".to_string() };
+            out.push_str(&route_body(&slots, "self.names", Some("self.names.root"), &heard, "        "));
+            out.push_str("    }\n\n");
+            out.push_str(&set_forwards(&slots, "    "));
+            out.push_str("}\n\n");
+            out.push_str(&format!("impl gogo_ui::WidgetShape for {path} {{\n    type Names = {names_struct};\n    type InsideReport = {inside_enum};\n\n    fn route_inside(&mut self, page: &mut gogo_ui::Page, rt: &mut gogo_ui::Runtime, event: &gogo_ui::Event, heard: &mut dyn FnMut({inside_enum})) -> bool {{\n        gogo_ui::WidgetSet::route(&mut self.widgets, page, rt, event, heard)\n    }}\n\n    fn load_inside(&mut self, page: &mut gogo_ui::Page, rt: &mut gogo_ui::Runtime) {{\n        gogo_ui::WidgetSet::load(&mut self.widgets, page, rt)\n    }}\n\n    fn frame_inside(&mut self, page: &mut gogo_ui::Page, rt: &mut gogo_ui::Runtime, dt_sec: f32) -> bool {{\n        gogo_ui::WidgetSet::frame(&mut self.widgets, page, rt, dt_sec)\n    }}\n\n    fn after_layout_inside(&mut self, page: &mut gogo_ui::Page, rt: &mut gogo_ui::Runtime, rects: &[gogo_ui::Rect]) {{\n        gogo_ui::WidgetSet::after_layout(&mut self.widgets, page, rt, rects)\n    }}\n}}\n\n"));
+        }
+        // The report enum has exactly the file's `report` names: a variant
+        // missing here, or one the file lacks, fails this match.
+        let alias: String = format!("{pascal}ReportOfFile");
+        out.push_str(&format!("/// `{widget}`'s report enum, for the check below.\n#[allow(dead_code)]\ntype {alias} = <{path} as gogo_ui::Widget>::Report;\n\n"));
+        out.push_str(&format!("/// `{widget}`'s report enum has exactly the `report` names of its file.\n#[allow(dead_code)]\nconst _: fn(&{alias}) = |report| match report {{\n"));
+        for report in code.reports_of(widget) {
+            out.push_str(&format!("    {alias}::{} {{ .. }} => {{}}\n", key_variant(report)));
+        }
+        out.push_str("};\n\n");
+    }
+    Ok(out)
+}
+
+/// The body names of the first instance of `widget` among `entries`,
+/// searched in the bodies of other instances too.
+fn find_body(entries: &[(String, NameEntry)], widget: &str) -> Option<Vec<(String, NameEntry)>> {
+    for (_, entry) in entries {
+        if let NameEntry::Instance { widget: w, body, .. } = entry {
+            if w == widget {
+                return Some(body.clone());
+            }
+            if let Some(found) = find_body(body, widget) {
+                return Some(found);
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]

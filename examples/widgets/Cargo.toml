@@ -1,0 +1,16 @@
+[package]
+name = "turbodot-example-widgets"
+description = "Widgets with code on TurboDot: a stepper, a size picker made of two steppers, and the page that places them."
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+turbodot = { path = "../../crates/turbodot" }
+
+# The build script compiles the pages in `ui/` and names the struct of
+# each widget that has code.
+[build-dependencies]
+turbodot = { path = "../../crates/turbodot", default-features = false }

@@ -1,0 +1,7 @@
+// What every page of the example shares: its font.
+//
+// The font is the repository's own, two folders up. A program of your own
+// keeps its font in its own folder and writes `res://assets/<file>.ttf`.
+theme {
+    font = "res://../../assets/Fonts/Roboto Regular.ttf"
+}

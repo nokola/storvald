@@ -245,13 +245,22 @@ pub trait AnimName: Copy {
 }
 
 /// Built page's `Handler` enum: one variant per handler name in page's
-/// file.
+/// file, and one per instance of a widget with code that reports,
+/// carrying its report.
 ///
 /// Needed so code that runs any page (an engine) turns event's handler
 /// name into that page's own enum, and page code matches on variants:
 /// handler gone from file does not compile, new one with no arm stops
 /// build.
-pub trait HandlerName: Copy {
+pub trait HandlerName: Clone {
+    /// True when the page's file places a widget with code
+    /// (`BuildOptions::widget_code`): its events go to that code first,
+    /// through the page's generated `Widgets`.
+    ///
+    /// Needed so an engine can stop a page that forgot to hand over its
+    /// `Widgets`: its widgets would look right and do nothing.
+    const HAS_WIDGET_CODE: bool = false;
+
     /// Variant for handler name as file writes it. `None`: file has no
     /// such name.
     fn from_name(name: &str) -> Option<Self>;
@@ -1661,6 +1670,15 @@ impl Runtime {
             self.play_action(page, node, hook.event(), Finish::Nothing);
         }
         self.hook_nodes = nodes;
+    }
+
+    /// Every row `repeat` ever made, shown or hidden, in the order they
+    /// were made: a row is never taken away, so this list only grows.
+    ///
+    /// Needed by the build's `Rows`: one struct per row, kept as long as
+    /// the row, found by its place here. Nothing allocated.
+    pub fn row_slots(&self, repeat: NodeId) -> &[NodeId] {
+        self.pools.iter().find(|p| p.repeat == repeat).map(|p| p.slots.as_slice()).unwrap_or(&[])
     }
 
     /// A repeat's live rows, in display order (its `empty { }` child is

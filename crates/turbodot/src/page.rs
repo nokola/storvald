@@ -4,7 +4,7 @@ use std::any::{Any, TypeId};
 use std::cell::RefCell;
 
 use gogo_text::TextEngine;
-use gogo_ui::{CommandSurface, Event, EventKind, HandlerName, NodeId, StaticPage, StrId, SurfaceCommands};
+use gogo_ui::{CommandSurface, Event, EventKind, HandlerName, NodeId, Reports, StaticPage, StrId, SurfaceCommands, WidgetSet};
 
 use crate::pages::{PageId, PageUi};
 #[cfg(feature = "gpu")]
@@ -275,6 +275,23 @@ pub trait Page<A = ()>: Sized + 'static {
         let _ = host;
     }
 
+    /// The page's generated `Widgets` (`ui::<file>::Widgets`), which the
+    /// page keeps as a field: `Some(&mut self.widgets)`. Leave it out when
+    /// the page's file places no widget with code.
+    ///
+    /// Needed so the engine hands each event on an instance of a widget
+    /// with code to that widget's code first, then its reports to
+    /// `handle` as variants of the page's `Handler`, in the same call; and
+    /// calls the widgets' `loaded`, `frame` and `after_layout` before the
+    /// page's own.
+    ///
+    /// WARNING: a page whose file places a widget with code and that
+    /// returns `None` here stops the program when it is made: its widgets
+    /// would look right and do nothing.
+    fn widgets(&mut self) -> Option<&mut dyn WidgetSet<Self::Handler>> {
+        None
+    }
+
     /// Says what one user action means.
     fn handle(&mut self, host: &mut Host<'_, A>, event: PageEvent<Self::Handler>);
 
@@ -463,6 +480,11 @@ pub trait CachedPage<A = ()>: Sized + 'static {
         let _ = host;
     }
 
+    /// As `Page::widgets`.
+    fn widgets(&mut self) -> Option<&mut dyn WidgetSet<Self::Handler>> {
+        None
+    }
+
     /// As `Page::handle`.
     fn handle(&mut self, host: &mut Host<'_, A>, event: PageEvent<Self::Handler>);
 
@@ -635,7 +657,7 @@ impl<H: HandlerName> HandlerTable<H> {
             None => ui.page.str(name).contains('/'),
         })?;
         match self.by_string_index.get(name.index()) {
-            Some(NameUse::Handler(handler)) => Some(*handler),
+            Some(NameUse::Handler(handler)) => Some(handler.clone()),
             Some(NameUse::NoHandler) | Some(NameUse::InsideWidget) => None,
             None => H::from_name(ui.page.str(name)),
         }
@@ -677,17 +699,27 @@ impl<A: 'static, P: Page<A>> PageObject<A> for Plain<P, P::Handler> {
         self.1.read(ui);
     }
     fn handle(&mut self, host: &mut Host<'_, A>, event: &Event) {
+        let mut heard: Reports<P::Handler> = Reports::new();
+        if route_to_widgets(self.0.widgets(), host, event, &mut heard) {
+            for handler in heard.drain() {
+                self.0.handle(host, PageEvent { handler, kind: event.kind, node: event.node });
+            }
+            return;
+        }
         if let Some(handler) = self.1.handler_of(host.ui, event) {
             self.0.handle(host, PageEvent { handler, kind: event.kind, node: event.node });
         }
     }
     fn loaded(&mut self, host: &mut Host<'_, A>) {
+        load_widgets::<P::Handler>(self.0.widgets(), host, std::any::type_name::<P>());
         self.0.loaded(host);
     }
     fn frame(&mut self, host: &mut Host<'_, A>, dt_sec: f32) -> bool {
-        self.0.frame(host, dt_sec)
+        let is_widget_moving: bool = frame_widgets(self.0.widgets(), host, dt_sec);
+        self.0.frame(host, dt_sec) | is_widget_moving
     }
     fn after_layout(&mut self, host: &mut Host<'_, A>) {
+        after_layout_widgets(self.0.widgets(), host);
         self.0.after_layout(host);
     }
     fn arrived(&mut self, host: &mut Host<'_, A>) {
@@ -749,17 +781,27 @@ impl<A: 'static, P: CachedPage<A>> PageObject<A> for Cached<P, P::Handler> {
         self.1.read(ui);
     }
     fn handle(&mut self, host: &mut Host<'_, A>, event: &Event) {
+        let mut heard: Reports<P::Handler> = Reports::new();
+        if route_to_widgets(self.0.widgets(), host, event, &mut heard) {
+            for handler in heard.drain() {
+                self.0.handle(host, PageEvent { handler, kind: event.kind, node: event.node });
+            }
+            return;
+        }
         if let Some(handler) = self.1.handler_of(host.ui, event) {
             self.0.handle(host, PageEvent { handler, kind: event.kind, node: event.node });
         }
     }
     fn loaded(&mut self, host: &mut Host<'_, A>) {
+        load_widgets::<P::Handler>(self.0.widgets(), host, std::any::type_name::<P>());
         self.0.loaded(host);
     }
     fn frame(&mut self, host: &mut Host<'_, A>, dt_sec: f32) -> bool {
-        self.0.frame(host, dt_sec)
+        let is_widget_moving: bool = frame_widgets(self.0.widgets(), host, dt_sec);
+        self.0.frame(host, dt_sec) | is_widget_moving
     }
     fn after_layout(&mut self, host: &mut Host<'_, A>) {
+        after_layout_widgets(self.0.widgets(), host);
         self.0.after_layout(host);
     }
     fn arrived(&mut self, host: &mut Host<'_, A>) {
@@ -788,6 +830,49 @@ impl<A: 'static, P: CachedPage<A>> PageObject<A> for Cached<P, P::Handler> {
     fn page_mut(&mut self) -> &mut dyn Any {
         &mut self.0
     }
+}
+
+/// Hands `event` to the page's widgets with code (`Page::widgets`), and
+/// their reports, as the page's `Handler`, to `heard`.
+///
+/// Returns false when the page has none, or no widget with code holds
+/// the event's node: the page's handler table answers it.
+fn route_to_widgets<A, H>(widgets: Option<&mut dyn WidgetSet<H>>, host: &mut Host<'_, A>, event: &Event, heard: &mut Reports<H>) -> bool {
+    let Some(widgets) = widgets else { return false };
+    let ui: &mut PageUi = &mut *host.ui;
+    widgets.route(&mut ui.page, &mut ui.runtime, event, &mut |handler| heard.push(handler))
+}
+
+/// The widgets' `loaded` (`WidgetSet::load`), before the page's own.
+///
+/// WARNING: stops the program when the page's file places a widget with
+/// code and the page hands over no `Widgets`: its widgets would look
+/// right and do nothing.
+fn load_widgets<H: HandlerName>(widgets: Option<&mut dyn WidgetSet<H>>, host: &mut Host<'_, impl Sized>, page_type: &str) {
+    match widgets {
+        Some(widgets) => {
+            let ui: &mut PageUi = &mut *host.ui;
+            widgets.load(&mut ui.page, &mut ui.runtime);
+        }
+        None => assert!(!H::HAS_WIDGET_CODE, "page `{page_type}` places widgets with code, and its `Page::widgets` returns none: return `Some(&mut self.widgets)`, a field of the page's generated `Widgets`"),
+    }
+}
+
+/// The widgets' `frame` (`WidgetSet::frame`), before the page's own.
+///
+/// Returns true while a widget needs more frames.
+fn frame_widgets<A, H>(widgets: Option<&mut dyn WidgetSet<H>>, host: &mut Host<'_, A>, dt_sec: f32) -> bool {
+    let Some(widgets) = widgets else { return false };
+    let ui: &mut PageUi = &mut *host.ui;
+    widgets.frame(&mut ui.page, &mut ui.runtime, dt_sec)
+}
+
+/// The widgets' `after_layout` (`WidgetSet::after_layout`), before the
+/// page's own: each node has its rectangle of this frame.
+fn after_layout_widgets<A, H>(widgets: Option<&mut dyn WidgetSet<H>>, host: &mut Host<'_, A>) {
+    let Some(widgets) = widgets else { return };
+    let ui: &mut PageUi = &mut *host.ui;
+    widgets.after_layout(&mut ui.page, &mut ui.runtime, ui.kept.rects());
 }
 
 /// Marks `IntoPage` of a `Page`.

@@ -2144,6 +2144,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "turbodot-example-widgets"
+version = "0.5.0"
+dependencies = [
+ "turbodot",
+]
+
+[[package]]
 name = "turbodot-example-world"
 version = "0.5.0"
 dependencies = [
