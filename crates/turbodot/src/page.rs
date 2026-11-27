@@ -292,6 +292,19 @@ pub trait Page<A = ()>: Sized + 'static {
         None
     }
 
+    /// False while page takes no user action: no event reaches its
+    /// widgets' code or `handle`.
+    ///
+    /// Needed for page busy over several frames (a save being drawn): a
+    /// widget's code hears an event before `handle` could drop it, so a
+    /// "cancel" would still hide its prompt.
+    ///
+    /// Touch is still page's (`TAKES_EVERY_TOUCH`), and file's own looks
+    /// still show (a held button). Back key is no event: `back` decides.
+    fn takes_input(&self) -> bool {
+        true
+    }
+
     /// Says what one user action means.
     fn handle(&mut self, host: &mut Host<'_, A>, event: PageEvent<Self::Handler>);
 
@@ -485,6 +498,11 @@ pub trait CachedPage<A = ()>: Sized + 'static {
         None
     }
 
+    /// As `Page::takes_input`.
+    fn takes_input(&self) -> bool {
+        true
+    }
+
     /// As `Page::handle`.
     fn handle(&mut self, host: &mut Host<'_, A>, event: PageEvent<Self::Handler>);
 
@@ -584,7 +602,8 @@ pub(crate) trait PageObject<A> {
     /// page is made and when a saved file replaced its strings.
     fn read_handler_names(&mut self, ui: &PageUi);
     /// Hands `event` to page under handler name from page's file. Event
-    /// with no handler name is not for code.
+    /// with no handler name is not for code, and no event is while page
+    /// takes no input (`Page::takes_input`).
     fn handle(&mut self, host: &mut Host<'_, A>, event: &Event);
     fn loaded(&mut self, host: &mut Host<'_, A>);
     fn frame(&mut self, host: &mut Host<'_, A>, dt_sec: f32) -> bool;
@@ -699,6 +718,9 @@ impl<A: 'static, P: Page<A>> PageObject<A> for Plain<P, P::Handler> {
         self.1.read(ui);
     }
     fn handle(&mut self, host: &mut Host<'_, A>, event: &Event) {
+        if !self.0.takes_input() {
+            return;
+        }
         let mut heard: Signals<P::Handler> = Signals::new();
         if route_to_widgets(self.0.widgets(), host, event, &mut heard) {
             for handler in heard.drain() {
@@ -781,6 +803,9 @@ impl<A: 'static, P: CachedPage<A>> PageObject<A> for Cached<P, P::Handler> {
         self.1.read(ui);
     }
     fn handle(&mut self, host: &mut Host<'_, A>, event: &Event) {
+        if !self.0.takes_input() {
+            return;
+        }
         let mut heard: Signals<P::Handler> = Signals::new();
         if route_to_widgets(self.0.widgets(), host, event, &mut heard) {
             for handler in heard.drain() {

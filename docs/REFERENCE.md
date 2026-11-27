@@ -507,6 +507,11 @@ impl Widget for Stepper {
   it over stops when it is made.
 - A widget's signal means the user did something: the page's own call into
   a widget's struct raises none.
+- A page busy over several frames (a save being drawn) says so in
+  `Page::takes_input` (false while busy): no event then reaches its
+  widgets' structs or its `handle`. A widget's struct hears an event
+  before `handle` does, so an early return in `handle` would still let
+  the widget act, a "cancel" hide its prompt.
 - A widget with code inside another one signals that one
   (`WidgetEvent::Inside`), which keeps its inner widgets in a field named
   `widgets` (`<Widget>Widgets`, made by the build). Inside a widget with no

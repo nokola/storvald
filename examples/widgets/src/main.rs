@@ -299,12 +299,16 @@ mod tests {
     struct CachedCounter {
         widgets: CountedWidgets,
         heard: Vec<Handler>,
+        is_busy: bool,
     }
     impl CachedPage for CachedCounter {
         const PAGE: &'static BuiltPage = &counter_page::PAGE;
         type Handler = Handler;
         fn widgets(&mut self) -> Option<&mut dyn WidgetSet<Handler>> {
             Some(&mut self.widgets)
+        }
+        fn takes_input(&self) -> bool {
+            !self.is_busy
         }
         fn handle(&mut self, _host: &mut Host, event: PageEvent<Handler>) {
             self.heard.push(event.handler);
@@ -317,7 +321,7 @@ mod tests {
     #[test]
     fn a_cached_page_s_widgets_hear_the_engine_too() {
         let _one = ONE_TEST_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
-        let page: CachedCounter = CachedCounter { widgets: CountedWidgets { widgets: counter_page::Widgets::new(), loads: 0, frames: 0, after_layouts: 0, frames_asked: 1 }, heard: Vec::new() };
+        let page: CachedCounter = CachedCounter { widgets: CountedWidgets { widgets: counter_page::Widgets::new(), loads: 0, frames: 0, after_layouts: 0, frames_asked: 1 }, heard: Vec::new(), is_busy: false };
         let mut program: Program<()> = Program::new(&crate::ui::BUILT, (), page).expect("the page can be shown");
         let asked: bool = program.frame(SIZE_EPX.0, SIZE_EPX.1, 0.016);
         program.tap(PAGE.size.width_stepper.plus, 1.0);
@@ -327,6 +331,60 @@ mod tests {
         assert_eq!((cached.widgets.loads, cached.widgets.frames), (1, 2));
         assert!(cached.widgets.after_layouts >= 1 && asked, "laid out, and the frame the widgets asked for: {asked}");
         assert_eq!(text(&program, PAGE.size.width_stepper.value), "2");
+    }
+
+    /// The counter page, busy until a test says it is not.
+    struct BusyPage {
+        widgets: counter_page::Widgets,
+        heard: Vec<Handler>,
+        is_busy: bool,
+    }
+    impl Page for BusyPage {
+        const PAGE: &'static BuiltPage = &counter_page::PAGE;
+        type Handler = Handler;
+        fn widgets(&mut self) -> Option<&mut dyn WidgetSet<Handler>> {
+            Some(&mut self.widgets)
+        }
+        fn takes_input(&self) -> bool {
+            !self.is_busy
+        }
+        fn handle(&mut self, _host: &mut Host, event: PageEvent<Handler>) {
+            self.heard.push(event.handler);
+        }
+    }
+
+    /// While a page takes no input, a tap on a Stepper reaches neither the
+    /// Stepper's code nor the page, a plain page or a cached one; once the
+    /// page takes input again, a tap reaches both.
+    ///
+    /// Needed for a page busy over several frames (a save being drawn): a
+    /// widget's code hears a tap before the page's `handle` could drop it.
+    #[test]
+    fn a_page_that_takes_no_input_hands_its_widgets_nothing() {
+        let _one = ONE_TEST_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let page: BusyPage = BusyPage { widgets: counter_page::Widgets::new(), heard: Vec::new(), is_busy: true };
+        let mut program: Program<()> = Program::new(&crate::ui::BUILT, (), page).expect("the page can be shown");
+        program.frame(SIZE_EPX.0, SIZE_EPX.1, 0.0);
+        program.tap(PAGE.count.plus, 1.0);
+        program.tap(PAGE.size.width_stepper.plus, 2.0);
+        program.tap(PAGE.reset, 3.0);
+        program.frame(SIZE_EPX.0, SIZE_EPX.1, 0.016);
+        assert!(program.page::<BusyPage>().expect("on screen").heard.is_empty(), "the page heard nothing while busy");
+        assert_eq!(text(&program, PAGE.count.value), "0", "the Stepper's code heard no tap");
+        assert_eq!(text(&program, PAGE.size.width_stepper.value), "1", "nor the one inside the SizePicker");
+        assert!(program.tell::<BusyPage>(|page, _host| page.is_busy = false));
+        program.tap(PAGE.count.plus, 4.0);
+        program.frame(SIZE_EPX.0, SIZE_EPX.1, 0.016);
+        assert_eq!(program.page::<BusyPage>().expect("on screen").heard, [Handler::Count(StepperSignal::Changed(1))]);
+        assert_eq!(text(&program, PAGE.count.value), "1");
+
+        let cached: CachedCounter = CachedCounter { widgets: CountedWidgets { widgets: counter_page::Widgets::new(), loads: 0, frames: 0, after_layouts: 0, frames_asked: 0 }, heard: Vec::new(), is_busy: true };
+        let mut program: Program<()> = Program::new(&crate::ui::BUILT, (), cached).expect("the page can be shown");
+        program.frame(SIZE_EPX.0, SIZE_EPX.1, 0.0);
+        program.tap(PAGE.count.plus, 1.0);
+        program.frame(SIZE_EPX.0, SIZE_EPX.1, 0.016);
+        assert!(program.page::<CachedCounter>().expect("on screen").heard.is_empty(), "the cached page heard nothing while busy");
+        assert_eq!(text(&program, PAGE.count.value), "0", "its Stepper's code heard no tap");
     }
 
     /// The counter page's file, with a struct that does not hand over its
