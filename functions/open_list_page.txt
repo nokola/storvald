@@ -1,8 +1,8 @@
-# `open_list_page` at commit c0aeba1579394697d06e433b1284b3f4a6aed929: instructions by function, 1814101 in all.
+# `open_list_page` at commit 48e23bd7e8be3e3f12a02bfd07b9d806586e0ac1: instructions by function, 1814113 in all.
 # A function's own code only: what it calls is counted at the called function.
 248236 _int_malloc
 159222 <gogo_ui::runtime::Watchers>::extend
-130347 __memcpy_avx_unaligned_erms
+130359 __memcpy_avx_unaligned_erms
 116221 <gogo_ui::runtime::Runtime>::set_prop_by_id
 106320 <gogo_ui::runtime::Runtime>::set_items::{closure#1}
 76650 <gogo_ui::runtime::Runtime>::grow_pool

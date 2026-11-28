@@ -1,4 +1,4 @@
-# `open_controls_page` at commit c0aeba1579394697d06e433b1284b3f4a6aed929: instructions by function, 121258 in all.
+# `open_controls_page` at commit 48e23bd7e8be3e3f12a02bfd07b9d806586e0ac1: instructions by function, 121258 in all.
 # A function's own code only: what it calls is counted at the called function.
 26999 __memcpy_avx_unaligned_erms
 11818 <gogo_ui::tree::PlacedTree>::build
