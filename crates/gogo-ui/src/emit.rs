@@ -923,7 +923,7 @@ pub struct BuiltPageRow {
 /// later reaches every host through this constant, with no host code
 /// changed. A program that never reloads does not reference it, so the
 /// linker leaves it out.
-pub fn emit_build(pages: &[BuiltPageRow], atlases: &[AtlasDecl], behaviors: &[BehaviorSpec], require_keys: bool) -> String {
+pub fn emit_build(pages: &[BuiltPageRow], atlases: &[AtlasDecl], behaviors: &[BehaviorSpec], require_keys: bool, widgets_with_code: &[&str]) -> String {
     let key = |k: &ImageKey| format!("gogo_ui::ImageKey::new({})", k.index());
     let mut out = String::from("/// Everything a hot reload needs to know about this build: hand it whole to `gogo_ui::reload::Reloader::new`.\npub static BUILD: gogo_ui::reload::BuildTables<'static> = gogo_ui::reload::BuildTables {\n    keys: KEYS,\n    images: IMAGES,\n    slices: &SLICES,\n    atlases: &[\n");
     for a in atlases {
@@ -939,7 +939,7 @@ pub fn emit_build(pages: &[BuiltPageRow], atlases: &[AtlasDecl], behaviors: &[Be
     for b in behaviors {
         out.push_str(&format!("        gogo_ui::page::BehaviorSpec {{ name: {:?}, slots: &{:?}, keys: {}, payload: gogo_ui::Payload::{:?} }},\n", b.name, b.slots, b.keys, b.payload));
     }
-    out.push_str(&format!("    ],\n    require_keys: {require_keys},\n    pages: &[\n"));
+    out.push_str(&format!("    ],\n    require_keys: {require_keys},\n    widgets_with_code: &{widgets_with_code:?},\n    pages: &[\n"));
     for p in pages {
         out.push_str(&format!("        gogo_ui::reload::BuiltPage {{ file: {:?}, page: &{}::PAGE, uses: &{:?}, text: {} }},\n", p.file, p.module, p.uses, p.text));
     }

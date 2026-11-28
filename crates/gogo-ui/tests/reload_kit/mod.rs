@@ -122,6 +122,12 @@ impl Kit {
 /// `pictures` the files an `atlas` line reads. Keys are required
 /// (`require_keys`), as in a build that ships in several languages.
 pub fn build(pages: &[(&str, &str)], others: &[(&str, &str)], pictures: &[(&str, Vec<u8>)]) -> Kit {
+    build_with_widget_code(pages, others, pictures, &[])
+}
+
+/// `build`, with `widgets_with_code` the widgets the build names code for
+/// (`BuildOptions::widget_code`, by name).
+pub fn build_with_widget_code(pages: &[(&str, &str)], others: &[(&str, &str)], pictures: &[(&str, Vec<u8>)], widgets_with_code: &'static [&'static str]) -> Kit {
     let files: HashMap<String, String> = pages.iter().chain(others).map(|(name, text)| (name.to_string(), text.to_string())).collect();
     let keys = RefCell::new(Keys::default());
     let images = RefCell::new(Images::default());
@@ -129,7 +135,7 @@ pub fn build(pages: &[(&str, &str)], others: &[(&str, &str)], pictures: &[(&str,
     let read = |path: &str| pictures.iter().find(|(name, _)| *name == path).map(|(_, bytes)| bytes.clone()).ok_or_else(|| "no such file".to_string());
     let mut compiled_pages: Vec<(&str, Page, Vec<String>, u64)> = Vec::new();
     for (name, text) in pages {
-        let compiled = compile_with(text, &loader, CompileOptions { keys: Some(&keys), images: Some(&images), assets: Some(&read), require_keys: true, source_name: name, ..CompileOptions::default() });
+        let compiled = compile_with(text, &loader, CompileOptions { keys: Some(&keys), images: Some(&images), assets: Some(&read), require_keys: true, source_name: name, widgets_with_code, ..CompileOptions::default() });
         assert!(!gogo_ui::has_errors(&compiled.diags), "{name}: {:#?}", compiled.diags);
         let mut stamp = TextStamp::of(text);
         for used in &compiled.uses {
@@ -158,6 +164,6 @@ pub fn build(pages: &[(&str, &str)], others: &[(&str, &str)], pictures: &[(&str,
         .iter()
         .map(|(name, page, uses, text)| BuiltPage { file: leak_str(name), page: as_built(page, slices), uses: leak(&uses.iter().map(|u| leak_str(u)).collect::<Vec<_>>()), text: *text })
         .collect();
-    let tables: &'static BuildTables<'static> = Box::leak(Box::new(BuildTables { keys: leak(&key_rows), images: leak(&image_rows), slices, atlases: leak(&atlases), behaviors: &[], require_keys: true, pages: leak(&built) }));
+    let tables: &'static BuildTables<'static> = Box::leak(Box::new(BuildTables { keys: leak(&key_rows), images: leak(&image_rows), slices, atlases: leak(&atlases), behaviors: &[], require_keys: true, widgets_with_code, pages: leak(&built) }));
     Kit { tables, files: Arc::new(Mutex::new(files)) }
 }

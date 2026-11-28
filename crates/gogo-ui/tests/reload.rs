@@ -362,6 +362,20 @@ fn an_atlas_line_that_is_not_the_builds_is_refused_at_its_line() {
     assert!(errs[0].message.contains("`extra`") && errs[0].message.contains("not in this build"), "{}", errs[0]);
 }
 
+/// A reload refuses an `on:` line on a placement of a widget with code, as
+/// the build does: the line would never reach the page, and the running
+/// page would take it without a word.
+#[test]
+fn a_reload_refuses_an_on_line_on_a_placement_of_a_widget_with_code() {
+    let page: &str = "widget Stepper {\n    signal changed\n    Button plus text=\"+\"/_\n}\nView page {\n    Stepper count\n}\n";
+    let kit: Kit = reload_kit::build_with_widget_code(&[("page.gogo", page)], &[], &[], &["Stepper"]);
+    assert_eq!(kit.tables.widgets_with_code, ["Stepper"]);
+    kit.edit("page.gogo", "Stepper count", "Stepper count on:activate=emit(Counted)");
+    let errs = kit.recompile("page.gogo").unwrap_err();
+    assert_eq!(errs.len(), 1, "{errs:#?}");
+    assert_eq!((errs[0].code.as_str(), errs[0].line), ("G5005", 6), "{}", errs[0]);
+}
+
 // ----- what a build writes down ---------------------------------------------
 
 /// `build_pages` writes `BUILD`: every page with its file, the files it
@@ -395,6 +409,7 @@ fn a_build_writes_down_what_a_reload_needs() {
     assert!(source.contains("gogo_ui::reload::BuiltPage { file: \"\", page: &gogo_edit_bar::PAGE, uses: &[], text: 0 },"), "the edit bar has no file");
     assert!(source.contains("    behaviors: &[\n"), "{source}");
     assert!(source.contains("    require_keys: false,\n"), "{source}");
+    assert!(source.contains("    widgets_with_code: &[],\n"), "a build that names no code: {source}");
 
     // Line endings do not count: a checkout that turns them is no change.
     let mut crlf = TextStamp::of(&page_text.replace('\n', "\r\n"));

@@ -199,6 +199,7 @@ pub const REGISTRY: &[(&str, &str)] = &[
     ("G5002", "unknown style"),
     ("G5003", "widget cycle"),
     ("G5004", "a slot fill that would never show — a slot the widget lacks, a word on the fill line, a slot filled twice, bare children with no default slot, a second default slot"),
+    ("G5005", "an `on:` line on a placement of a widget with code — its code hears the events, the page never would"),
     ("G5105", "an automatic slot in a host that measures children — driven layout must stay relayout-local"),
     ("G5106", "an `automatic=position` slot takes its width from its content"),
     ("G5107", "`automatic=` driver coupling"),

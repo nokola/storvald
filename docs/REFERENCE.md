@@ -535,6 +535,10 @@ impl Widget for Stepper {
 - Refused at build: an instance with code that has no name, a row that is
   itself a widget with code (put it inside a node of the row), and a
   `repeat` inside a widget with code.
+- An instance with code takes no `on:` line (`Stepper count
+  on:activate=emit(Counted)`): the widget's struct hears every event on
+  it, so the page would never hear the line. The build and a hot reload
+  refuse it (G5005); the page matches the widget's signal instead.
 
 ### Controls
 

@@ -61,6 +61,14 @@ pub struct CompileOptions<'a> {
     /// say what the build's line said (G2022). Off at build time, where
     /// the tables grow as pages name things.
     pub refuse_new_keys_and_pictures: bool,
+    /// The widgets that have code, by name (`BuildOptions::widget_code`;
+    /// a hot reload's `BuildTables::widgets_with_code`). A placement of
+    /// one takes no `on:` line (G5005).
+    ///
+    /// Needed because such a widget's code hears every event on it: the
+    /// page would never hear the line. Empty (a compile with no app code
+    /// around it): nothing is checked.
+    pub widgets_with_code: &'a [&'a str],
 }
 
 /// The gogo events; anything else on `on:` is a raw signal — gone (§7).
@@ -3389,7 +3397,9 @@ impl<'a> Compiler<'a> {
         // knows (`drag_started`), and a widget's or control's code raises
         // every name on the list. A control with code hears its behavior's
         // first and passes them on; which one has code, the build knows
-        // (`BuildOptions::widget_code`), the compile does not.
+        // (`BuildOptions::widget_code`). The compile is told it only to
+        // refuse an `on:` line on a placement (G5005), so the lists here
+        // are the same either way.
         let is_control: bool = n.type_word == "control";
         let mut signals: Vec<String> = Vec::new();
         let mut code_signals: Vec<String> = Vec::new();
@@ -5417,6 +5427,9 @@ impl<'a> Compiler<'a> {
                     self.error("G5001", n.line, format!("`{}` is `for={:?}` — it fills a {:?}'s body; instantiate it as the direct body: `{:?} name {{ {} … }}`", n.type_word, host, host, host, n.type_word));
                 }
             }
+            if self.options.widgets_with_code.contains(&n.type_word.as_str()) {
+                self.refuse_on_words_on_code(n, &def);
+            }
             let mut scope = HashMap::new();
             for p in &def.params {
                 scope.insert(p.key.clone(), p.value.clone());
@@ -6970,6 +6983,42 @@ impl<'a> Compiler<'a> {
                 // child can read back (v1) — a number still caps.
                 self.error("G1002", n.line, format!("`max_{axis_word}=fill` has no frame to read inside a Flow (v1) — cap at a number, or move the box under a free parent"));
             }
+        }
+    }
+
+    /// G5005 for each `on:` word on `n`, a placement of a widget with code.
+    ///
+    /// Needed because the widget's code hears every event on its nodes:
+    /// the line would never reach the page (or the widget with code around
+    /// it), and nothing would say so; a page whose `handle` has a catch-all
+    /// arm still compiles without the handler.
+    ///
+    /// The message names the variant the widget's signal reaches the page
+    /// by when the instance sits on the page itself, outside any repeat;
+    /// deeper, it names none.
+    fn refuse_on_words_on_code(&mut self, n: &AstNode, def: &WidgetDef) {
+        let on_words: Vec<&AstProp> = n.props.iter().filter(|p| p.key.starts_with("on:")).collect();
+        if on_words.is_empty() {
+            return;
+        }
+        let around: Option<&String> = self.widget_stack.iter().rev().find(|w| self.options.widgets_with_code.contains(&w.as_str()));
+        let hearer: String = around.map_or("the page".to_string(), |w| format!("`{w}`'s code"));
+        let name: &str = n.name.as_deref().unwrap_or("(no name)");
+        let hint: String = if def.code_signals.is_empty() {
+            format!("take it out: `{}` raises no signal", n.type_word)
+        } else if self.prefix.is_empty() && n.name.is_some() {
+            format!("take it out and match the widget's signal (`Handler::{}(..)`)", crate::emit::pascal_case(&crate::emit::snake_case(name)))
+        } else {
+            "take it out and match the widget's signal".to_string()
+        };
+        for p in on_words {
+            let event: &str = p.key.trim_start_matches("on:");
+            let heard: &str = if matches!(event, "activate" | "press" | "release") { "the taps on it" } else { "the events on it" };
+            // Named with the file the word is written in: a widget's body
+            // root that places another widget is a line of that widget's file.
+            let outer: u16 = self.enter_origin(p.origin);
+            self.error("G5005", p.line, format!("`{}` on `{name}`: widget `{}` has code, which hears {heard}, so this line never reaches {hearer}; {hint}", p.key, n.type_word));
+            self.origin = outer;
         }
     }
 

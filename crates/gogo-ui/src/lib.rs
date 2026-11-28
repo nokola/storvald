@@ -209,7 +209,10 @@ pub fn build_pages(dir: &Path, out: &Path, options: BuildOptions<'_>) -> Result<
         }
         std::fs::read(&file).map_err(|e| format!("{}: {e}", file.display()))
     };
-    let compile_options: CompileOptions<'_> = CompileOptions { assets: options.compile.assets.or(Some(&read_asset)), ..options.compile };
+    // The widgets with code by name, for the compile's check of their
+    // placements (G5005) and for a hot reload's (`BUILD`).
+    let widgets_with_code: Vec<&str> = options.widget_code.iter().map(|(widget, _)| *widget).collect();
+    let compile_options: CompileOptions<'_> = CompileOptions { assets: options.compile.assets.or(Some(&read_asset)), widgets_with_code: &widgets_with_code, ..options.compile };
     let used: Vec<PathBuf> = used_files(dir);
     let mut entries: Vec<PathBuf> = std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?.filter_map(|e| e.ok().map(|e| e.path())).filter(|p| p.extension().map(|x| x == "gogo").unwrap_or(false)).collect();
     entries.sort();
@@ -436,7 +439,7 @@ pub fn build_pages(dir: &Path, out: &Path, options: BuildOptions<'_>) -> Result<
             Ok(code) => source.push_str(&code),
             Err(e) => errors.push_str(&e),
         }
-        source.push_str(&emit::emit_build(&built, &images.atlases, options.compile.behaviors, options.compile.require_keys));
+        source.push_str(&emit::emit_build(&built, &images.atlases, options.compile.behaviors, options.compile.require_keys, &widgets_with_code));
     }
     if !errors.is_empty() {
         return Err(errors);

@@ -1360,6 +1360,52 @@ View page {
 }
 ```
 
+## G5005 — an `on:` line on a placement of a widget with code
+
+A widget with code (REFERENCE "Widgets with code") has a Rust struct that
+hears every tap and change on the widget. An `on:` line where a page
+places such a widget would go to that struct too, so the page would never
+hear it, and nothing else would say so. The page hears the widget through
+its signals instead: `Handler::Count(StepperSignal::Changed(3))`.
+
+The build refuses the line when the app's build script names code for the
+widget (`BuildOptions::widget_code`); a hot reload refuses it the same
+way. Without a build script, the line is an ordinary handler, so the
+example below is checked for its grammar only.
+
+Wrong:
+
+```kdl partial
+widget Stepper {
+    signal changed
+    Button plus text="+"
+}
+View page {
+    Stepper count on:activate=emit(Counted)
+}
+```
+
+```text
+error G5005: `on:activate` on `count`: widget `Stepper` has code, which
+hears the taps on it, so this line never reaches the page; take it out
+and match the widget's signal (`Handler::Count(..)`)
+```
+
+Fix:
+
+```kdl
+widget Stepper {
+    signal changed
+    Button plus text="+"
+}
+View page {
+    Stepper count
+}
+```
+
+Inside another widget with code, the line would reach that widget's
+struct instead, and the message says so.
+
 ## G5105 — an automatic slot in a host that measures children
 
 A driven slot inside a Column/Row would re-lay out the whole stack on

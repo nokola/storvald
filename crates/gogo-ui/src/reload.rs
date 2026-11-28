@@ -65,13 +65,17 @@ pub struct BuildTables<'a> {
     pub behaviors: &'a [BehaviorSpec],
     /// The build's `CompileOptions::require_keys`.
     pub require_keys: bool,
+    /// The build's widgets with code, by name
+    /// (`CompileOptions::widgets_with_code`): a reload refuses an `on:`
+    /// line on a placement of one, as the build does (G5005).
+    pub widgets_with_code: &'a [&'a str],
     /// Every page of the build with the file it came from.
     pub pages: &'a [BuiltPage<'a>],
 }
 
 impl BuildTables<'_> {
     /// A build with nothing in it: no key, no picture, no page.
-    pub const EMPTY: BuildTables<'static> = BuildTables { keys: &[], images: &[], slices: &[], atlases: &[], behaviors: &[], require_keys: false, pages: &[] };
+    pub const EMPTY: BuildTables<'static> = BuildTables { keys: &[], images: &[], slices: &[], atlases: &[], behaviors: &[], require_keys: false, widgets_with_code: &[], pages: &[] };
 }
 
 /// One page of a build: the file it was compiled from and what that file
@@ -184,7 +188,7 @@ fn compile_against(source: &str, source_name: &str, loader: Loader<'_>, baked: &
         })
         .collect();
     let images = RefCell::new(images);
-    let options = CompileOptions { behaviors: baked.behaviors, keys: Some(&keys), images: Some(&images), require_keys: baked.require_keys, source_name, refuse_new_keys_and_pictures: true, ..CompileOptions::default() };
+    let options = CompileOptions { behaviors: baked.behaviors, keys: Some(&keys), images: Some(&images), require_keys: baked.require_keys, source_name, refuse_new_keys_and_pictures: true, widgets_with_code: baked.widgets_with_code, ..CompileOptions::default() };
     // Built page of this file: its strings and arrangements keep their
     // numbers, which program's code holds (`Anim`, `Theme`,
     // `Arrangement`, `<Widget>Arrangement`, `<Widget>Anim`).
