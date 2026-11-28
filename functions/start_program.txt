@@ -1,4 +1,4 @@
-# `start_program` at commit 48e23bd7e8be3e3f12a02bfd07b9d806586e0ac1: instructions by function, 1062095 in all.
+# `start_program` at commit 96bb52b6b01572c2ec886ec951647a4a38753fd6: instructions by function, 1062083 in all.
 # A function's own code only: what it calls is counted at the called function.
 368679 __memcpy_avx_unaligned_erms
 32186 _int_malloc
@@ -100,7 +100,7 @@
 1558 <harfrust::hb::ot_shape_plan::ShapePlanKey>::matches
 1547 <read_fonts::table_ref::TableRef<read_fonts::tables::layout::CoverageFormat2Marker>>::range_records
 1506 <harfrust::hb::ot_shape::hb_ot_shape_planner_t>::compile
-1463 __memcmp_avx2_movbe
+1451 __memcmp_avx2_movbe
 1444 <read_fonts::table_ref::TableRef<read_fonts::tables::gsub::LigatureSubstFormat1Marker>>::ligature_sets
 1440 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&str>
 1403 <harfrust::hb::buffer::hb_buffer_t>::sync
@@ -416,7 +416,7 @@
 32 <read_fonts::table_ref::TableRef<read_fonts::tables::cmap::CmapMarker> as read_fonts::read::FontRead>::read
 31 <harfrust::hb::buffer::UnicodeBuffer as core::default::Default>::default
 31 core::ptr::drop_glue::<gogo_ui::tree::PlacedTree>
-30 0x0000000004d28680
+30 0x0000000004d29680
 30 <core::iter::adapters::map::Map<std::collections::hash::map::IntoIter<[u8; 4], alloc::collections::btree::set::BTreeSet<fontdb::ID>>, <cosmic_text::font::system::FontSystem>::new_with_locale_and_db_and_fallback<cosmic_text::font::fallback::platform::PlatformFallback>::{closure#3}> as core::iter::traits::iterator::Iterator>::fold::<(), core::iter::traits::iterator::Iterator::for_each::call<([u8; 4], alloc::vec::Vec<fontdb::ID>), <hashbrown::map::HashMap<[u8; 4], alloc::vec::Vec<fontdb::ID>, core::hash::BuildHasherDefault<rustc_hash::FxHasher>> as core::iter::traits::collect::Extend<([u8; 4], alloc::vec::Vec<fontdb::ID>)>>::extend<core::iter::adapters::map::Map<std::collections::hash::map::IntoIter<[u8; 4], alloc::collections::btree::set::BTreeSet<fontdb::ID>>, <cosmic_text::font::system::FontSystem>::new_with_locale_and_db_and_fallback<cosmic_text::font::fallback::platform::PlatformFallback>::{closure#3}>>::{closure#0}>::{closure#0}>
 30 <ttf_parser::RawFace>::parse
 30 munmap_chunk
@@ -507,7 +507,7 @@
 3 <cosmic_text::font::fallback::platform::PlatformFallback as cosmic_text::font::fallback::Fallback>::common_fallback
 3 <cosmic_text::font::fallback::platform::PlatformFallback as cosmic_text::font::fallback::Fallback>::forbidden_fallback
 3 getrandom
-2 0x0000000004d286f0
+2 0x0000000004d296f0
 2 <gogo_ui::runtime::Runtime>::play_entrances
 2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::built
 2 <turbodot::page::Plain<storvald_perf::pages::FirstPage, storvald_perf::ui::first_page::Handler> as turbodot::page::PageObject<storvald_perf::AppState>>::frame
