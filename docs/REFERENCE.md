@@ -515,6 +515,9 @@ impl Widget for Stepper {
   it over stops when it is made.
 - A widget's signal means the user did something: the page's own call into
   a widget's struct raises none.
+- A widget with code needs no `signal` line: its struct may only keep what
+  the widget shows (a help line the page writes). Its signal enum is then
+  `NoSignal`, and the page's `Handler` gets no variant for it.
 - A page busy over several frames (a save being drawn) says so in
   `Page::takes_input` (false while busy): no event then reaches its
   widgets' structs or its `handle`. A widget's struct hears an event

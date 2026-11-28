@@ -188,7 +188,7 @@ fn a_control_with_code_is_heard_through_its_code_alone() {
     let rust: String = emit_rust_with(&c.page, "m", &code).unwrap();
     assert!(rust.contains("    pub enum Handler {\n        Reset,\n        Volume(<crate::Fader as gogo_ui::Widget>::Signal),\n        Balance(<crate::Fader as gogo_ui::Widget>::Signal),\n    }"), "{rust}");
     let shape: String = emit_widget_code(&[("m", &c.page)], &code).unwrap();
-    assert!(shape.contains("const _: fn(&FaderSignalOfFile) = |signal| match signal {\n    FaderSignalOfFile::ValueChanged { .. } => {}\n    FaderSignalOfFile::DragStarted { .. } => {}\n    FaderSignalOfFile::DragEnded { .. } => {}\n};"), "the code's enum is checked against the whole line: {shape}");
+    assert!(shape.contains("const _: fn(&FaderSignalOfFile) = |signal| match *signal {\n    FaderSignalOfFile::ValueChanged { .. } => {}\n    FaderSignalOfFile::DragStarted { .. } => {}\n    FaderSignalOfFile::DragEnded { .. } => {}\n};"), "the code's enum is checked against the whole line: {shape}");
 }
 
 #[test]
@@ -244,6 +244,11 @@ fn an_instance_with_code_that_raises_no_signal_has_no_variant() {
     let rust: String = emit_rust_with(&c.page, "m", &code).unwrap();
     assert!(rust.contains("    #[derive(Clone, Copy, Debug, PartialEq, Eq)]\n    pub enum Handler {\n    }"), "{rust}");
     assert!(rust.contains("pub badge: crate::Badge,") && rust.contains("match signal {}"), "routed, and its signals, of which there are none, go nowhere: {rust}");
+    // The check of its signal enum matches the enum, not a reference to
+    // it: Rust refuses a match with no arms on a reference
+    // (`examples/widgets`' Note compiles it).
+    let shape: String = emit_widget_code(&[("m", &c.page)], &code).unwrap();
+    assert!(shape.contains("const _: fn(&BadgeSignalOfFile) = |signal| match *signal {\n};"), "{shape}");
 }
 
 #[test]
@@ -254,7 +259,7 @@ fn each_widget_with_code_gets_its_shape_and_the_check_of_its_signals() {
     let rust: String = emit_widget_code(&[("m", &c.page)], &code).unwrap();
     // A widget with nothing inside.
     assert!(rust.contains("impl gogo_ui::WidgetShape for crate::Stepper {\n    type Names = StepperNames;\n    type InsideSignal = gogo_ui::NothingInside;"), "{rust}");
-    assert!(rust.contains("const _: fn(&StepperSignalOfFile) = |signal| match signal {\n    StepperSignalOfFile::Changed { .. } => {}\n};"), "{rust}");
+    assert!(rust.contains("const _: fn(&StepperSignalOfFile) = |signal| match *signal {\n    StepperSignalOfFile::Changed { .. } => {}\n};"), "{rust}");
     // A widget with two widgets with code inside.
     assert!(rust.contains("pub enum PickerInside {\n    Across(<crate::Stepper as gogo_ui::Widget>::Signal),\n    Down(<crate::Stepper as gogo_ui::Widget>::Signal),\n}"), "{rust}");
     assert!(rust.contains("pub struct PickerWidgets {\n    names: PickerNames,\n    pub across: crate::Stepper,\n    pub down: crate::Stepper,\n}"), "{rust}");

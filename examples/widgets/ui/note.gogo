@@ -1,0 +1,6 @@
+// A line of text the page's code writes: a widget with code
+// (`src/note.rs`) and no `signal` line. Its struct keeps the text, and the
+// page hears nothing from it. Its one Label is the instance's root.
+widget Note {
+    Label text=""
+}

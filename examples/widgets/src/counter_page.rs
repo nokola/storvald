@@ -1,5 +1,5 @@
-//! The page that places a Stepper, a SizePicker, a LabeledStepper and a
-//! Fader (`ui/counter_page.gogo`).
+//! The page that places a Stepper, a SizePicker, a LabeledStepper, a
+//! Fader and Notes (`ui/counter_page.gogo`).
 
 use turbodot::prelude::*;
 
@@ -7,6 +7,9 @@ use crate::ui::counter_page::{self, Handler};
 
 /// How many lines the page makes.
 pub const LINES: usize = 3;
+
+/// The Note of each line, in order.
+pub const HINTS: [&str; LINES] = ["first", "second", "third"];
 
 /// The page, with its widgets' code and what it heard.
 pub struct CounterPage {
@@ -30,20 +33,27 @@ impl Page for CounterPage {
         Some(&mut self.widgets)
     }
 
-    /// Three lines, each with a Stepper. Their structs are made with the
-    /// rows; `sync_rows` makes them now, so this call can write into them.
+    /// Three lines, each with a Stepper and a Note. Their structs are made
+    /// with the rows; `sync_rows` makes them now, so this call can write
+    /// into them.
     fn loaded(&mut self, host: &mut Host) {
         let ui: &mut PageUi = &mut *host.ui;
         ui.runtime.set_count(&mut ui.page, counter_page::NAMES.lines, LINES);
         self.widgets.sync_rows(&mut ui.page, &mut ui.runtime);
         for (line, row) in self.widgets.lines.iter_mut().enumerate() {
             row.amount.set_value(&mut ui.page, &mut ui.runtime, line as i32 * 10);
+            row.hint.set_text(&mut ui.page, &mut ui.runtime, HINTS[line]);
         }
     }
 
+    /// The handlers name every instance that signals; a Note signals
+    /// nothing, so it has no handler.
     fn handle(&mut self, host: &mut Host, event: PageEvent<Handler>) {
         match &event.handler {
-            Handler::Reset => self.widgets.count.set_value(&mut host.ui.page, &mut host.ui.runtime, 0),
+            Handler::Reset => {
+                self.widgets.count.set_value(&mut host.ui.page, &mut host.ui.runtime, 0);
+                self.widgets.status.set_text(&mut host.ui.page, &mut host.ui.runtime, "Reset");
+            }
             Handler::Count(_) | Handler::Size(_) | Handler::ZoomStepper(_) | Handler::Volume(_) | Handler::Lines(..) => {}
         }
         self.heard.push(event.handler);

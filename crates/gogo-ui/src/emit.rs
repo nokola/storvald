@@ -1423,10 +1423,13 @@ pub fn emit_widget_code(pages: &[(&str, &Page)], code: &WidgetCode<'_>) -> Resul
             out.push_str(&format!("impl gogo_ui::WidgetShape for {path} {{\n    type Names = {names_struct};\n    type InsideSignal = {inside_enum};\n\n    fn route_inside(&mut self, page: &mut gogo_ui::Page, rt: &mut gogo_ui::Runtime, event: &gogo_ui::Event, heard: &mut dyn FnMut({inside_enum})) -> bool {{\n        gogo_ui::WidgetSet::route(&mut self.widgets, page, rt, event, heard)\n    }}\n\n    fn load_inside(&mut self, page: &mut gogo_ui::Page, rt: &mut gogo_ui::Runtime) {{\n        gogo_ui::WidgetSet::load(&mut self.widgets, page, rt)\n    }}\n\n    fn frame_inside(&mut self, page: &mut gogo_ui::Page, rt: &mut gogo_ui::Runtime, dt_sec: f32) -> bool {{\n        gogo_ui::WidgetSet::frame(&mut self.widgets, page, rt, dt_sec)\n    }}\n\n    fn after_layout_inside(&mut self, page: &mut gogo_ui::Page, rt: &mut gogo_ui::Runtime, rects: &[gogo_ui::Rect]) {{\n        gogo_ui::WidgetSet::after_layout(&mut self.widgets, page, rt, rects)\n    }}\n}}\n\n"));
         }
         // The signal enum has exactly the file's `signal` names: a variant
-        // missing here, or one the file lacks, fails this match.
+        // missing here, or one the file lacks, fails this match. It matches
+        // the value, not the reference: a widget with no `signal` line has
+        // an enum with no variants (`NoSignal`), and Rust takes a match with
+        // no arms on the enum itself, never on a reference to it.
         let alias: String = format!("{pascal}SignalOfFile");
         out.push_str(&format!("/// `{widget}`'s signal enum, for the check below.\n#[allow(dead_code)]\ntype {alias} = <{path} as gogo_ui::Widget>::Signal;\n\n"));
-        out.push_str(&format!("/// `{widget}`'s signal enum has exactly the `signal` names of its file.\n#[allow(dead_code)]\nconst _: fn(&{alias}) = |signal| match signal {{\n"));
+        out.push_str(&format!("/// `{widget}`'s signal enum has exactly the `signal` names of its file.\n#[allow(dead_code)]\nconst _: fn(&{alias}) = |signal| match *signal {{\n"));
         for signal in code.signals_of(widget) {
             out.push_str(&format!("    {alias}::{} {{ .. }} => {{}}\n", key_variant(signal)));
         }

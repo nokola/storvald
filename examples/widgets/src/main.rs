@@ -9,13 +9,16 @@
 //! - `fader`: a control with code. Its slider behavior moves the number
 //!   and raises the drag's two ends; its code hears them first and tells
 //!   the page.
+//! - `note`: a widget with code and no `signal` line, a line of text the
+//!   page's code writes.
 //! - `counter_page`: places a Stepper, a SizePicker, a Stepper inside a
-//!   widget with no code (`LabeledStepper`), and a Fader.
+//!   widget with no code (`LabeledStepper`), a Fader, and Notes.
 //!
 //! Run it with `cargo run -p turbodot-example-widgets`.
 
 mod counter_page;
 mod fader;
+mod note;
 mod size_picker;
 mod stepper;
 
@@ -204,6 +207,32 @@ mod tests {
         assert_eq!(heard(&program), [Handler::Count(StepperSignal::Changed(1)), Handler::Reset]);
         program.frame(SIZE_EPX.0, SIZE_EPX.1, 0.016);
         assert_eq!(text(&program, PAGE.count.value), "0");
+    }
+
+    /// A widget with code and no `signal` line, on the page and in each
+    /// row: it is made and loaded with the page or its row, the page's code
+    /// writes into it, and the page hears nothing from it (the page's
+    /// `Handler` has no variant for it, which `CounterPage::handle`'s
+    /// match with no catch-all arm shows).
+    ///
+    /// Needed for a widget whose code only keeps what it shows (a help
+    /// line under a settings row): the build's check of its signal enum
+    /// must take an enum with no variants.
+    #[test]
+    fn a_widget_with_code_and_no_signal_is_loaded_and_written_and_signals_nothing() {
+        let _one = ONE_TEST_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+        let mut program: Program<()> = started();
+        assert_eq!(text(&program, PAGE.status.root), "Ready", "loaded with the page");
+        let rows: Vec<NodeId> = program.ui().rows(PAGE.lines);
+        for (line, row) in rows.iter().enumerate() {
+            assert_eq!(text(&program, counter_page::LinesSlot::at(*row).hint.root), crate::counter_page::HINTS[line], "the page wrote into row {line}'s Note");
+        }
+        program.tap(PAGE.status.root, 1.0);
+        program.tap(PAGE.reset, 2.0);
+        program.frame(SIZE_EPX.0, SIZE_EPX.1, 0.016);
+        assert_eq!(heard(&program), [Handler::Reset], "a tap on a Note reaches no handler");
+        assert_eq!(text(&program, PAGE.status.root), "Reset");
+        assert_eq!(program.page::<CounterPage>().expect("on screen").widgets.status.text(), "Reset");
     }
 
     /// The widgets load when the page is made, a widget's inner widgets
